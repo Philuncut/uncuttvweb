@@ -56,13 +56,42 @@ export async function POST(request: Request) {
       );
     }
 
-    const wpUser = await meRes.json();
+    const meBody = await meRes.text();
+    console.log("[Haendler Login] /users/me raw response:", meBody.slice(0, 500));
+
+    const wpUser = JSON.parse(meBody);
+
+    // WordPress may return roles in different fields depending on permissions
     const wpRoles: string[] = wpUser.roles || [];
+    const wpCaps = wpUser.capabilities || {};
+    const extraCaps = wpUser.extra_capabilities || {};
 
-    console.log("[Haendler Login] User:", jwtEmail, "Roles:", wpRoles);
+    console.log("[Haendler Login] User:", jwtEmail);
+    console.log("[Haendler Login] roles field:", JSON.stringify(wpRoles));
+    console.log("[Haendler Login] capabilities:", JSON.stringify(Object.keys(wpCaps)));
+    console.log("[Haendler Login] extra_capabilities:", JSON.stringify(Object.keys(extraCaps)));
 
-    // Step 3: Check for allowed roles
-    const hasAllowedRole = wpRoles.some((r) => ALLOWED_ROLES.includes(r));
+    // Build comprehensive role list from all sources
+    const allRoles = [
+      ...wpRoles.map((r) => r.toLowerCase()),
+      ...Object.keys(extraCaps).map((r) => r.toLowerCase()),
+    ];
+
+    // Also check capabilities for admin indicators
+    if (wpCaps.manage_options || wpCaps.manage_woocommerce) {
+      allRoles.push("administrator");
+    }
+    if (wpCaps.manage_woocommerce) {
+      allRoles.push("shop_manager");
+    }
+
+    console.log("[Haendler Login] Combined roles:", JSON.stringify(allRoles));
+    console.log("[Haendler Login] Allowed roles:", JSON.stringify(ALLOWED_ROLES));
+
+    // Step 3: Check for allowed roles (case-insensitive)
+    const hasAllowedRole = allRoles.some((r) =>
+      ALLOWED_ROLES.some((a) => a.toLowerCase() === r)
+    );
 
     if (!hasAllowedRole) {
       return NextResponse.json(
@@ -76,7 +105,8 @@ export async function POST(request: Request) {
 
     // Step 4: Set cookies
     const matchedRole =
-      wpRoles.find((r) => ALLOWED_ROLES.includes(r)) || "wholesale";
+      allRoles.find((r) => ALLOWED_ROLES.some((a) => a.toLowerCase() === r)) ||
+      "wholesale";
 
     const cookieStore = await cookies();
     const opts = {
