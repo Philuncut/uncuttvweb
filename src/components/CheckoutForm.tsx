@@ -433,6 +433,39 @@ function CheckoutInner() {
   const [clientSecret, setClientSecret] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
+  const [autoCouponApplied, setAutoCouponApplied] = useState(false);
+
+  // Read ?coupon= from URL and auto-apply
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlCoupon = params.get("coupon");
+    if (!urlCoupon || couponId) return;
+
+    async function applyCoupon() {
+      try {
+        const res = await fetch(
+          `/api/validate-coupon?code=${encodeURIComponent(urlCoupon!)}`
+        );
+        const data = await res.json();
+        if (data.valid) {
+          const display = data.percent_off
+            ? `−${data.percent_off}%`
+            : data.amount_off
+              ? `−€${data.amount_off}`
+              : "";
+          setCouponId(data.couponId);
+          setCouponName(data.name);
+          setCouponDiscount(display);
+          setAutoCouponApplied(true);
+        }
+      } catch {
+        // silent
+      }
+    }
+    applyCoupon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Create PaymentIntent for card payments
   useEffect(() => {
@@ -661,6 +694,26 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
+          {/* Auto-applied coupon banner */}
+          {autoCouponApplied && (
+            <div
+              style={{
+                background: "rgba(39, 174, 96, 0.1)",
+                border: "1px solid rgba(39, 174, 96, 0.3)",
+                padding: "12px 16px",
+                marginBottom: 24,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span style={{ color: "#27ae60", fontSize: 16 }}>✓</span>
+              <span style={{ color: "#27ae60", fontSize: 13, fontWeight: "bold" }}>
+                10% Rabattcode WELCOME10 wird angewendet
+              </span>
+            </div>
+          )}
+
           {/* Kontakt */}
           <section>
             <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">

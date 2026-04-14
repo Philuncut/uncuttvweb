@@ -63,20 +63,26 @@ export default function CartDrawer() {
   }, [couponInput]);
 
   const handleCheckout = useCallback(async () => {
+    let applyCoupon = false;
+
     // Subscribe to newsletter if checked and email provided
     if (newsletter && newsletterEmail.trim() && newsletterEmail.includes("@")) {
       try {
-        await fetch("/api/newsletter/subscribe", {
+        const res = await fetch("/api/newsletter/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: newsletterEmail.trim() }),
         });
+        if (res.ok) applyCoupon = true;
       } catch {
         // Non-blocking — don't prevent checkout
       }
     }
+
     closeDrawer();
-    window.location.href = "/checkout";
+    window.location.href = applyCoupon
+      ? "/checkout?coupon=WELCOME10"
+      : "/checkout";
   }, [closeDrawer, newsletter, newsletterEmail]);
 
   const discountDisplay = coupon
@@ -286,26 +292,45 @@ export default function CartDrawer() {
             </div>
 
             {/* Newsletter opt-in */}
-            <label className="mt-4 flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                checked={newsletter}
-                onChange={(e) => setNewsletter(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#c0392b]"
-              />
-              <span className="text-[11px] leading-relaxed text-white/40">
-                {t("NEWSLETTER_CHECKOUT")}
-              </span>
-            </label>
-            {newsletter && (
-              <input
-                type="email"
-                value={newsletterEmail}
-                onChange={(e) => setNewsletterEmail(e.target.value)}
-                placeholder="deine@email.com"
-                className="mt-2 w-full border border-[#333] bg-[#0a0a0a] px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
-              />
-            )}
+            <div className="mt-4 border border-[#222] bg-[#0a0a0a] p-3">
+              <label className="flex cursor-pointer items-start gap-3">
+                <span
+                  onClick={() => setNewsletter((v) => !v)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 18,
+                    height: 18,
+                    marginTop: 1,
+                    flexShrink: 0,
+                    border: newsletter ? "1px solid #c0392b" : "1px solid #555",
+                    background: newsletter ? "#c0392b" : "transparent",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {newsletter && (
+                    <svg style={{ width: 12, height: 12, color: "white" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="square" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
+                <span className="text-xs leading-relaxed text-white/70">
+                  <span className="font-bold text-[#c0392b]">10% sparen</span>
+                  {" "}— Newsletter abonnieren &amp; Rabattcode erhalten
+                </span>
+              </label>
+              {newsletter && (
+                <input
+                  type="email"
+                  value={newsletterEmail}
+                  onChange={(e) => setNewsletterEmail(e.target.value)}
+                  placeholder="deine@email.com"
+                  className="mt-3 w-full border border-[#333] bg-[#111] px-3 py-2.5 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
+                />
+              )}
+            </div>
 
             {/* Checkout */}
             <button
