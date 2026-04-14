@@ -248,6 +248,20 @@ function OrderSummary({
   onCouponRemoved: () => void;
   subtotal: number;
 }) {
+  // Calculate discounted total
+  let discountedTotal = subtotal;
+  let discountAmount = 0;
+  if (couponDiscount) {
+    const percentMatch = couponDiscount.match(/(\d+)%/);
+    const fixedMatch = couponDiscount.match(/€([\d.]+)/);
+    if (percentMatch) {
+      discountAmount = subtotal * (parseFloat(percentMatch[1]) / 100);
+      discountedTotal = subtotal - discountAmount;
+    } else if (fixedMatch) {
+      discountAmount = parseFloat(fixedMatch[1]);
+      discountedTotal = Math.max(0, subtotal - discountAmount);
+    }
+  }
   const { items } = useCart();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -368,10 +382,10 @@ function OrderSummary({
           <span>Zwischensumme</span>
           <span>€{subtotal.toFixed(2)}</span>
         </div>
-        {couponDiscount && (
+        {couponDiscount && discountAmount > 0 && (
           <div className="flex justify-between text-xs text-green-400">
-            <span>Rabatt</span>
-            <span>{couponDiscount}</span>
+            <span>Rabatt ({couponDiscount})</span>
+            <span>−€{discountAmount.toFixed(2)}</span>
           </div>
         )}
         <div className="flex justify-between border-t border-[#222] pt-2">
@@ -379,7 +393,7 @@ function OrderSummary({
             GESAMT
           </span>
           <span className="text-xl font-black text-white">
-            €{subtotal.toFixed(2)}
+            €{discountedTotal.toFixed(2)}
           </span>
         </div>
       </div>
