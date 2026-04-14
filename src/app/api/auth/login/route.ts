@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     let wpRoles: string[] = [];
 
     if (token) {
-      const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
+      const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me?context=edit`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (meRes.ok) {

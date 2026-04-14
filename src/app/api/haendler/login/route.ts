@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     console.log("[Haendler Login] JWT email:", jwtEmail, "display:", jwtDisplayName);
 
     // Step 2: Get user roles via JWT token
-    const meUrl = `${WOO_URL}/wp-json/wp/v2/users/me`;
+    const meUrl = `${WOO_URL}/wp-json/wp/v2/users/me?context=edit`;
     console.log("[Haendler Login] Fetching:", meUrl);
 
     const meRes = await fetch(meUrl, {
