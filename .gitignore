@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Large video files
+herovideo.mp4
+herovideoae.mp4
+public/videos/hero.mp4
+
+# PSD files
+pics/
