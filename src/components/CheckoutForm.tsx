@@ -438,6 +438,28 @@ function CheckoutInner() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("AT");
 
+  // Pre-fill fields from logged-in user data
+  useEffect(() => {
+    async function prefill() {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.email && !email) setEmail(data.email);
+        if (data.firstName && !firstName) setFirstName(data.firstName);
+        if (data.lastName && !lastName) setLastName(data.lastName);
+        if (data.billing?.address_1 && !street) setStreet(data.billing.address_1);
+        if (data.billing?.postcode && !zip) setZip(data.billing.postcode);
+        if (data.billing?.city && !city) setCity(data.billing.city);
+        if (data.billing?.country && !country) setCountry(data.billing.country);
+      } catch {
+        // Not logged in — fields stay empty
+      }
+    }
+    prefill();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
 
   const [couponId, setCouponId] = useState<string | null>(null);
