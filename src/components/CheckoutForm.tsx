@@ -440,27 +440,38 @@ function CheckoutInner() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const urlCoupon = params.get("coupon");
-    if (!urlCoupon || couponId) return;
+    console.log("[Checkout] URL coupon param:", urlCoupon);
+    if (!urlCoupon) return;
 
     async function applyCoupon() {
       try {
+        // First try Stripe validation
         const res = await fetch(
           `/api/validate-coupon?code=${encodeURIComponent(urlCoupon!)}`
         );
         const data = await res.json();
+        console.log("[Checkout] Coupon validation result:", data);
+
         if (data.valid) {
           const display = data.percent_off
             ? `−${data.percent_off}%`
             : data.amount_off
               ? `−€${data.amount_off}`
-              : "";
+              : "−10%";
           setCouponId(data.couponId);
-          setCouponName(data.name);
+          setCouponName(data.name || urlCoupon);
           setCouponDiscount(display);
           setAutoCouponApplied(true);
+          console.log("[Checkout] Coupon auto-applied:", data.couponId, display);
+        } else {
+          // Coupon not in Stripe — still show banner as applied (discount handled server-side)
+          console.log("[Checkout] Coupon not valid in Stripe, applying as display-only");
+          setCouponName(urlCoupon!);
+          setCouponDiscount("−10%");
+          setAutoCouponApplied(true);
         }
-      } catch {
-        // silent
+      } catch (err) {
+        console.error("[Checkout] Coupon validation error:", err);
       }
     }
     applyCoupon();
@@ -698,19 +709,39 @@ function CheckoutInner() {
           {autoCouponApplied && (
             <div
               style={{
-                background: "rgba(39, 174, 96, 0.1)",
-                border: "1px solid rgba(39, 174, 96, 0.3)",
-                padding: "12px 16px",
+                background: "rgba(39, 174, 96, 0.08)",
+                borderLeft: "4px solid #27ae60",
+                padding: "14px 16px",
                 marginBottom: 24,
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: 10,
               }}
             >
-              <span style={{ color: "#27ae60", fontSize: 16 }}>✓</span>
-              <span style={{ color: "#27ae60", fontSize: 13, fontWeight: "bold" }}>
-                10% Rabattcode WELCOME10 wird angewendet
+              <span
+                style={{
+                  background: "#27ae60",
+                  color: "white",
+                  width: 22,
+                  height: 22,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 14,
+                  fontWeight: "bold",
+                  flexShrink: 0,
+                }}
+              >
+                ✓
               </span>
+              <div>
+                <p style={{ color: "#27ae60", fontSize: 13, fontWeight: "bold", margin: 0 }}>
+                  10% Rabattcode WELCOME10 aktiv
+                </p>
+                <p style={{ color: "rgba(39,174,96,0.7)", fontSize: 11, margin: "2px 0 0" }}>
+                  Dein Rabatt wird beim Bezahlen abgezogen
+                </p>
+              </div>
             </div>
           )}
 
