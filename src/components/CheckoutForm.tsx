@@ -936,9 +936,14 @@ function CheckoutInner() {
               {paymentMethod === "bank" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   <p className="text-xs leading-relaxed text-white/50">
-                    Nach Bestellabschluss erhältst du unsere Bankverbindung
-                    per E-Mail. Bitte überweise den Betrag innerhalb von 5
-                    Werktagen.
+                    Bitte überweise den Betrag innerhalb von 5 Werktagen an:
+                    <br /><br />
+                    <strong style={{ color: "rgba(255,255,255,0.8)" }}>
+                      UncutTV GmbH<br />
+                      Raiffeisen Landesbank Tirol AG<br />
+                      IBAN: AT52 3600 0000 0083 4978<br />
+                      BIC: RZTIAT22
+                    </strong>
                   </p>
                 </div>
               )}

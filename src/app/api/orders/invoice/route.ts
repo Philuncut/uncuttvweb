@@ -176,7 +176,7 @@ export async function GET(request: Request) {
     const footerY = 80;
     page.drawLine({ start: { x: 50, y: footerY + 15 }, end: { x: 545, y: footerY + 15 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     const footerLines = [
-      "Bankverbindung: UncutTV GmbH · IBAN: AT00 0000 0000 0000 0000 · BIC: XXXXXXXX",
+      "Bankverbindung: UncutTV GmbH · IBAN: AT52 3600 0000 0083 4978 · BIC: RZTIAT22",
       "UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich · ATU 815 26 957",
     ];
     let fy = footerY;

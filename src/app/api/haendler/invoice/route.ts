@@ -359,7 +359,7 @@ export async function GET(request: Request) {
     });
 
     const footerLines = [
-      "Bankverbindung: UncutTV GmbH · IBAN: AT00 0000 0000 0000 0000 · BIC: XXXXXXXX",
+      "Bankverbindung: UncutTV GmbH · IBAN: AT52 3600 0000 0083 4978 · BIC: RZTIAT22",
       "Zahlbar innerhalb 14 Tagen nach Rechnungsdatum.",
       "UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich · ATU 815 26 957",
     ];

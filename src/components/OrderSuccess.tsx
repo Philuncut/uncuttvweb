@@ -244,8 +244,15 @@ export default function OrderSuccess() {
           {bankOrder && (
             <span className="text-white/70">#{bankOrder}</span>
           )}{" "}
-          wurde erfasst. Du erhältst unsere Bankverbindung per E-Mail.
-          Bitte überweise den Betrag innerhalb von 5 Werktagen.
+          wurde erfasst. Bitte überweise den Betrag innerhalb von 5 Werktagen an:
+        </p>
+        <div className="mt-4 border border-[#222] bg-[#111] p-4 text-left text-sm text-white/70">
+          <p className="font-bold text-white">UncutTV GmbH</p>
+          <p>Raiffeisen Landesbank Tirol AG</p>
+          <p>IBAN: AT52 3600 0000 0083 4978</p>
+          <p>BIC: RZTIAT22</p>
+        </div>
+        <p className="mt-3 text-sm text-white/50">
         </p>
         <Link
           href="/shop"
