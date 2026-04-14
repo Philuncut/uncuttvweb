@@ -961,13 +961,20 @@ function CheckoutInner() {
                           label: "pay",
                         }}
                         createOrder={(_data, actions) => {
+                          let paypalTotal = totalPrice;
+                          if (couponDiscount) {
+                            const pctMatch = couponDiscount.match(/(\d+)%/);
+                            const fixMatch = couponDiscount.match(/€([\d.]+)/);
+                            if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
+                            else if (fixMatch) paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
+                          }
                           return actions.order.create({
                             intent: "CAPTURE",
                             purchase_units: [
                               {
                                 amount: {
                                   currency_code: "EUR",
-                                  value: totalPrice.toFixed(2),
+                                  value: paypalTotal.toFixed(2),
                                 },
                                 description: "UNCUTTV Shop Bestellung",
                               },
