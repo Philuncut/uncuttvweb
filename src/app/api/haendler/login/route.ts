@@ -22,34 +22,49 @@ export async function POST(request: Request) {
     }
 
     console.log("[Haendler Login] Attempting login for:", email);
+    console.log("[Haendler Login] WOO_URL:", WOO_URL);
 
     // Step 1: Authenticate via JWT
-    const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
+    const jwtUrl = `${WOO_URL}/wp-json/jwt-auth/v1/token`;
+    console.log("[Haendler Login] JWT URL:", jwtUrl);
+
+    const jwtRes = await fetch(jwtUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: email, password }),
     });
 
+    const jwtBody = await jwtRes.text();
     console.log("[Haendler Login] JWT status:", jwtRes.status);
+    console.log("[Haendler Login] JWT response body:", jwtBody.slice(0, 500));
 
     if (!jwtRes.ok) {
+      console.log("[Haendler Login] JWT auth FAILED. Status:", jwtRes.status, "Body:", jwtBody.slice(0, 300));
       return NextResponse.json(
         { error: "Ungültige E-Mail oder Passwort." },
         { status: 401 }
       );
     }
 
-    const jwtData = await jwtRes.json();
+    const jwtData = JSON.parse(jwtBody);
     const token = jwtData.token || "";
     const jwtEmail = jwtData.user_email || email;
     const jwtDisplayName = jwtData.user_display_name || "";
 
+    console.log("[Haendler Login] JWT SUCCESS. Token prefix:", token.slice(0, 30));
+    console.log("[Haendler Login] JWT email:", jwtEmail, "display:", jwtDisplayName);
+
     // Step 2: Get user roles via JWT token
-    const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
+    const meUrl = `${WOO_URL}/wp-json/wp/v2/users/me`;
+    console.log("[Haendler Login] Fetching:", meUrl);
+
+    const meRes = await fetch(meUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!meRes.ok) {
+      const meErrBody = await meRes.text();
+      console.log("[Haendler Login] /users/me FAILED. Status:", meRes.status, "Body:", meErrBody.slice(0, 300));
       return NextResponse.json(
         { error: "Benutzerdaten konnten nicht geladen werden." },
         { status: 500 }
@@ -93,7 +108,10 @@ export async function POST(request: Request) {
       ALLOWED_ROLES.some((a) => a.toLowerCase() === r)
     );
 
+    console.log("[Haendler Login] hasAllowedRole:", hasAllowedRole);
+
     if (!hasAllowedRole) {
+      console.log("[Haendler Login] REJECTED — no allowed role found in:", JSON.stringify(allRoles));
       return NextResponse.json(
         {
           error:
