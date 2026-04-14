@@ -124,6 +124,14 @@ export async function POST(request: Request) {
     cookieStore.set("woo_customer_role", sessionUser.role, opts);
     cookieStore.set("woo_token", token, opts);
 
+    // Non-httpOnly cookie for client-side display (name only, no sensitive data)
+    cookieStore.set("woo_customer_name", sessionUser.first_name, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
     console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role);
 
     return NextResponse.json({

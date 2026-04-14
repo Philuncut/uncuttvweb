@@ -303,6 +303,8 @@ export default function Navbar() {
   const { language, toggleLanguage, setLanguage } = useLanguage();
   const t = createT(language);
 
+  const [userName, setUserName] = useState<string | null>(null);
+
   useEffect(() => {
     function onScroll() {
       setScrolled(window.scrollY > 10);
@@ -310,6 +312,14 @@ export default function Navbar() {
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Read non-httpOnly cookie for logged-in user display
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^| )woo_customer_name=([^;]+)/);
+    if (match) {
+      setUserName(decodeURIComponent(match[1]));
+    }
   }, []);
 
   // ESC key closes mobile menu + body scroll lock
@@ -444,7 +454,25 @@ export default function Navbar() {
           <div className="hidden items-center md:flex">
             <NavLink href="/shop">{t("SHOP")}</NavLink>
             <Divider />
-            <NavLink href="/konto">{t("MEIN_KONTO")}</NavLink>
+            <NavLink href="/konto">
+              {userName ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      background: "#c0392b",
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      boxShadow: "0 0 6px rgba(192,57,43,0.6)",
+                    }}
+                  />
+                  {userName.toUpperCase()}
+                </span>
+              ) : (
+                t("MEIN_KONTO")
+              )}
+            </NavLink>
             <Divider />
             <NavLink href="/haendler">{t("HAENDLER")}</NavLink>
             <Divider />
@@ -833,7 +861,14 @@ export default function Navbar() {
               animationDelay: "0.35s",
             }}
           >
-            {t("MEIN_KONTO")}
+            {userName ? (
+              <>
+                <span style={{ display: "inline-block", width: 8, height: 8, background: "#c0392b", borderRadius: "50%", marginRight: 10, boxShadow: "0 0 8px rgba(192,57,43,0.6)" }} />
+                {userName.toUpperCase()}
+              </>
+            ) : (
+              t("MEIN_KONTO")
+            )}
           </a>
 
           {/* HÄNDLER */}
