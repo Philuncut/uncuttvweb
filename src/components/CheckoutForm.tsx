@@ -423,6 +423,69 @@ function OrderSummary({
 
 /* ── Inner form (needs Stripe hooks) ── */
 
+/* ── Stable PayPal Button wrapper — prevents re-mount on parent re-renders ── */
+
+const paypalScriptOptions = {
+  clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
+  currency: "EUR",
+};
+
+function PayPalButtonWrapper({
+  totalPrice,
+  couponDiscount,
+  onApprove,
+  onError,
+}: {
+  totalPrice: number;
+  couponDiscount: string | null;
+  onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
+  onError: () => void;
+}) {
+  // Memoize createOrder so PayPal doesn't reinitialize
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createOrder = useCallback(
+    (_data: any, actions: any) => {
+      let paypalTotal = totalPrice;
+      if (couponDiscount) {
+        const pctMatch = couponDiscount.match(/(\d+)%/);
+        const fixMatch = couponDiscount.match(/€([\d.]+)/);
+        if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
+        else if (fixMatch) paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
+      }
+      return actions.order.create({
+        intent: "CAPTURE",
+        purchase_units: [
+          {
+            amount: {
+              currency_code: "EUR",
+              value: paypalTotal.toFixed(2),
+            },
+            description: "UNCUTTV Shop Bestellung",
+          },
+        ],
+      });
+    },
+    [totalPrice, couponDiscount]
+  );
+
+  return (
+    <PayPalScriptProvider options={paypalScriptOptions}>
+      <PayPalButtons
+        style={{
+          color: "black",
+          shape: "rect",
+          layout: "vertical",
+          label: "pay",
+        }}
+        createOrder={createOrder}
+        onApprove={onApprove}
+        onError={onError}
+        forceReRender={[totalPrice, couponDiscount]}
+      />
+    </PayPalScriptProvider>
+  );
+}
+
 function CheckoutInner() {
   const stripe = useStripe();
   const elements = useElements();
@@ -986,49 +1049,16 @@ function CheckoutInner() {
               {paymentMethod === "paypal" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   {process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? (
-                    <PayPalScriptProvider
-                      options={{
-                        clientId:
-                          process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID,
-                        currency: "EUR",
-                      }}
-                    >
-                      <PayPalButtons
-                        style={{
-                          color: "black",
-                          shape: "rect",
-                          layout: "vertical",
-                          label: "pay",
-                        }}
-                        createOrder={(_data, actions) => {
-                          let paypalTotal = totalPrice;
-                          if (couponDiscount) {
-                            const pctMatch = couponDiscount.match(/(\d+)%/);
-                            const fixMatch = couponDiscount.match(/€([\d.]+)/);
-                            if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
-                            else if (fixMatch) paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
-                          }
-                          return actions.order.create({
-                            intent: "CAPTURE",
-                            purchase_units: [
-                              {
-                                amount: {
-                                  currency_code: "EUR",
-                                  value: paypalTotal.toFixed(2),
-                                },
-                                description: "UNCUTTV Shop Bestellung",
-                              },
-                            ],
-                          });
-                        }}
-                        onApprove={handlePayPalApprove}
-                        onError={() => {
-                          setError(
-                            "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut."
-                          );
-                        }}
-                      />
-                    </PayPalScriptProvider>
+                    <PayPalButtonWrapper
+                      totalPrice={totalPrice}
+                      couponDiscount={couponDiscount}
+                      onApprove={handlePayPalApprove}
+                      onError={() =>
+                        setError(
+                          "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut."
+                        )
+                      }
+                    />
                   ) : (
                     <p className="text-xs text-white/30">
                       PayPal ist derzeit nicht verfügbar.
