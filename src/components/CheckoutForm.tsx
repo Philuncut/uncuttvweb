@@ -11,6 +11,7 @@ import {
 import {
   PayPalScriptProvider,
   PayPalButtons,
+  FUNDING,
 } from "@paypal/react-paypal-js";
 import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
@@ -428,6 +429,7 @@ function OrderSummary({
 const paypalScriptOptions = {
   clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
   currency: "EUR",
+  disableFunding: "card,credit,paylater,bancontact,blik,eps,giropay,ideal,mybank,p24,sepa,sofort,venmo",
 };
 
 function PayPalButtonWrapper({
@@ -471,11 +473,12 @@ function PayPalButtonWrapper({
   return (
     <PayPalScriptProvider options={paypalScriptOptions}>
       <PayPalButtons
+        fundingSource={FUNDING.PAYPAL}
         style={{
-          color: "black",
+          color: "gold",
           shape: "rect",
           layout: "vertical",
-          label: "pay",
+          label: "paypal",
         }}
         createOrder={createOrder}
         onApprove={onApprove}
