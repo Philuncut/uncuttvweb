@@ -200,7 +200,7 @@ export default function AuthForms() {
             )}
           </button>
           <a
-            href="https://uncuttv.at/mein-konto/passwort-vergessen/"
+            href="/passwort-vergessen"
             className="mt-3 block text-center text-xs text-white/40 transition-colors hover:text-[#c0392b]"
           >
             Passwort vergessen?
