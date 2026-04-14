@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
 interface CartMeta {
   id: number;
   name: string;
@@ -18,6 +20,119 @@ interface Body {
     country: string;
   };
   items: CartMeta[];
+}
+
+async function sendBankTransferEmail(
+  email: string,
+  customerName: string,
+  orderNumber: string,
+  items: CartMeta[],
+  total: string
+) {
+  if (!RESEND_API_KEY || RESEND_API_KEY === "your_resend_api_key") {
+    console.log("[BankOrder] No Resend API key, skipping email");
+    return;
+  }
+
+  const itemRows = items
+    .map((item) => {
+      const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+      return `
+        <tr>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;">${item.qty}× ${item.name}</td>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;">€${lineTotal}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const html = `
+    <div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#fff;padding:40px 32px;">
+      <h1 style="font-size:28px;font-weight:900;letter-spacing:0.05em;margin:0;">
+        <span style="color:#fff;">UNCUT</span><span style="color:#c0392b;">TV</span>
+      </h1>
+      <p style="color:#888;font-size:14px;margin-top:8px;">Bestellbestätigung</p>
+
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+
+      <p style="font-size:16px;line-height:1.6;color:#ccc;">
+        Hallo ${customerName},<br/><br/>
+        vielen Dank für deine Bestellung <strong style="color:#fff;">#${orderNumber}</strong>.
+        Bitte überweise den Betrag innerhalb von <strong style="color:#fff;">5 Werktagen</strong> an folgendes Konto:
+      </p>
+
+      <div style="margin:24px 0;padding:20px;border:1px solid #222;background:#111;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr>
+            <td style="padding:4px 0;color:#888;">Kontoinhaber:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;font-weight:bold;">UncutTV GmbH</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">Bank:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;">Raiffeisen Landesbank Tirol AG</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">IBAN:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;font-weight:bold;">AT52 3600 0000 0083 4978</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">BIC:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;">RZTIAT22</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">Verwendungszweck:</td>
+            <td style="padding:4px 0;color:#c0392b;text-align:right;font-weight:bold;">Bestellung #${orderNumber}</td>
+          </tr>
+        </table>
+      </div>
+
+      <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 12px;">Bestellübersicht</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        ${itemRows}
+        <tr>
+          <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">Gesamt</td>
+          <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">€${total}</td>
+        </tr>
+      </table>
+
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+
+      <p style="font-size:13px;color:#888;line-height:1.5;">
+        Nach Zahlungseingang wird deine Bestellung umgehend versendet.
+        Bei Fragen kontaktiere uns unter <a href="mailto:office@uncuttv.at" style="color:#c0392b;">office@uncuttv.at</a>.
+      </p>
+
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+
+      <p style="font-size:11px;color:#555;line-height:1.5;">
+        UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich
+      </p>
+    </div>
+  `;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "UncutTV <office@uncuttv.at>",
+        to: [email],
+        subject: `Deine Bestellung bei UncutTV – Zahlungsdetails`,
+        html,
+      }),
+    });
+
+    if (res.ok) {
+      console.log("[BankOrder] Confirmation email sent to:", email);
+    } else {
+      const err = await res.text();
+      console.error("[BankOrder] Resend error:", res.status, err.slice(0, 200));
+    }
+  } catch (err) {
+    console.error("[BankOrder] Failed to send email:", err);
+  }
 }
 
 export async function POST(request: Request) {
@@ -83,6 +198,19 @@ export async function POST(request: Request) {
     }
 
     const order = await res.json();
+
+    // Send bank transfer confirmation email
+    const total = items
+      .reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0)
+      .toFixed(2);
+
+    await sendBankTransferEmail(
+      customer.email,
+      `${customer.firstName} ${customer.lastName}`,
+      order.number,
+      items,
+      total
+    );
 
     return NextResponse.json({
       success: true,
