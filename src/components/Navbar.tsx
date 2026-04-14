@@ -454,25 +454,34 @@ export default function Navbar() {
           <div className="hidden items-center md:flex">
             <NavLink href="/shop">{t("SHOP")}</NavLink>
             <Divider />
-            <NavLink href="/konto">
-              {userName ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      background: "#c0392b",
-                      borderRadius: "50%",
-                      flexShrink: 0,
-                      boxShadow: "0 0 6px rgba(192,57,43,0.6)",
-                    }}
-                  />
-                  {userName.toUpperCase()}
+            {userName ? (
+              <>
+                <NavLink href="/konto">
+                  <span style={{ color: "#c0392b" }}>
+                    {userName.toUpperCase()}
+                  </span>
+                </NavLink>
+                <span
+                  onClick={async () => {
+                    await fetch("/api/auth/logout", { method: "POST" });
+                    document.cookie = "woo_customer_name=; path=/; max-age=0";
+                    window.location.href = "/shop";
+                  }}
+                  style={{
+                    marginLeft: 8,
+                    color: "#555",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  ✕
                 </span>
-              ) : (
-                t("MEIN_KONTO")
-              )}
-            </NavLink>
+              </>
+            ) : (
+              <NavLink href="/konto/login">{t("ANMELDEN")}</NavLink>
+            )}
             <Divider />
             <NavLink href="/haendler">{t("HAENDLER")}</NavLink>
             <Divider />
@@ -846,12 +855,12 @@ export default function Navbar() {
             OUT OF PRINT
           </a>
 
-          {/* MEIN KONTO */}
+          {/* MEIN KONTO / ANMELDEN */}
           <a
-            href="/konto"
+            href={userName ? "/konto" : "/konto/login"}
             className="menu-link menu-main-link"
             style={{
-              color: "white",
+              color: userName ? "#c0392b" : "white",
               fontSize: "2.2rem",
               fontWeight: "bold",
               textDecoration: "none",
@@ -861,14 +870,7 @@ export default function Navbar() {
               animationDelay: "0.35s",
             }}
           >
-            {userName ? (
-              <>
-                <span style={{ display: "inline-block", width: 8, height: 8, background: "#c0392b", borderRadius: "50%", marginRight: 10, boxShadow: "0 0 8px rgba(192,57,43,0.6)" }} />
-                {userName.toUpperCase()}
-              </>
-            ) : (
-              t("MEIN_KONTO")
-            )}
+            {userName ? userName.toUpperCase() : t("ANMELDEN")}
           </a>
 
           {/* HÄNDLER */}
