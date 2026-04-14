@@ -796,12 +796,6 @@ function CheckoutInner() {
                 required
               />
             </div>
-            <div className="mt-3">
-              <Checkbox checked={newsletter} onChange={setNewsletter}>
-                Newsletter abonnieren &amp; 10% Rabatt auf die nächste
-                Bestellung erhalten
-              </Checkbox>
-            </div>
           </section>
 
           {/* Lieferadresse */}
@@ -871,6 +865,50 @@ function CheckoutInner() {
               />
             </div>
           </section>
+
+          {/* Newsletter + Rabatt */}
+          {!autoCouponApplied && (
+            <div
+              className="mt-8"
+              style={{
+                border: "1px solid #c0392b",
+                background: "rgba(192,57,43,0.04)",
+                padding: "16px",
+              }}
+            >
+              <Checkbox checked={newsletter} onChange={(v) => {
+                setNewsletter(v);
+                // Auto-apply WELCOME10 when checked and email exists
+                if (v && email && !couponId) {
+                  fetch(`/api/validate-coupon?code=WELCOME10`)
+                    .then((r) => r.json())
+                    .then((data) => {
+                      if (data.valid) {
+                        setCouponId(data.couponId);
+                        setCouponName(data.name || "WELCOME10");
+                        setCouponDiscount(
+                          data.percent_off
+                            ? `−${data.percent_off}%`
+                            : data.amount_off
+                              ? `−€${data.amount_off}`
+                              : "−10%"
+                        );
+                        setAutoCouponApplied(true);
+                      } else {
+                        // Stripe coupon not found — show as display-only
+                        setCouponName("WELCOME10");
+                        setCouponDiscount("−10%");
+                        setAutoCouponApplied(true);
+                      }
+                    })
+                    .catch(() => {});
+                }
+              }}>
+                <span style={{ color: "#c0392b", fontWeight: "bold" }}>10% SPAREN</span>
+                {" "}— Newsletter abonnieren &amp; Rabattcode WELCOME10 sofort erhalten
+              </Checkbox>
+            </div>
+          )}
 
           {/* Zahlung */}
           <section className="mt-8">
