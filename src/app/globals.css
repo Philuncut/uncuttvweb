@@ -1,21 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --accent: #c0392b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes hero-gradient {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
 }
 
@@ -23,4 +31,97 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.animate-hero-gradient {
+  animation: hero-gradient 8s ease infinite;
+}
+
+/* Custom red scrollbar — Webkit (Chrome, Edge, Safari, Android Chrome) */
+::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: #0a0a0a !important;
+}
+::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: #c0392b !important;
+  border-radius: 0 !important;
+}
+::-webkit-scrollbar-thumb:hover,
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: #e74c3c !important;
+}
+
+/* Firefox */
+html,
+body,
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: #c0392b #0a0a0a !important;
+}
+
+/* Utility class to hide scrollbars on specific elements (e.g. category filter row) */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fix autofill yellow background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px #111111 inset !important;
+  -webkit-text-fill-color: white !important;
+  caret-color: white !important;
+}
+
+
+
+/* Product description HTML styling */
+.product-description h1,
+.product-description h2,
+.product-description h3,
+.product-description h4 {
+  color: #c0392b;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.product-description h1 { font-size: 1.5rem; }
+.product-description h2 { font-size: 1.25rem; }
+.product-description h3 { font-size: 1.1rem; }
+.product-description p {
+  margin-bottom: 0.75em;
+}
+.product-description ul,
+.product-description ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+.product-description li {
+  margin-bottom: 0.25em;
+}
+.product-description a {
+  color: #c0392b;
+  text-decoration: underline;
+}
+.product-description strong {
+  color: rgba(255, 255, 255, 0.9);
+}
+.product-description img {
+  max-width: 100%;
+  height: auto;
+  margin: 1em 0;
 }

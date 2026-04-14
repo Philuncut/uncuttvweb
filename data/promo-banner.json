@@ -1,0 +1,13 @@
+{
+  "active": true,
+  "title": "GROSSER VORVERKAUF",
+  "subtitle": "3 Neue Mediabooks · Ab €34.90",
+  "label": "NEU IM VORVERKAUF",
+  "link": "/shop?kategorie=vorverkauf",
+  "ctaText": "JETZT VORBESTELLEN",
+  "items": [
+    { "image": "", "label": "Collar" },
+    { "image": "", "label": "Film 2" },
+    { "image": "", "label": "Film 3" }
+  ]
+}

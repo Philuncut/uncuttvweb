@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ':*)",
+      "Bash(curl -s http://localhost:3000/shop)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/__TRACKED_VAR__)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/shop)",
+      "Bash(curl -s \"https://uncuttv.at/wp-json/wc/v3/products?slug=american-guinea-pig-uncle-frank-bundle&per_page=1\" -u \"ck_e1614b350d9c25bdf6b890eb8a9b1845fd0cdef6:cs_316520ad0c994da12eeb617014f7f3f4463c1b94\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/shop/american-guinea-pig-uncle-frank-bundle\")",
+      "Bash(curl -s \"http://localhost:3000/shop/american-guinea-pig-uncle-frank-bundle\")",
+      "Bash(curl -s \"https://uncuttv.at/wp-json/wc/v3/products?per_page=3&offset=5\" -u \"ck_e1614b350d9c25bdf6b890eb8a9b1845fd0cdef6:cs_316520ad0c994da12eeb617014f7f3f4463c1b94\")",
+      "Bash(curl -s \"http://localhost:3000/shop/what-lurks-beneath-amaray\")",
+      "Bash(curl -s -o /dev/null -w \" %{http_code}\" \"http://localhost:3000/shop\")",
+      "Bash(curl -s -o /dev/null -w \" %{http_code}\" \"http://localhost:3000/\")"
+    ],
+    "additionalDirectories": [
+      "d:\\UncutTV\\Website\\uncuttvweb\\src\\app\\shop"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+Verbraucherschlüssel (Consumer Key) 
+ck_e1614b350d9c25bdf6b890eb8a9b1845fd0cdef6
+
+Verbraucher-Geheimnis (Consumer Secret) 
+cs_316520ad0c994da12eeb617014f7f3f4463c1b94
