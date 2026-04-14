@@ -772,7 +772,7 @@ function CheckoutInner() {
               </span>
               <div>
                 <p style={{ color: "#27ae60", fontSize: 13, fontWeight: "bold", margin: 0 }}>
-                  10% Rabattcode WELCOME10 aktiv
+                  10% Rabattcode {couponName || "WELCOME10"} aktiv
                 </p>
                 <p style={{ color: "rgba(39,174,96,0.7)", fontSize: 11, margin: "2px 0 0" }}>
                   Dein Rabatt wird beim Bezahlen abgezogen
@@ -878,25 +878,22 @@ function CheckoutInner() {
             >
               <Checkbox checked={newsletter} onChange={(v) => {
                 setNewsletter(v);
-                // Auto-apply WELCOME10 when checked and email exists
                 if (v && email && !couponId) {
-                  fetch(`/api/validate-coupon?code=WELCOME10`)
+                  // Subscribe + get unique coupon code
+                  fetch("/api/newsletter/subscribe", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email }),
+                  })
                     .then((r) => r.json())
                     .then((data) => {
-                      if (data.valid) {
-                        setCouponId(data.couponId);
-                        setCouponName(data.name || "WELCOME10");
-                        setCouponDiscount(
-                          data.percent_off
-                            ? `−${data.percent_off}%`
-                            : data.amount_off
-                              ? `−€${data.amount_off}`
-                              : "−10%"
-                        );
-                        setAutoCouponApplied(true);
-                      } else {
-                        // Stripe coupon not found — show as display-only
-                        setCouponName("WELCOME10");
+                      if (data.alreadySubscribed) {
+                        setError("Du bist bereits für den Newsletter angemeldet.");
+                        setNewsletter(false);
+                        return;
+                      }
+                      if (data.couponCode) {
+                        setCouponName(data.couponCode);
                         setCouponDiscount("−10%");
                         setAutoCouponApplied(true);
                       }
@@ -905,7 +902,7 @@ function CheckoutInner() {
                 }
               }}>
                 <span style={{ color: "#c0392b", fontWeight: "bold" }}>10% SPAREN</span>
-                {" "}— Newsletter abonnieren &amp; Rabattcode WELCOME10 sofort erhalten
+                {" "}— Newsletter abonnieren &amp; persönlichen Rabattcode sofort erhalten
               </Checkbox>
             </div>
           )}

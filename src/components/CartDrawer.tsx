@@ -63,7 +63,7 @@ export default function CartDrawer() {
   }, [couponInput]);
 
   const handleCheckout = useCallback(async () => {
-    let applyCoupon = false;
+    let couponCode = "";
 
     // Subscribe to newsletter if checked and email provided
     if (newsletter && newsletterEmail.trim() && newsletterEmail.includes("@")) {
@@ -73,15 +73,16 @@ export default function CartDrawer() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: newsletterEmail.trim() }),
         });
-        if (res.ok) applyCoupon = true;
+        const data = await res.json();
+        if (data.couponCode) couponCode = data.couponCode;
       } catch {
         // Non-blocking — don't prevent checkout
       }
     }
 
     closeDrawer();
-    window.location.href = applyCoupon
-      ? "/checkout?coupon=WELCOME10"
+    window.location.href = couponCode
+      ? `/checkout?coupon=${couponCode}`
       : "/checkout";
   }, [closeDrawer, newsletter, newsletterEmail]);
 
