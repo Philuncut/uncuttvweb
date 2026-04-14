@@ -565,33 +565,27 @@ function CheckoutInner() {
 
         const returnUrl = `${window.location.origin}/bestellung/erfolg?method=${paymentMethod}`;
 
-        // First create the payment method, then confirm
-        const { error: pmError, paymentMethod: pm } =
-          await stripe.createPaymentMethod({
-            type: paymentMethod as "klarna" | "eps",
-            billing_details: {
-              name: `${firstName} ${lastName}`,
-              email,
-              address: {
-                line1: street,
-                postal_code: zip,
-                city,
-                country,
-              },
-            },
-          });
-
-        if (pmError) {
-          setError(pmError.message || "Zahlungsmethode konnte nicht erstellt werden.");
-          setProcessing(false);
-          return;
-        }
+        // Confirm payment with redirect for Klarna/EPS
+        const billingDetails = {
+          name: `${firstName} ${lastName}`,
+          email,
+          address: {
+            line1: street,
+            postal_code: zip,
+            city,
+            country,
+          },
+        };
 
         const { error: confirmError } = await stripe.confirmPayment({
           clientSecret,
           confirmParams: {
             return_url: returnUrl,
-            payment_method: pm.id,
+            payment_method_data: {
+              type: paymentMethod as "klarna" | "eps",
+              billing_details: billingDetails,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any,
           },
         });
 

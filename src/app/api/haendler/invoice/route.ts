@@ -373,7 +373,7 @@ export async function GET(request: Request) {
     // Serialize
     const pdfBytes = await pdf.save();
 
-    return new NextResponse(pdfBytes, {
+    return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",

@@ -21,7 +21,10 @@ export async function GET(request: Request) {
     });
 
     if (promotionCodes.data.length > 0) {
-      const promo = promotionCodes.data[0];
+      const promo = promotionCodes.data[0] as unknown as {
+        id: string;
+        coupon: { id: string; name?: string; percent_off?: number; amount_off?: number; currency?: string };
+      };
       const coupon = promo.coupon;
 
       return NextResponse.json({

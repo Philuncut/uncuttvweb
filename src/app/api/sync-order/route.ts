@@ -53,7 +53,16 @@ export async function POST(request: Request) {
       transactionId = session.payment_intent as string;
 
       const customer = session.customer_details;
-      const ship = session.shipping_details;
+      const ship = (session as unknown as Record<string, unknown>).shipping_details as {
+        name?: string;
+        address?: {
+          line1?: string;
+          line2?: string;
+          city?: string;
+          postal_code?: string;
+          country?: string;
+        };
+      } | undefined;
 
       billing = {
         first_name: customer?.name?.split(" ")[0] || "",
