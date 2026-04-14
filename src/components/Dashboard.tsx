@@ -1,10 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import React, { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import CinematicLoader from "@/components/CinematicLoader";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
+
+interface OrderLineItem {
+  name: string;
+  quantity: number;
+  total: string;
+  price: number;
+}
 
 interface Order {
   id: number;
@@ -12,7 +19,7 @@ interface Order {
   date_created: string;
   status: string;
   total: string;
-  line_items: Array<{ name: string; quantity: number }>;
+  line_items: OrderLineItem[];
 }
 
 interface CustomerData {
@@ -131,8 +138,10 @@ export default function Dashboard() {
   const [editCountry, setEditCountry] = useState("");
   const [editPhone, setEditPhone] = useState("");
 
-  // Orders pagination
+  // Orders pagination + detail
   const [ordersShown, setOrdersShown] = useState(ORDERS_PER_PAGE);
+  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState<number | null>(null);
   const { language } = useLanguage();
   const t = createT(language);
 
@@ -264,6 +273,27 @@ export default function Dashboard() {
     [currentPw, newPw, confirmPw]
   );
 
+  const downloadInvoice = useCallback(async (orderId: number, orderNumber: string) => {
+    setInvoiceLoading(orderId);
+    try {
+      const res = await fetch(`/api/orders/invoice?order_id=${orderId}`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Rechnung-RE-${orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent fail
+    } finally {
+      setInvoiceLoading(null);
+    }
+  }, []);
+
   const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
@@ -305,35 +335,85 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleOrders.map((order) => (
-                    <tr
-                      key={order.id}
-                      className="cursor-pointer border-b border-[#1a1a1a] transition-colors hover:bg-[#111]"
-                      onClick={() =>
-                        router.push(`/konto/bestellung/${order.id}`)
-                      }
-                    >
-                      <td className="py-3 pr-4 font-bold text-white/70">
-                        #{order.number}
-                      </td>
-                      <td className="py-3 pr-4 text-white/50">
-                        {new Date(order.date_created).toLocaleDateString(
-                          "de-AT"
+                  {visibleOrders.map((order) => {
+                    const isExpanded = expandedOrder === order.id;
+                    return (
+                      <React.Fragment key={order.id}>
+                        <tr
+                          className="cursor-pointer border-b border-[#1a1a1a] transition-colors hover:bg-[#111]"
+                          onClick={() =>
+                            setExpandedOrder(isExpanded ? null : order.id)
+                          }
+                        >
+                          <td className="py-3 pr-4 font-bold text-white/70">
+                            #{order.number}
+                          </td>
+                          <td className="py-3 pr-4 text-white/50">
+                            {new Date(order.date_created).toLocaleDateString(
+                              "de-AT"
+                            )}
+                          </td>
+                          <td className="py-3 pr-4 text-white/50">
+                            {order.line_items
+                              .map((i) => `${i.quantity}× ${i.name}`)
+                              .join(", ")}
+                          </td>
+                          <td className="py-3 pr-4 font-bold text-[#c0392b]">
+                            €{order.total}
+                          </td>
+                          <td className="py-3">
+                            <StatusBadge status={order.status} />
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={5} className="border-b border-[#1a1a1a] bg-[#111] p-4">
+                              <div className="space-y-2">
+                                {order.line_items.map((item, i) => {
+                                  const itemTotal = parseFloat(item.total || "0");
+                                  const unitPrice = item.quantity > 0 ? itemTotal / item.quantity : 0;
+                                  return (
+                                    <div
+                                      key={i}
+                                      className="flex items-center justify-between text-sm"
+                                    >
+                                      <span className="text-white/70">
+                                        {item.quantity}× {item.name}
+                                      </span>
+                                      <span className="text-white/50">
+                                        €{unitPrice.toFixed(2)} → €{itemTotal.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                                <div className="flex items-center justify-between border-t border-[#222] pt-2">
+                                  <span className="text-sm font-bold text-white/60">
+                                    {t("GESAMT")}
+                                  </span>
+                                  <span className="text-lg font-black text-white">
+                                    €{order.total}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadInvoice(order.id, order.number);
+                                }}
+                                disabled={invoiceLoading === order.id}
+                                className="mt-4 cursor-pointer border border-[#c0392b] bg-transparent px-5 py-2 text-xs font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
+                              >
+                                {invoiceLoading === order.id
+                                  ? "..."
+                                  : "RECHNUNG ALS PDF HERUNTERLADEN"}
+                              </button>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="py-3 pr-4 text-white/50">
-                        {order.line_items
-                          .map((i) => `${i.quantity}× ${i.name}`)
-                          .join(", ")}
-                      </td>
-                      <td className="py-3 pr-4 font-bold text-[#c0392b]">
-                        €{order.total}
-                      </td>
-                      <td className="py-3">
-                        <StatusBadge status={order.status} />
-                      </td>
-                    </tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
