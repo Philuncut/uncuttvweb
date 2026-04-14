@@ -23,31 +23,45 @@ export async function POST(request: Request) {
 
     console.log("[Haendler Login] Attempting login for:", email);
 
-    // Step 1: Authenticate via WordPress REST API with Basic Auth
-    const userAuth =
-      "Basic " + Buffer.from(`${email}:${password}`).toString("base64");
-
-    const wpRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
-      headers: { Authorization: userAuth },
+    // Step 1: Authenticate via JWT
+    const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: email, password }),
     });
 
-    console.log("[Haendler Login] WordPress auth status:", wpRes.status);
+    console.log("[Haendler Login] JWT status:", jwtRes.status);
 
-    if (!wpRes.ok) {
+    if (!jwtRes.ok) {
       return NextResponse.json(
         { error: "Ungültige E-Mail oder Passwort." },
         { status: 401 }
       );
     }
 
-    const wpUser = await wpRes.json();
-    const wpUserId = wpUser.id;
-    const wpName = wpUser.name || "";
+    const jwtData = await jwtRes.json();
+    const token = jwtData.token || "";
+    const jwtEmail = jwtData.user_email || email;
+    const jwtDisplayName = jwtData.user_display_name || "";
+
+    // Step 2: Get user roles via JWT token
+    const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!meRes.ok) {
+      return NextResponse.json(
+        { error: "Benutzerdaten konnten nicht geladen werden." },
+        { status: 500 }
+      );
+    }
+
+    const wpUser = await meRes.json();
     const wpRoles: string[] = wpUser.roles || [];
 
-    console.log("[Haendler Login] User:", email, "Roles:", wpRoles);
+    console.log("[Haendler Login] User:", jwtEmail, "Roles:", wpRoles);
 
-    // Step 2: Check for allowed roles
+    // Step 3: Check for allowed roles
     const hasAllowedRole = wpRoles.some((r) => ALLOWED_ROLES.includes(r));
 
     if (!hasAllowedRole) {
@@ -60,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Step 3: Set cookies
+    // Step 4: Set cookies
     const matchedRole =
       wpRoles.find((r) => ALLOWED_ROLES.includes(r)) || "wholesale";
 
@@ -72,20 +86,20 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 30,
     } as const;
 
-    cookieStore.set("haendler_token", userAuth, opts);
-    cookieStore.set("haendler_id", String(wpUserId), opts);
-    cookieStore.set("haendler_email", email, opts);
+    cookieStore.set("haendler_token", token, opts);
+    cookieStore.set("haendler_id", String(wpUser.id), opts);
+    cookieStore.set("haendler_email", jwtEmail, opts);
     cookieStore.set("haendler_role", matchedRole, opts);
 
-    console.log("[Haendler Login] Session created for:", email, "role:", matchedRole);
+    console.log("[Haendler Login] Session created for:", jwtEmail, "role:", matchedRole);
 
     return NextResponse.json({
-      id: wpUserId,
-      email,
-      name: wpName,
-      firstName: wpName.split(" ")[0] || "",
-      lastName: wpName.split(" ").slice(1).join(" ") || "",
-      company: wpName,
+      id: wpUser.id,
+      email: jwtEmail,
+      name: jwtDisplayName,
+      firstName: jwtDisplayName.split(" ")[0] || "",
+      lastName: jwtDisplayName.split(" ").slice(1).join(" ") || "",
+      company: jwtDisplayName,
       role: matchedRole,
     });
   } catch (error) {

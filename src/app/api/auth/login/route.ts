@@ -25,90 +25,89 @@ export async function POST(request: Request) {
 
     console.log("[Login] Attempting login for:", email);
 
-    // Step 1: Authenticate via WordPress REST API with Basic Auth
-    const userAuth =
-      "Basic " + Buffer.from(`${email}:${password}`).toString("base64");
-
-    const wpRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
-      headers: {
-        Authorization: userAuth,
-      },
+    // Step 1: Authenticate via JWT
+    const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: email, password }),
     });
 
-    console.log("[Login] WordPress auth status:", wpRes.status);
+    const jwtBody = await jwtRes.text();
+    console.log("[Login] JWT response status:", jwtRes.status);
 
-    if (!wpRes.ok) {
-      console.log("[Login] Auth failed for:", email);
+    if (!jwtRes.ok) {
+      console.log("[Login] JWT auth failed:", jwtBody.slice(0, 300));
       return NextResponse.json(
         { error: "Ungültige E-Mail oder Passwort." },
         { status: 401 }
       );
     }
 
-    const wpUser = await wpRes.json();
-    const wpUserId = wpUser.id;
-    const wpName = wpUser.name || "";
-    const wpRoles: string[] = wpUser.roles || [];
+    const jwtData = JSON.parse(jwtBody);
+    const token = jwtData.token || "";
+    const jwtEmail = jwtData.user_email || email;
+    const jwtDisplayName = jwtData.user_display_name || "";
 
-    console.log("[Login] Auth succeeded. User ID:", wpUserId, "Name:", wpName, "Roles:", wpRoles);
+    console.log("[Login] JWT auth succeeded for:", jwtEmail);
 
-    // Step 2: Try to find WooCommerce customer by email
-    const cusRes = await fetch(
-      `${WOO_URL}/wp-json/wc/v3/customers?email=${encodeURIComponent(email)}&role=all&per_page=100`,
-      {
-        headers: {
-          Authorization: WOO_AUTH,
-          "Content-Type": "application/json",
-        },
+    // Step 2: Get user details via JWT token
+    let wpUserId = 0;
+    let wpRoles: string[] = [];
+
+    if (token) {
+      const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (meRes.ok) {
+        const wpUser = await meRes.json();
+        wpUserId = wpUser.id;
+        wpRoles = wpUser.roles || [];
+        console.log("[Login] WP user ID:", wpUserId, "roles:", wpRoles);
       }
-    );
+    }
 
+    // Step 3: Try to find WooCommerce customer
     let customer = null;
+
+    const cusRes = await fetch(
+      `${WOO_URL}/wp-json/wc/v3/customers?email=${encodeURIComponent(jwtEmail)}&role=all&per_page=100`,
+      { headers: { Authorization: WOO_AUTH, "Content-Type": "application/json" } }
+    );
 
     if (cusRes.ok) {
       const customers = await cusRes.json();
       if (Array.isArray(customers) && customers.length > 0) {
         customer =
           customers.find(
-            (c: { email: string }) =>
-              c.email.toLowerCase() === email.toLowerCase()
+            (c: { email: string }) => c.email.toLowerCase() === jwtEmail.toLowerCase()
           ) || customers[0];
-        console.log("[Login] Found WooCommerce customer:", customer.id, customer.email);
       }
     }
 
-    // Step 3: Fallback search
+    // Fallback search
     if (!customer) {
       const searchRes = await fetch(
-        `${WOO_URL}/wp-json/wc/v3/customers?search=${encodeURIComponent(email)}&role=all&per_page=100`,
-        {
-          headers: {
-            Authorization: WOO_AUTH,
-            "Content-Type": "application/json",
-          },
-        }
+        `${WOO_URL}/wp-json/wc/v3/customers?search=${encodeURIComponent(jwtEmail)}&role=all&per_page=100`,
+        { headers: { Authorization: WOO_AUTH, "Content-Type": "application/json" } }
       );
-
       if (searchRes.ok) {
         const searchCustomers = await searchRes.json();
         if (Array.isArray(searchCustomers)) {
           customer =
             searchCustomers.find(
-              (c: { email: string }) =>
-                c.email.toLowerCase() === email.toLowerCase()
+              (c: { email: string }) => c.email.toLowerCase() === jwtEmail.toLowerCase()
             ) || null;
         }
       }
     }
 
     // Step 4: Build session
-    const nameParts = wpName.split(" ");
+    const nameParts = jwtDisplayName.split(" ");
     const sessionUser = {
       id: customer?.id || wpUserId,
-      email: customer?.email || email,
+      email: customer?.email || jwtEmail,
       first_name: customer?.first_name || nameParts[0] || "",
-      last_name:
-        customer?.last_name || nameParts.slice(1).join(" ") || "",
+      last_name: customer?.last_name || nameParts.slice(1).join(" ") || "",
       role: customer?.role || wpRoles[0] || "customer",
     };
 
@@ -123,6 +122,7 @@ export async function POST(request: Request) {
     cookieStore.set("woo_customer_id", String(sessionUser.id), opts);
     cookieStore.set("woo_customer_email", sessionUser.email, opts);
     cookieStore.set("woo_customer_role", sessionUser.role, opts);
+    cookieStore.set("woo_token", token, opts);
 
     console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role);
 
