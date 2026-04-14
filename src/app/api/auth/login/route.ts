@@ -4,22 +4,12 @@ import { cookies } from "next/headers";
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
 const WOO_SECRET = process.env.WOOCOMMERCE_SECRET!;
-const AUTH_HEADER =
+const WOO_AUTH =
   "Basic " + Buffer.from(`${WOO_KEY}:${WOO_SECRET}`).toString("base64");
 
 interface LoginBody {
   email: string;
   password: string;
-}
-
-interface JwtResponse {
-  token?: string;
-  user_email?: string;
-  user_display_name?: string;
-  user_nicename?: string;
-  code?: string;
-  message?: string;
-  data?: { id?: number };
 }
 
 export async function POST(request: Request) {
@@ -35,77 +25,65 @@ export async function POST(request: Request) {
 
     console.log("[Login] Attempting login for:", email);
 
-    // Step 1: Authenticate via JWT
-    const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: email, password }),
+    // Step 1: Authenticate via WordPress REST API with Basic Auth
+    const userAuth =
+      "Basic " + Buffer.from(`${email}:${password}`).toString("base64");
+
+    const wpRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
+      headers: {
+        Authorization: userAuth,
+      },
     });
 
-    const jwtBody = await jwtRes.text();
-    console.log("[Login] JWT response status:", jwtRes.status);
-    console.log("[Login] JWT response body:", jwtBody.slice(0, 500));
+    console.log("[Login] WordPress auth status:", wpRes.status);
 
-    if (!jwtRes.ok) {
-      let jwtError = "";
-      try {
-        const jwtData = JSON.parse(jwtBody);
-        jwtError = jwtData.code || jwtData.message || "";
-      } catch {
-        jwtError = jwtBody;
-      }
-      console.log("[Login] JWT auth failed:", jwtError);
-
+    if (!wpRes.ok) {
+      console.log("[Login] Auth failed for:", email);
       return NextResponse.json(
         { error: "Ungültige E-Mail oder Passwort." },
         { status: 401 }
       );
     }
 
-    // JWT succeeded — user is authenticated
-    const jwtData: JwtResponse = JSON.parse(jwtBody);
-    const token = jwtData.token || "";
-    const jwtEmail = jwtData.user_email || email;
-    const jwtDisplayName = jwtData.user_display_name || "";
-    console.log("[Login] JWT auth succeeded for:", jwtEmail, "display:", jwtDisplayName);
+    const wpUser = await wpRes.json();
+    const wpUserId = wpUser.id;
+    const wpName = wpUser.name || "";
+    const wpRoles: string[] = wpUser.roles || [];
 
-    // Step 2: Try to find WooCommerce customer with role=all
-    const searchUrl = `${WOO_URL}/wp-json/wc/v3/customers?email=${encodeURIComponent(jwtEmail)}&role=all&per_page=100`;
-    console.log("[Login] Searching WooCommerce customers (role=all):", searchUrl);
+    console.log("[Login] Auth succeeded. User ID:", wpUserId, "Name:", wpName, "Roles:", wpRoles);
 
-    const cusRes = await fetch(searchUrl, {
-      headers: {
-        Authorization: AUTH_HEADER,
-        "Content-Type": "application/json",
-      },
-    });
-
-    const cusBody = await cusRes.text();
-    console.log("[Login] WooCommerce customer search status:", cusRes.status);
-    console.log("[Login] WooCommerce customer search body:", cusBody.slice(0, 300));
+    // Step 2: Try to find WooCommerce customer by email
+    const cusRes = await fetch(
+      `${WOO_URL}/wp-json/wc/v3/customers?email=${encodeURIComponent(email)}&role=all&per_page=100`,
+      {
+        headers: {
+          Authorization: WOO_AUTH,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     let customer = null;
 
     if (cusRes.ok) {
-      const customers = JSON.parse(cusBody);
+      const customers = await cusRes.json();
       if (Array.isArray(customers) && customers.length > 0) {
-        customer = customers.find(
-          (c: { email: string }) =>
-            c.email.toLowerCase() === jwtEmail.toLowerCase()
-        ) || customers[0];
-        console.log("[Login] Found WooCommerce customer:", customer.id, customer.email, "role:", customer.role);
+        customer =
+          customers.find(
+            (c: { email: string }) =>
+              c.email.toLowerCase() === email.toLowerCase()
+          ) || customers[0];
+        console.log("[Login] Found WooCommerce customer:", customer.id, customer.email);
       }
     }
 
-    // Step 3: Also try search param as fallback
+    // Step 3: Fallback search
     if (!customer) {
-      console.log("[Login] No customer found with email+role=all, trying search...");
-
       const searchRes = await fetch(
-        `${WOO_URL}/wp-json/wc/v3/customers?search=${encodeURIComponent(jwtEmail)}&role=all&per_page=100`,
+        `${WOO_URL}/wp-json/wc/v3/customers?search=${encodeURIComponent(email)}&role=all&per_page=100`,
         {
           headers: {
-            Authorization: AUTH_HEADER,
+            Authorization: WOO_AUTH,
             "Content-Type": "application/json",
           },
         }
@@ -114,104 +92,51 @@ export async function POST(request: Request) {
       if (searchRes.ok) {
         const searchCustomers = await searchRes.json();
         if (Array.isArray(searchCustomers)) {
-          customer = searchCustomers.find(
-            (c: { email: string }) =>
-              c.email.toLowerCase() === jwtEmail.toLowerCase()
-          ) || null;
-          if (customer) {
-            console.log("[Login] Found customer via search:", customer.id, customer.email);
-          }
+          customer =
+            searchCustomers.find(
+              (c: { email: string }) =>
+                c.email.toLowerCase() === email.toLowerCase()
+            ) || null;
         }
       }
     }
 
-    // Step 4: If customer found in WooCommerce, use that data
-    if (customer) {
-      return setAuthCookiesAndRespond(
-        {
-          id: customer.id,
-          email: customer.email,
-          first_name: customer.first_name || jwtDisplayName.split(" ")[0] || "",
-          last_name: customer.last_name || jwtDisplayName.split(" ").slice(1).join(" ") || "",
-          role: customer.role || "customer",
-        },
-        token
-      );
-    }
+    // Step 4: Build session
+    const nameParts = wpName.split(" ");
+    const sessionUser = {
+      id: customer?.id || wpUserId,
+      email: customer?.email || email,
+      first_name: customer?.first_name || nameParts[0] || "",
+      last_name:
+        customer?.last_name || nameParts.slice(1).join(" ") || "",
+      role: customer?.role || wpRoles[0] || "customer",
+    };
 
-    // Step 5: No WooCommerce customer — this is likely an admin/editor/etc.
-    // Use JWT data directly to create a session
-    console.log("[Login] No WooCommerce customer found. Using JWT user data (likely admin).");
+    const cookieStore = await cookies();
+    const opts = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    } as const;
 
-    // Get WordPress user ID from JWT token
-    let wpUserId = jwtData.data?.id || 0;
-    if (!wpUserId && token) {
-      // Fetch user profile with the JWT token to get the ID
-      try {
-        const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          wpUserId = meData.id;
-          console.log("[Login] Got WP user ID from /users/me:", wpUserId);
-        }
-      } catch {
-        console.log("[Login] Failed to fetch /users/me");
-      }
-    }
+    cookieStore.set("woo_customer_id", String(sessionUser.id), opts);
+    cookieStore.set("woo_customer_email", sessionUser.email, opts);
+    cookieStore.set("woo_customer_role", sessionUser.role, opts);
 
-    const nameParts = jwtDisplayName.split(" ");
-    return setAuthCookiesAndRespond(
-      {
-        id: wpUserId || 0,
-        email: jwtEmail,
-        first_name: nameParts[0] || "",
-        last_name: nameParts.slice(1).join(" ") || "",
-        role: "administrator",
-      },
-      token
-    );
+    console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role);
+
+    return NextResponse.json({
+      id: sessionUser.id,
+      email: sessionUser.email,
+      firstName: sessionUser.first_name,
+      lastName: sessionUser.last_name,
+      role: sessionUser.role,
+    });
   } catch (error) {
     console.error("[Login] Unexpected error:", error);
     const message =
       error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
-}
-
-async function setAuthCookiesAndRespond(
-  user: {
-    id: number;
-    email: string;
-    first_name: string;
-    last_name: string;
-    role: string;
-  },
-  token: string
-) {
-  const cookieStore = await cookies();
-  const opts = {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  } as const;
-
-  cookieStore.set("woo_customer_id", String(user.id), opts);
-  cookieStore.set("woo_customer_email", user.email, opts);
-  cookieStore.set("woo_customer_role", user.role, opts);
-  if (token) {
-    cookieStore.set("woo_token", token, opts);
-  }
-
-  console.log("[Login] Session created for:", user.email, "role:", user.role, "id:", user.id);
-
-  return NextResponse.json({
-    id: user.id,
-    email: user.email,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    role: user.role,
-  });
 }
