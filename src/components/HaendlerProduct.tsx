@@ -13,6 +13,7 @@ interface HaendlerProductData extends WooProduct {
   haendler_preis: string;
   sales_kit_url?: string;
   meta_data?: Array<{ key: string; value: unknown }>;
+  stock_quantity?: number | null;
 }
 
 interface DetailEntry {
@@ -181,7 +182,10 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
               </span>
             ) : (
               <span className="inline-block bg-green-900/40 px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] text-green-400 border border-green-800/50">
-                {t("AUF_LAGER")}
+                {typeof product.stock_quantity === "number" &&
+                product.stock_quantity > 0
+                  ? `${t("AUF_LAGER")} · ${product.stock_quantity} STÜCK`
+                  : t("AUF_LAGER")}
               </span>
             )}
           </div>
