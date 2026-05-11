@@ -36,6 +36,27 @@ export function extractHaendlerPreisFromMeta(
   return "";
 }
 
+/** `haendler_preis` + `sales_kit_url` aus Woo-`meta_data` (wie API-Route). */
+export function enrichHaendlerProductFromWoo<
+  T extends HaendlerProductLike & {
+    meta_data?: Array<{ key: string; value: unknown }>;
+  }
+>(p: T): T & { haendler_preis: string; sales_kit_url: string } {
+  const haendler_preis = extractHaendlerPreisFromMeta(p.meta_data);
+  const meta = p.meta_data ?? [];
+  const salesKitMeta = meta.find(
+    (m) => m.key === "sales_kit_url" || m.key === "_sales_kit_url"
+  );
+  const sk = salesKitMeta?.value;
+  const sales_kit_url =
+    typeof sk === "string"
+      ? sk.trim()
+      : sk != null
+        ? String(sk).trim()
+        : "";
+  return { ...p, haendler_preis, sales_kit_url };
+}
+
 export function hasPositiveHaendlerPreis(haendlerPreis: string): boolean {
   const n = parseFloat(String(haendlerPreis).replace(",", ".").trim());
   return !Number.isNaN(n) && n > 0;

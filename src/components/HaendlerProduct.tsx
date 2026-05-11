@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateDetailLabel } from "@/lib/translations";
 import ProductGallery from "@/components/ProductGallery";
-import CinematicLoader from "@/components/CinematicLoader";
 import type { WooProduct } from "@/lib/types";
 
-interface HaendlerProductData extends WooProduct {
+export interface HaendlerProductData extends WooProduct {
   haendler_preis: string;
   sales_kit_url?: string;
   meta_data?: Array<{ key: string; value: unknown }>;
@@ -53,9 +52,14 @@ function stripInfoGrids(html: string): string {
   return html.replace(/<section class="info-grid">[\s\S]*?<\/section>/g, "");
 }
 
-export default function HaendlerProduct({ slug }: { slug: string }) {
+export default function HaendlerProduct({
+  slug,
+  initialProduct,
+}: {
+  slug: string;
+  initialProduct: HaendlerProductData;
+}) {
   const pathname = usePathname();
-  const router = useRouter();
   const [dealerCookie, setDealerCookie] = useState(false);
 
   useEffect(() => {
@@ -66,43 +70,24 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
     (pathname ?? "").startsWith("/haendler") || dealerCookie;
 
   const { addToCart, openDrawer } = useCart();
-  const [product, setProduct] = useState<HaendlerProductData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const product = initialProduct;
   const [added, setAdded] = useState(false);
   const { language } = useLanguage();
   const t = createT(language);
 
-  useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/haendler/products");
-      if (!res.ok) {
-        router.push("/haendler");
-        return;
-      }
-      const products: HaendlerProductData[] = await res.json();
-      const found = products.find((p) => p.slug === slug);
-      if (found) {
-        setProduct(found);
-      }
-      setLoading(false);
-    }
-    load();
-  }, [slug, router]);
-
   const details = useMemo(
-    () => (product?.description ? parseDetails(product.description) : []),
-    [product?.description]
+    () => (product.description ? parseDetails(product.description) : []),
+    [product.description]
   );
 
   const descriptionHtml = useMemo(
-    () => (product?.description ? stripInfoGrids(product.description) : ""),
-    [product?.description]
+    () => (product.description ? stripInfoGrids(product.description) : ""),
+    [product.description]
   );
 
   const hasDescription = descriptionHtml.replace(/<[^>]*>/g, "").trim().length > 0;
 
   const salesKitHref = useMemo(() => {
-    if (!product) return "";
     const fromMeta = product.meta_data?.find(
       (m) => m.key === "sales_kit_url" || m.key === "_sales_kit_url"
     )?.value;
@@ -118,7 +103,6 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
   }, [product]);
 
   const handleAddToCart = useCallback(() => {
-    if (!product) return;
     const cartProduct = {
       ...product,
       price: product.haendler_preis || product.price,
@@ -129,21 +113,11 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
     setTimeout(() => setAdded(false), 1500);
   }, [product, addToCart, openDrawer]);
 
-  if (loading) return <CinematicLoader show />;
-
-  if (!product) {
-    return (
-      <div className="py-20 text-center">
-        <p className="text-white/50">Produkt nicht gefunden.</p>
-      </div>
-    );
-  }
-
   const isOutOfStock = product.stock_status === "outofstock";
   const hasHaendlerPreis = !!product.haendler_preis;
 
   return (
-    <>
+    <div key={slug}>
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Gallery */}
         <ProductGallery images={product.images} />
@@ -289,6 +263,6 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
           />
         </section>
       )}
-    </>
+    </div>
   );
 }

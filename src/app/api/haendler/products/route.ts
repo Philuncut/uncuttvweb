@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { isProductVisibleForHaendler } from "@/lib/haendler-filter";
+import {
+  enrichHaendlerProductFromWoo,
+  isProductVisibleForHaendler,
+} from "@/lib/haendler-filter";
 import { wooFetchAll } from "@/lib/woocommerce";
 
 interface WooProductRaw {
@@ -25,33 +28,7 @@ export async function GET() {
       per_page: "100",
     });
 
-    // Extract haendler_preis from meta_data
-    const enriched = products.map((p) => {
-      const meta = p.meta_data || [];
-      const haendlerMeta = meta.find(
-        (m) =>
-          m.key === "haendler_preis" ||
-          m.key === "_haendler_preis" ||
-          m.key === "wholesale_price" ||
-          m.key === "_wholesale_price"
-      );
-      const salesKitMeta = meta.find(
-        (m) => m.key === "sales_kit_url" || m.key === "_sales_kit_url"
-      );
-      const sk = salesKitMeta?.value;
-      const sales_kit_url =
-        typeof sk === "string"
-          ? sk.trim()
-          : sk != null
-            ? String(sk).trim()
-            : "";
-
-      return {
-        ...p,
-        haendler_preis: haendlerMeta?.value || "",
-        sales_kit_url,
-      };
-    });
+    const enriched = products.map((p) => enrichHaendlerProductFromWoo(p));
 
     const filtered = enriched.filter((p) =>
       isProductVisibleForHaendler(p, String(p.haendler_preis ?? ""))

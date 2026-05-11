@@ -13,19 +13,36 @@ const authHeaders = new Headers({
   "Content-Type": "application/json",
 });
 
+/** Default: 60s Data Cache. `cache: "no-store"` überschreibt (z. B. Debug-Routen). */
+export type WooFetchOptions = {
+  revalidate?: number;
+  cache?: "no-store";
+};
+
+const DEFAULT_REVALIDATE = 60;
+
+function buildFetchInit(options?: WooFetchOptions): RequestInit {
+  if (options?.cache === "no-store") {
+    return { headers: authHeaders, cache: "no-store" };
+  }
+  const revalidate = options?.revalidate ?? DEFAULT_REVALIDATE;
+  return {
+    headers: authHeaders,
+    next: { revalidate },
+  };
+}
+
 export async function wooFetch<T = unknown>(
   endpoint: string,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  options?: WooFetchOptions
 ): Promise<T> {
   const url = new URL(`${baseUrl}${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
 
-  const res = await fetch(url.toString(), {
-    headers: authHeaders,
-    cache: "no-store",
-  });
+  const res = await fetch(url.toString(), buildFetchInit(options));
 
   if (!res.ok) {
     throw new Error(
@@ -42,7 +59,8 @@ export async function wooFetch<T = unknown>(
  */
 export async function wooFetchAll<T>(
   endpoint: string,
-  params: Record<string, string> = {}
+  params: Record<string, string> = {},
+  options?: WooFetchOptions
 ): Promise<T[]> {
   const firstUrl = new URL(`${baseUrl}${endpoint}`);
   for (const [key, value] of Object.entries(params)) {
@@ -53,10 +71,9 @@ export async function wooFetchAll<T>(
   }
   firstUrl.searchParams.set("page", "1");
 
-  const firstRes = await fetch(firstUrl.toString(), {
-    headers: authHeaders,
-    cache: "no-store",
-  });
+  const init = buildFetchInit(options);
+
+  const firstRes = await fetch(firstUrl.toString(), init);
 
   if (!firstRes.ok) {
     throw new Error(
@@ -80,11 +97,10 @@ export async function wooFetchAll<T>(
     const url = new URL(firstUrl.toString());
     url.searchParams.set("page", String(page));
     pagePromises.push(
-      fetch(url.toString(), { headers: authHeaders, cache: "no-store" })
-        .then((res) => {
-          if (!res.ok) return [] as T[];
-          return res.json() as Promise<T[]>;
-        })
+      fetch(url.toString(), init).then((res) => {
+        if (!res.ok) return [] as T[];
+        return res.json() as Promise<T[]>;
+      })
     );
   }
 

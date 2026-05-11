@@ -3,7 +3,9 @@ import { wooFetch } from "@/lib/woocommerce";
 
 export async function GET() {
   try {
-    const products = await wooFetch("/products", { per_page: "5" });
+    const products = await wooFetch("/products", { per_page: "5" }, {
+      cache: "no-store",
+    });
     return NextResponse.json(products);
   } catch (error) {
     const message =
