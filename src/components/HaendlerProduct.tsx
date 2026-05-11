@@ -227,7 +227,7 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
                 onClick={() => window.open(salesKitHref, "_blank")}
                 className="mt-4 w-full cursor-pointer border border-[#c0392b] bg-transparent py-3 text-xs font-bold tracking-[0.15em] text-[#c0392b] transition-colors hover:bg-[#c0392b]/10 hover:text-white sm:py-4 sm:text-sm sm:tracking-[0.2em]"
               >
-                📦 VERKAUFSMATERIAL HERUNTERLADEN
+                VERKAUFSMATERIAL HERUNTERLADEN
               </button>
             ) : null}
           </div>
