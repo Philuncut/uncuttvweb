@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateDetailLabel } from "@/lib/translations";
@@ -11,6 +11,8 @@ import type { WooProduct } from "@/lib/types";
 
 interface HaendlerProductData extends WooProduct {
   haendler_preis: string;
+  sales_kit_url?: string;
+  meta_data?: Array<{ key: string; value: unknown }>;
 }
 
 interface DetailEntry {
@@ -51,7 +53,17 @@ function stripInfoGrids(html: string): string {
 }
 
 export default function HaendlerProduct({ slug }: { slug: string }) {
+  const pathname = usePathname();
   const router = useRouter();
+  const [dealerCookie, setDealerCookie] = useState(false);
+
+  useEffect(() => {
+    setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
+  }, [pathname]);
+
+  const isB2B =
+    (pathname ?? "").startsWith("/haendler") || dealerCookie;
+
   const { addToCart, openDrawer } = useCart();
   const [product, setProduct] = useState<HaendlerProductData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,6 +99,22 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
   );
 
   const hasDescription = descriptionHtml.replace(/<[^>]*>/g, "").trim().length > 0;
+
+  const salesKitHref = useMemo(() => {
+    if (!product) return "";
+    const fromMeta = product.meta_data?.find(
+      (m) => m.key === "sales_kit_url" || m.key === "_sales_kit_url"
+    )?.value;
+    if (fromMeta != null) {
+      const s = String(fromMeta).trim();
+      if (s) return s;
+    }
+    if (typeof product.sales_kit_url === "string") {
+      const s = product.sales_kit_url.trim();
+      if (s) return s;
+    }
+    return "";
+  }, [product]);
 
   const handleAddToCart = useCallback(() => {
     if (!product) return;
@@ -192,6 +220,16 @@ export default function HaendlerProduct({ slug }: { slug: string }) {
                 {added ? t("HINZUGEFUEGT") : t("IN_DEN_WARENKORB")}
               </button>
             )}
+
+            {isB2B && salesKitHref ? (
+              <button
+                type="button"
+                onClick={() => window.open(salesKitHref, "_blank")}
+                className="mt-4 w-full cursor-pointer border border-[#c0392b] bg-transparent py-3 text-xs font-bold tracking-[0.15em] text-[#c0392b] transition-colors hover:bg-[#c0392b]/10 hover:text-white sm:py-4 sm:text-sm sm:tracking-[0.2em]"
+              >
+                📦 VERKAUFSMATERIAL HERUNTERLADEN
+              </button>
+            ) : null}
           </div>
 
           {/* Film details */}

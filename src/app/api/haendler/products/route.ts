@@ -33,9 +33,21 @@ export async function GET() {
           m.key === "wholesale_price" ||
           m.key === "_wholesale_price"
       );
+      const salesKitMeta = meta.find(
+        (m) => m.key === "sales_kit_url" || m.key === "_sales_kit_url"
+      );
+      const sk = salesKitMeta?.value;
+      const sales_kit_url =
+        typeof sk === "string"
+          ? sk.trim()
+          : sk != null
+            ? String(sk).trim()
+            : "";
+
       return {
         ...p,
         haendler_preis: haendlerMeta?.value || "",
+        sales_kit_url,
       };
     });
 
