@@ -11,5 +11,11 @@ export async function POST() {
   cookieStore.delete({ name: "haendler_role", ...opts });
   cookieStore.delete({ name: "haendler_name", ...opts });
 
+  cookieStore.delete({ name: "woo_customer_id", ...opts });
+  cookieStore.delete({ name: "woo_customer_email", ...opts });
+  cookieStore.delete({ name: "woo_customer_role", ...opts });
+  cookieStore.delete({ name: "woo_token", ...opts });
+  cookieStore.delete({ name: "woo_customer_name", ...opts });
+
   return NextResponse.json({ success: true });
 }

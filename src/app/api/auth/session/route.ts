@@ -35,7 +35,7 @@ export async function GET() {
       isLoggedIn: true,
       type: "haendler",
       name,
-      dashboardHref: "/haendler/dashboard",
+      dashboardHref: "/konto",
     } satisfies AuthSessionPayload);
   }
 

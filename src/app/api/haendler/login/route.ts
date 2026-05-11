@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { wooFetch } from "@/lib/woocommerce";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 
@@ -9,6 +10,49 @@ interface LoginBody {
 }
 
 const ALLOWED_ROLES = ["wholesale", "administrator", "shop_manager"];
+
+interface WooCustomer {
+  id: number;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+}
+
+/** Gleiche Strategie wie `/api/auth/login`: `?email=…&role=all`, sonst `?search=…`. */
+async function findWooCustomerByEmail(
+  email: string
+): Promise<WooCustomer | null> {
+  const normalized = email.toLowerCase().trim();
+  if (!normalized) return null;
+  try {
+    const byEmail = await wooFetch<WooCustomer[]>(
+      "/customers",
+      { email: normalized, role: "all", per_page: "100" },
+      { cache: "no-store" }
+    );
+    if (Array.isArray(byEmail) && byEmail.length > 0) {
+      const c =
+        byEmail.find((x) => x.email?.toLowerCase() === normalized) ||
+        byEmail[0];
+      if (c?.id) return c;
+    }
+    const bySearch = await wooFetch<WooCustomer[]>(
+      "/customers",
+      { search: normalized, role: "all", per_page: "100" },
+      { cache: "no-store" }
+    );
+    if (Array.isArray(bySearch) && bySearch.length > 0) {
+      const c = bySearch.find(
+        (x) => x.email?.toLowerCase() === normalized
+      );
+      return c?.id ? c : null;
+    }
+  } catch {
+    // Woo nicht erreichbar oder kein Treffer — ohne Kunden-Cookies fortfahren
+  }
+  return null;
+}
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0]?.trim() ?? email;
@@ -189,15 +233,38 @@ export async function POST(request: Request) {
     cookieStore.set("haendler_role", matchedRole, opts);
     cookieStore.set("haendler_name", haendlerDisplayName, opts);
 
+    const jwtNameParts = jwtDisplayName.split(/\s+/).filter(Boolean);
+    const customer = await findWooCustomerByEmail(jwtEmail);
+    if (customer?.id) {
+      const sessionFirst =
+        (customer.first_name && customer.first_name.trim()) ||
+        jwtNameParts[0] ||
+        haendlerDisplayName;
+
+      cookieStore.set("woo_customer_id", String(customer.id), opts);
+      cookieStore.set("woo_customer_email", customer.email || jwtEmail, opts);
+      cookieStore.set(
+        "woo_customer_role",
+        customer.role || "customer",
+        opts
+      );
+      cookieStore.set("woo_token", token, opts);
+      cookieStore.set("woo_customer_name", sessionFirst, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
+
     console.log("[Haendler Login] Session created for:", jwtEmail, "role:", matchedRole);
 
-    const nameParts = jwtDisplayName.split(" ").filter(Boolean);
     return NextResponse.json({
       id: wpUser.id,
       email: jwtEmail,
       name: jwtDisplayName,
       firstName: haendlerDisplayName,
-      lastName: nameParts.slice(1).join(" ") || "",
+      lastName: jwtNameParts.slice(1).join(" ") || "",
       company: jwtDisplayName,
       role: matchedRole,
     });
