@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
@@ -14,6 +15,16 @@ interface CouponState {
 }
 
 export default function CartDrawer() {
+  const pathname = usePathname();
+  const [dealerCookie, setDealerCookie] = useState(false);
+
+  useEffect(() => {
+    setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
+  }, [pathname]);
+
+  const isB2B =
+    (pathname ?? "").startsWith("/haendler") || dealerCookie;
+
   const {
     items,
     removeFromCart,
@@ -31,6 +42,15 @@ export default function CartDrawer() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [newsletter, setNewsletter] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState("");
+
+  useEffect(() => {
+    if (!isB2B) return;
+    setCoupon(null);
+    setCouponInput("");
+    setCouponError("");
+    setNewsletter(false);
+    setNewsletterEmail("");
+  }, [isB2B]);
 
   const validateCoupon = useCallback(async () => {
     if (!couponInput.trim()) return;
@@ -65,8 +85,13 @@ export default function CartDrawer() {
   const handleCheckout = useCallback(async () => {
     let couponCode = "";
 
-    // Subscribe to newsletter if checked and email provided
-    if (newsletter && newsletterEmail.trim() && newsletterEmail.includes("@")) {
+    // Subscribe to newsletter if checked and email provided (B2C only)
+    if (
+      !isB2B &&
+      newsletter &&
+      newsletterEmail.trim() &&
+      newsletterEmail.includes("@")
+    ) {
       try {
         const res = await fetch("/api/newsletter/subscribe", {
           method: "POST",
@@ -84,7 +109,7 @@ export default function CartDrawer() {
     window.location.href = couponCode
       ? `/checkout?coupon=${couponCode}`
       : "/checkout";
-  }, [closeDrawer, newsletter, newsletterEmail]);
+  }, [closeDrawer, isB2B, newsletter, newsletterEmail]);
 
   const discountDisplay = coupon
     ? coupon.percent_off
@@ -235,52 +260,53 @@ export default function CartDrawer() {
         {/* Footer */}
         {items.length > 0 && (
           <div className="border-t border-[#222] px-6 py-5">
-            {/* Coupon */}
-            <div className="mb-4">
-              {coupon ? (
-                <div className="flex items-center justify-between bg-[#0a0a0a] px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold tracking-wider text-green-400">
-                      {coupon.name}
-                    </span>
-                    <span className="text-xs text-green-400/70">
-                      {discountDisplay}
-                    </span>
+            {!isB2B && (
+              <div className="mb-4 coupon-input">
+                {coupon ? (
+                  <div className="flex items-center justify-between bg-[#0a0a0a] px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold tracking-wider text-green-400">
+                        {coupon.name}
+                      </span>
+                      <span className="text-xs text-green-400/70">
+                        {discountDisplay}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCoupon(null)}
+                      className="cursor-pointer bg-transparent text-xs text-white/30 hover:text-white/60"
+                    >
+                      ×
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setCoupon(null)}
-                    className="cursor-pointer bg-transparent text-xs text-white/30 hover:text-white/60"
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={couponInput}
-                    onChange={(e) => setCouponInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && validateCoupon()}
-                    placeholder={t("GUTSCHEIN_PLACEHOLDER")}
-                    className="flex-1 border border-[#333] bg-transparent px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
-                  />
-                  <button
-                    type="button"
-                    onClick={validateCoupon}
-                    disabled={couponLoading}
-                    className="shrink-0 cursor-pointer border border-[#c0392b] bg-transparent px-4 py-2 text-[10px] font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
-                  >
-                    {couponLoading ? "..." : t("EINLOESEN")}
-                  </button>
-                </div>
-              )}
-              {couponError && (
-                <p className="mt-1 text-[10px] text-[#c0392b]">
-                  {couponError}
-                </p>
-              )}
-            </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && validateCoupon()}
+                      placeholder={t("GUTSCHEIN_PLACEHOLDER")}
+                      className="flex-1 border border-[#333] bg-transparent px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
+                    />
+                    <button
+                      type="button"
+                      onClick={validateCoupon}
+                      disabled={couponLoading}
+                      className="shrink-0 cursor-pointer border border-[#c0392b] bg-transparent px-4 py-2 text-[10px] font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
+                    >
+                      {couponLoading ? "..." : t("EINLOESEN")}
+                    </button>
+                  </div>
+                )}
+                {couponError && (
+                  <p className="mt-1 text-[10px] text-[#c0392b]">
+                    {couponError}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Total */}
             <div className="flex items-center justify-between">
@@ -292,46 +318,47 @@ export default function CartDrawer() {
               </span>
             </div>
 
-            {/* Newsletter opt-in */}
-            <div className="mt-4 border border-[#222] bg-[#0a0a0a] p-3">
-              <label className="flex cursor-pointer items-start gap-3">
-                <span
-                  onClick={() => setNewsletter((v) => !v)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 18,
-                    height: 18,
-                    marginTop: 1,
-                    flexShrink: 0,
-                    border: newsletter ? "1px solid #c0392b" : "1px solid #555",
-                    background: newsletter ? "#c0392b" : "transparent",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {newsletter && (
-                    <svg style={{ width: 12, height: 12, color: "white" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="square" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </span>
-                <span className="text-xs leading-relaxed text-white/70">
-                  <span className="font-bold text-[#c0392b]">10% sparen</span>
-                  {" "}— Newsletter abonnieren &amp; Rabattcode erhalten
-                </span>
-              </label>
-              {newsletter && (
-                <input
-                  type="email"
-                  value={newsletterEmail}
-                  onChange={(e) => setNewsletterEmail(e.target.value)}
-                  placeholder="deine@email.com"
-                  className="mt-3 w-full border border-[#333] bg-[#111] px-3 py-2.5 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
-                />
-              )}
-            </div>
+            {!isB2B && (
+              <div className="mt-4 border border-[#222] bg-[#0a0a0a] p-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <span
+                    onClick={() => setNewsletter((v) => !v)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 18,
+                      height: 18,
+                      marginTop: 1,
+                      flexShrink: 0,
+                      border: newsletter ? "1px solid #c0392b" : "1px solid #555",
+                      background: newsletter ? "#c0392b" : "transparent",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {newsletter && (
+                      <svg style={{ width: 12, height: 12, color: "white" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="square" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="text-xs leading-relaxed text-white/70">
+                    <span className="font-bold text-[#c0392b]">10% sparen</span>
+                    {" "}— Newsletter abonnieren &amp; Rabattcode erhalten
+                  </span>
+                </label>
+                {newsletter && (
+                  <input
+                    type="email"
+                    value={newsletterEmail}
+                    onChange={(e) => setNewsletterEmail(e.target.value)}
+                    placeholder="deine@email.com"
+                    className="mt-3 w-full border border-[#333] bg-[#111] px-3 py-2.5 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
+                  />
+                )}
+              </div>
+            )}
 
             {/* Checkout */}
             <button
