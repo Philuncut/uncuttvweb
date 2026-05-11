@@ -523,6 +523,7 @@ export default function HaendlerDashboard() {
 
   const handleLogout = useCallback(async () => {
     await fetch("/api/haendler/logout", { method: "POST" });
+    window.dispatchEvent(new Event("uncuttv:session-changed"));
     router.push("/haendler");
   }, [router]);
 

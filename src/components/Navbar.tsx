@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { AuthSessionPayload } from "@/app/api/auth/session/route";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
@@ -295,15 +297,47 @@ function MobileOverlayMenu({
 }
 
 export default function Navbar() {
+  const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [logoHovered, setLogoHovered] = useState(false);
   const [cartHovered, setCartHovered] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { totalItems, openDrawer } = useCart();
-  const { language, toggleLanguage, setLanguage } = useLanguage();
+  const { language, toggleLanguage } = useLanguage();
   const t = createT(language);
 
-  const [userName, setUserName] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [session, setSession] = useState<AuthSessionPayload | null>(null);
+
+  const loadSession = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/session", { cache: "no-store" });
+      const data = (await res.json()) as AuthSessionPayload;
+      setSession(data);
+    } catch {
+      setSession({
+        isLoggedIn: false,
+        type: null,
+        name: null,
+        dashboardHref: null,
+      });
+    } finally {
+      setSessionReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSession();
+  }, [pathname, loadSession]);
+
+  useEffect(() => {
+    const onSessionChanged = () => {
+      void loadSession();
+    };
+    window.addEventListener("uncuttv:session-changed", onSessionChanged);
+    return () =>
+      window.removeEventListener("uncuttv:session-changed", onSessionChanged);
+  }, [loadSession]);
 
   useEffect(() => {
     function onScroll() {
@@ -312,14 +346,6 @@ export default function Navbar() {
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // Read non-httpOnly cookie for logged-in user display
-  useEffect(() => {
-    const match = document.cookie.match(/(?:^| )woo_customer_name=([^;]+)/);
-    if (match) {
-      setUserName(decodeURIComponent(match[1]));
-    }
   }, []);
 
   // ESC key closes mobile menu + body scroll lock
@@ -454,17 +480,26 @@ export default function Navbar() {
           <div className="hidden items-center md:flex">
             <NavLink href="/shop">{t("SHOP")}</NavLink>
             <Divider />
-            {userName ? (
+            {!sessionReady ? (
+              <span
+                className="inline-block h-5 w-28 rounded bg-white/10 align-middle animate-pulse"
+                aria-hidden
+              />
+            ) : session?.isLoggedIn &&
+              session.name &&
+              session.dashboardHref ? (
               <>
-                <NavLink href="/konto">
+                <NavLink href={session.dashboardHref}>
                   <span style={{ color: "#c0392b" }}>
-                    {userName.toUpperCase()}
+                    {session.name.toUpperCase()}
                   </span>
                 </NavLink>
                 <span
                   onClick={async () => {
                     await fetch("/api/auth/logout", { method: "POST" });
+                    await fetch("/api/haendler/logout", { method: "POST" });
                     document.cookie = "woo_customer_name=; path=/; max-age=0";
+                    window.dispatchEvent(new Event("uncuttv:session-changed"));
                     window.location.href = "/shop";
                   }}
                   style={{
@@ -856,22 +891,40 @@ export default function Navbar() {
           </a>
 
           {/* MEIN KONTO / ANMELDEN */}
-          <a
-            href={userName ? "/konto" : "/konto/login"}
-            className="menu-link menu-main-link"
-            style={{
-              color: userName ? "#c0392b" : "white",
-              fontSize: "2.2rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              padding: "12px 32px",
-              animationDelay: "0.35s",
-            }}
-          >
-            {userName ? userName.toUpperCase() : t("ANMELDEN")}
-          </a>
+          {!sessionReady ? (
+            <span
+              className="menu-link menu-main-link inline-block h-9 w-48 rounded bg-white/10 animate-pulse"
+              style={{
+                margin: "12px 32px",
+                animationDelay: "0.35s",
+              }}
+              aria-hidden
+            />
+          ) : (
+            <a
+              href={
+                session?.isLoggedIn && session.dashboardHref
+                  ? session.dashboardHref
+                  : "/konto/login"
+              }
+              className="menu-link menu-main-link"
+              style={{
+                color:
+                  session?.isLoggedIn && session.name ? "#c0392b" : "white",
+                fontSize: "2.2rem",
+                fontWeight: "bold",
+                textDecoration: "none",
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+                padding: "12px 32px",
+                animationDelay: "0.35s",
+              }}
+            >
+              {session?.isLoggedIn && session.name
+                ? session.name.toUpperCase()
+                : t("ANMELDEN")}
+            </a>
+          )}
 
           {/* KONTAKT */}
           <a

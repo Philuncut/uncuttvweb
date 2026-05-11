@@ -123,6 +123,7 @@ export default function AuthForms() {
           setLoading(false);
           return;
         }
+        window.dispatchEvent(new Event("uncuttv:session-changed"));
         router.push("/konto/dashboard");
       } catch {
         setError("Verbindungsfehler.");
@@ -164,6 +165,7 @@ export default function AuthForms() {
           setLoading(false);
           return;
         }
+        window.dispatchEvent(new Event("uncuttv:session-changed"));
         router.push("/konto/dashboard");
       } catch {
         setError("Verbindungsfehler.");

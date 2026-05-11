@@ -63,6 +63,7 @@ export default function HaendlerAuth() {
           setLoading(false);
           return;
         }
+        window.dispatchEvent(new Event("uncuttv:session-changed"));
         router.push("/haendler/dashboard");
       } catch {
         setError("Verbindungsfehler.");

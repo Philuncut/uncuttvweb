@@ -296,6 +296,7 @@ export default function Dashboard() {
 
   const handleLogout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    window.dispatchEvent(new Event("uncuttv:session-changed"));
     router.push("/");
   }, [router]);
 
