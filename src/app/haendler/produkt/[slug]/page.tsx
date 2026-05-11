@@ -1,11 +1,18 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import Navbar from "@/components/Navbar";
+import { notFound, redirect } from "next/navigation";
 import Footer from "@/components/Footer";
 import HaendlerProduct from "@/components/HaendlerProduct";
+import Navbar from "@/components/Navbar";
+import { isProductVisibleForHaendler } from "@/lib/haendler-filter";
+import type { WooProduct } from "@/lib/types";
+import { wooFetch } from "@/lib/woocommerce";
 
 export const metadata = {
   title: "Produkt — Händlerportal UNCUTTV",
+};
+
+type WooProductWithMeta = WooProduct & {
+  meta_data?: Array<{ key: string; value: unknown }>;
 };
 
 export default async function HaendlerProductPage({
@@ -21,6 +28,14 @@ export default async function HaendlerProductPage({
   }
 
   const { slug } = await params;
+
+  const products = await wooFetch<WooProductWithMeta[]>("/products", {
+    slug,
+  });
+  const product = products[0];
+  if (!product || !isProductVisibleForHaendler(product)) {
+    notFound();
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">

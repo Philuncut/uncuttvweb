@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { isProductVisibleForHaendler } from "@/lib/haendler-filter";
 import { wooFetchAll } from "@/lib/woocommerce";
 
 interface WooProductRaw {
@@ -51,7 +52,11 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json(enriched);
+    const filtered = enriched.filter((p) =>
+      isProductVisibleForHaendler(p, String(p.haendler_preis ?? ""))
+    );
+
+    return NextResponse.json(filtered);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Fehler beim Laden.";
