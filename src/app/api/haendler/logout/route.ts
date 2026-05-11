@@ -9,6 +9,7 @@ export async function POST() {
   cookieStore.delete({ name: "haendler_id", ...opts });
   cookieStore.delete({ name: "haendler_email", ...opts });
   cookieStore.delete({ name: "haendler_role", ...opts });
+  cookieStore.delete({ name: "haendler_name", ...opts });
 
   return NextResponse.json({ success: true });
 }

@@ -29,7 +29,8 @@ export async function GET() {
   const haendlerEmail = cookieStore.get("haendler_email")?.value;
 
   if (haendlerToken && haendlerEmail) {
-    const name = displayNameFromEmail(haendlerEmail);
+    const nameCookie = cookieStore.get("haendler_name")?.value?.trim();
+    const name = nameCookie || displayNameFromEmail(haendlerEmail);
     return NextResponse.json({
       isLoggedIn: true,
       type: "haendler",

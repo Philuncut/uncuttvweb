@@ -10,6 +10,53 @@ interface LoginBody {
 
 const ALLOWED_ROLES = ["wholesale", "administrator", "shop_manager"];
 
+function displayNameFromEmail(email: string): string {
+  const local = email.split("@")[0]?.trim() ?? email;
+  return local.replace(/[._]+/g, " ").trim() || email;
+}
+
+function pickFirstNonEmpty(
+  ...vals: (string | undefined | null)[]
+): string | null {
+  for (const v of vals) {
+    const t = String(v ?? "").trim();
+    if (t) return t;
+  }
+  return null;
+}
+
+function metaFirstName(meta: unknown): string | null {
+  if (meta == null || typeof meta !== "object") return null;
+  if (Array.isArray(meta)) {
+    const entry = meta.find(
+      (m: { key?: string; value?: unknown }) => m?.key === "first_name"
+    );
+    const v = entry?.value;
+    if (typeof v === "string" && v.trim()) return v.trim();
+    return null;
+  }
+  const v = (meta as Record<string, unknown>).first_name;
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return null;
+}
+
+/** WP `/wp/v2/users/me?context=edit` — first_name, meta.first_name, name, sonst E-Mail-Prefix. */
+function resolveHaendlerDisplayName(
+  wpUser: {
+    first_name?: string;
+    name?: string;
+    meta?: unknown;
+  },
+  email: string
+): string {
+  return (
+    pickFirstNonEmpty(wpUser.first_name) ??
+    metaFirstName(wpUser.meta) ??
+    pickFirstNonEmpty(wpUser.name) ??
+    displayNameFromEmail(email)
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const { email, password } = (await request.json()) as LoginBody;
@@ -134,19 +181,23 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 30,
     } as const;
 
+    const haendlerDisplayName = resolveHaendlerDisplayName(wpUser, jwtEmail);
+
     cookieStore.set("haendler_token", token, opts);
     cookieStore.set("haendler_id", String(wpUser.id), opts);
     cookieStore.set("haendler_email", jwtEmail, opts);
     cookieStore.set("haendler_role", matchedRole, opts);
+    cookieStore.set("haendler_name", haendlerDisplayName, opts);
 
     console.log("[Haendler Login] Session created for:", jwtEmail, "role:", matchedRole);
 
+    const nameParts = jwtDisplayName.split(" ").filter(Boolean);
     return NextResponse.json({
       id: wpUser.id,
       email: jwtEmail,
       name: jwtDisplayName,
-      firstName: jwtDisplayName.split(" ")[0] || "",
-      lastName: jwtDisplayName.split(" ").slice(1).join(" ") || "",
+      firstName: haendlerDisplayName,
+      lastName: nameParts.slice(1).join(" ") || "",
       company: jwtDisplayName,
       role: matchedRole,
     });
