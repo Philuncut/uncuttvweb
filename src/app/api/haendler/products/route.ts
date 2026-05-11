@@ -5,6 +5,7 @@ import { wooFetchAll } from "@/lib/woocommerce";
 
 interface WooProductRaw {
   meta_data?: Array<{ key: string; value: string }>;
+  stock_status?: string;
   [key: string]: unknown;
 }
 

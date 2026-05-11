@@ -15,6 +15,8 @@ export const HAENDLER_ALLOWED_CATEGORY_SLUGS = [
 export type HaendlerProductLike = {
   categories?: WooCategory[];
   meta_data?: Array<{ key: string; value: unknown }>;
+  /** WooCommerce: instock | outofstock | onbackorder */
+  stock_status?: string;
 };
 
 export function extractHaendlerPreisFromMeta(
@@ -87,7 +89,12 @@ export function productHasOutOfPrintCategory(product: HaendlerProductLike): bool
   );
 }
 
-/** Beide Bedingungen (UND): erlaubte Kategorie + haendler_preis > 0 */
+/** Ausverkaufte Woo-Artikel ausblenden; `onbackorder` und fehlender Status bleiben sichtbar. */
+export function isProductInStockForHaendler(product: HaendlerProductLike): boolean {
+  return product.stock_status !== "outofstock";
+}
+
+/** UND: erlaubte Kategorie + haendler_preis > 0 + nicht outofstock */
 export function isProductVisibleForHaendler(
   product: HaendlerProductLike,
   haendlerPreis?: string
@@ -96,6 +103,7 @@ export function isProductVisibleForHaendler(
     haendlerPreis ?? extractHaendlerPreisFromMeta(product.meta_data);
   return (
     productHasHaendlerCategory(product.categories) &&
-    hasPositiveHaendlerPreis(preis)
+    hasPositiveHaendlerPreis(preis) &&
+    isProductInStockForHaendler(product)
   );
 }

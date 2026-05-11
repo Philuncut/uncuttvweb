@@ -1,0 +1,1 @@
+fix(haendler): hide out-of-stock products from dealer catalog
