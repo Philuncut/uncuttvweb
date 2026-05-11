@@ -183,7 +183,7 @@ function ExpandableSection({
         }}
       >
         <div ref={contentRef}>
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
             {visibleProducts.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
@@ -554,7 +554,7 @@ export default function HaendlerDashboard() {
 
       {searchResults !== null ? (
         <>
-          <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
             {searchResults.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}

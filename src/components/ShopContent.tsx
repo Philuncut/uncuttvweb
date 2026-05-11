@@ -219,7 +219,7 @@ function ExpandableSection({
         }}
       >
         <div ref={contentRef}>
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
             {visibleProducts.map((product) => (
               <ProductCard key={product.id} product={product} muted={muted} />
             ))}
@@ -380,7 +380,7 @@ export default function ShopContent({
       <main className="mx-auto max-w-7xl px-4 sm:px-6">
         {showFlat ? (
           <>
-            <div className="mt-10 grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4">
+            <div className="mt-10 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
               {flatProducts.slice(0, flatVisible).map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
