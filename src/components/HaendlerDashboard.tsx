@@ -6,6 +6,11 @@ import Link from "next/link";
 import SearchInput from "@/components/SearchInput";
 import CinematicLoader from "@/components/CinematicLoader";
 import { useLanguage } from "@/lib/LanguageContext";
+import {
+  HAENDLER_ALLE_FILME_CATEGORY_SLUGS,
+  productHasExactCategorySlug,
+  productHasOutOfPrintCategory,
+} from "@/lib/haendler-filter";
 import { createT } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
 
@@ -29,19 +34,6 @@ interface Order {
   status: string;
   total: string;
   line_items: Array<{ name: string; quantity: number }>;
-}
-
-const EXCLUDED_SLUGS = [
-  "outofprint",
-  "underground-collection",
-  "sale",
-  "im-angebot-und-bundles",
-  "brandneu",
-  "vorverkauf",
-];
-
-function hasCatSlug(product: HaendlerProduct, slug: string): boolean {
-  return product.categories.some((c) => c.slug.includes(slug));
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -430,10 +422,6 @@ export default function HaendlerDashboard() {
         meta_data: [{ key: "uid_nummer", value: editUid }],
       };
 
-      console.log("[Dashboard Save] shipSameAsBilling:", shipSameAsBilling);
-      console.log("[Dashboard Save] Shipping fields:", { editShipStreet, editShipCity, editShipZip, editShipCountry });
-      console.log("[Dashboard Save] Payload:", JSON.stringify(payload, null, 2));
-
       const res = await fetch("/api/auth/update", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -472,25 +460,35 @@ export default function HaendlerDashboard() {
     [editFirst, editLast, editCompany, editUid, editBillingStreet, editBillingCity, editBillingZip, editBillingCountry, editPhone, editShipStreet, editShipCity, editShipZip, editShipCountry, shipSameAsBilling]
   );
 
-  // Filter out Out of Print products globally
+  // Optional client-side guard (API liefert bereits gefiltert): keine OOP-Kategorie
   const availableProducts = useMemo(
-    () => products.filter((p) => !hasCatSlug(p, "outofprint")),
+    () => products.filter((p) => !productHasOutOfPrintCategory(p)),
     [products]
   );
 
   const vorverkauf = useMemo(
-    () => availableProducts.filter((p) => hasCatSlug(p, "vorverkauf")),
+    () =>
+      availableProducts.filter((p) =>
+        productHasExactCategorySlug(p, "vorverkauf")
+      ),
     [availableProducts]
   );
 
   const brandneu = useMemo(
-    () => availableProducts.filter((p) => hasCatSlug(p, "brandneu")),
+    () =>
+      availableProducts.filter((p) =>
+        productHasExactCategorySlug(p, "brandneu")
+      ),
     [availableProducts]
   );
 
   const alleFilme = useMemo(
     () =>
-      availableProducts.filter((p) => hasCatSlug(p, "instock")),
+      availableProducts.filter((p) =>
+        HAENDLER_ALLE_FILME_CATEGORY_SLUGS.some((slug) =>
+          productHasExactCategorySlug(p, slug)
+        )
+      ),
     [availableProducts]
   );
 

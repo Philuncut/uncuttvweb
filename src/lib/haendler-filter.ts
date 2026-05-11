@@ -50,6 +50,43 @@ export function productHasHaendlerCategory(
   );
 }
 
+/** Exakte Übereinstimmung auf `category.slug` (case-insensitive). */
+export function productHasExactCategorySlug(
+  product: HaendlerProductLike,
+  slug: string
+): boolean {
+  const target = slug.toLowerCase();
+  return (product.categories ?? []).some(
+    (c) => String(c.slug ?? "").toLowerCase() === target
+  );
+}
+
+export function productHasAnyExactCategorySlug(
+  product: HaendlerProductLike,
+  slugs: readonly string[]
+): boolean {
+  return slugs.some((s) => productHasExactCategorySlug(product, s));
+}
+
+/** Out-of-Print — vgl. ShopContent.tsx (outofprint / out-of-print). */
+export const HAENDLER_OUT_OF_PRINT_CATEGORY_SLUGS = [
+  "outofprint",
+  "out-of-print",
+] as const;
+
+/** „Jetzt erhältlich“-Sparte im Dashboard (vgl. ShopContent INSTOCK + Filter-Pill). */
+export const HAENDLER_ALLE_FILME_CATEGORY_SLUGS = [
+  "instock",
+  "jetzt-erhaeltlich",
+] as const;
+
+export function productHasOutOfPrintCategory(product: HaendlerProductLike): boolean {
+  return productHasAnyExactCategorySlug(
+    product,
+    HAENDLER_OUT_OF_PRINT_CATEGORY_SLUGS
+  );
+}
+
 /** Beide Bedingungen (UND): erlaubte Kategorie + haendler_preis > 0 */
 export function isProductVisibleForHaendler(
   product: HaendlerProductLike,
