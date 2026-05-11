@@ -4,18 +4,20 @@ import { useState, useCallback, type FormEvent } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 
+type NewsletterStatus = "idle" | "success" | "already" | "error";
+
 export default function Newsletter() {
   const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [status, setStatus] = useState<NewsletterStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const { language } = useLanguage();
   const t = createT(language);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      setError("");
+      setErrorMsg("");
       setLoading(true);
 
       try {
@@ -25,20 +27,154 @@ export default function Newsletter() {
           body: JSON.stringify({ email }),
         });
 
-        if (res.ok) {
-          setSubmitted(true);
+        let data: {
+          success?: boolean;
+          alreadySubscribed?: boolean;
+          error?: string;
+        } = {};
+
+        try {
+          data = (await res.json()) as typeof data;
+        } catch {
+          setStatus("error");
+          setErrorMsg(
+            language === "en"
+              ? "Signup failed. Please try again."
+              : "Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+          );
+          return;
+        }
+
+        if (data.success === true) {
+          setStatus("success");
+        } else if (data.alreadySubscribed === true) {
+          setStatus("already");
         } else {
-          const data = await res.json();
-          setError(data.error || "Anmeldung fehlgeschlagen.");
+          setStatus("error");
+          setErrorMsg(
+            data.error ||
+              (language === "en"
+                ? "Signup failed. Please try again."
+                : "Anmeldung fehlgeschlagen. Bitte erneut versuchen.")
+          );
         }
       } catch {
-        setError("Verbindungsfehler.");
+        setStatus("error");
+        setErrorMsg(
+          language === "en"
+            ? "Signup failed. Please try again."
+            : "Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+        );
       } finally {
         setLoading(false);
       }
     },
-    [email]
+    [email, language]
   );
+
+  const renderRightColumn = () => {
+    switch (status) {
+      case "idle":
+        return (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={
+                language === "en" ? "your@email.com" : "deine@email.com"
+              }
+              className="w-full border border-[#333] bg-[#111] px-4 py-4 text-sm text-white placeholder:text-[#555] outline-none focus:border-[#c0392b]"
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full cursor-pointer bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:opacity-60"
+            >
+              {loading
+                ? "..."
+                : language === "en"
+                  ? "SUBSCRIBE NOW"
+                  : t("ANMELDEN")}
+            </button>
+          </form>
+        );
+
+      case "success":
+        return (
+          <div className="text-center lg:text-left">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
+              {language === "en"
+                ? "YOUR DISCOUNT CODE:"
+                : "DEIN RABATTCODE:"}
+            </p>
+            <p
+              className="mt-3 text-4xl font-black tracking-widest text-[#c0392b]"
+              style={{
+                textShadow:
+                  "0 0 20px rgba(192,57,43,0.6), 0 0 40px rgba(192,57,43,0.3)",
+              }}
+            >
+              WELCOME10
+            </p>
+            <p className="mt-4 text-sm text-white/40">
+              {language === "en"
+                ? "Check your email"
+                : "Schau in dein Postfach"}
+            </p>
+          </div>
+        );
+
+      case "already":
+        return (
+          <div className="text-center lg:text-left">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
+              {language === "en"
+                ? "ALREADY SUBSCRIBED"
+                : "BEREITS ANGEMELDET"}
+            </p>
+            <p className="mt-3 text-4xl font-black tracking-wider text-white">
+              {language === "en"
+                ? "This email is already on our list."
+                : "Diese E-Mail ist bereits angemeldet."}
+            </p>
+            <p className="mt-4 text-sm text-white/40">
+              {language === "en"
+                ? "Already received your code? Check your inbox."
+                : "Code schon erhalten? Schau in dein Postfach."}
+            </p>
+          </div>
+        );
+
+      case "error":
+        return (
+          <div className="text-center lg:text-left">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
+              {language === "en"
+                ? "SOMETHING WENT WRONG"
+                : "ETWAS LIEF SCHIEF"}
+            </p>
+            <p className="mt-3 text-base leading-relaxed text-[#c0392b]">
+              {errorMsg}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setStatus("idle");
+                setErrorMsg("");
+              }}
+              className="mt-4 cursor-pointer border-none bg-transparent p-0 text-xs text-white/40 underline transition-colors hover:text-white/60"
+            >
+              {language === "en" ? "Try again" : "Erneut versuchen"}
+            </button>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <section className="w-full border-l-4 border-[#c0392b] bg-[#0d0d0d] px-6 py-16 sm:px-8 sm:py-20 md:py-10">
@@ -66,61 +202,8 @@ export default function Newsletter() {
             </p>
           </div>
 
-          {/* Right — Form / Success */}
-          <div>
-            {submitted ? (
-              <div className="text-center lg:text-left">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-                  {language === "en"
-                    ? "Your discount code:"
-                    : "Dein Rabattcode:"}
-                </p>
-                <p
-                  className="mt-3 text-4xl font-black tracking-widest text-[#c0392b]"
-                  style={{
-                    textShadow:
-                      "0 0 20px rgba(192,57,43,0.6), 0 0 40px rgba(192,57,43,0.3)",
-                  }}
-                >
-                  WELCOME10
-                </p>
-                <p className="mt-4 text-sm text-white/40">
-                  {language === "en"
-                    ? "Have fun browsing!"
-                    : "Viel Spaß beim Stöbern!"}
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={
-                    language === "en"
-                      ? "your@email.com"
-                      : "deine@email.com"
-                  }
-                  className="w-full border border-[#333] bg-[#111] px-4 py-4 text-sm text-white placeholder:text-[#555] outline-none focus:border-[#c0392b]"
-                />
-                {error && (
-                  <p className="text-xs text-[#c0392b]">{error}</p>
-                )}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full cursor-pointer bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:opacity-60"
-                >
-                  {loading
-                    ? "..."
-                    : language === "en"
-                      ? "SUBSCRIBE NOW"
-                      : t("ANMELDEN")}
-                </button>
-              </form>
-            )}
-          </div>
+          {/* Right — Form / outcomes */}
+          <div>{renderRightColumn()}</div>
         </div>
       </div>
     </section>

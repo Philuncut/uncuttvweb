@@ -4,20 +4,6 @@ import jwt from "jsonwebtoken";
 const GHOST_API_URL = process.env.GHOST_API_URL;
 const GHOST_ADMIN_API_KEY = process.env.GHOST_ADMIN_API_KEY;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const WOO_URL = process.env.WOOCOMMERCE_URL!;
-const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
-const WOO_SECRET = process.env.WOOCOMMERCE_SECRET!;
-const WOO_AUTH =
-  "Basic " + Buffer.from(`${WOO_KEY}:${WOO_SECRET}`).toString("base64");
-
-function generateCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "WELCOME-";
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
-}
 
 function createGhostToken(): string | null {
   if (!GHOST_ADMIN_API_KEY) return null;
@@ -34,46 +20,7 @@ function createGhostToken(): string | null {
   );
 }
 
-async function createWooCoupon(email: string): Promise<string | null> {
-  const code = generateCode();
-  const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
-
-  try {
-    const res = await fetch(`${WOO_URL}/wp-json/wc/v3/coupons`, {
-      method: "POST",
-      headers: {
-        Authorization: WOO_AUTH,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        code,
-        discount_type: "percent",
-        amount: "10",
-        individual_use: true,
-        usage_limit: 1,
-        usage_limit_per_user: 1,
-        email_restrictions: [email],
-        date_expires: expiryDate,
-        description: `Newsletter Willkommensrabatt für ${email}`,
-      }),
-    });
-
-    if (res.ok) {
-      console.log("[Newsletter] WooCommerce coupon created:", code);
-      return code;
-    }
-    const err = await res.text();
-    console.error("[Newsletter] WooCommerce coupon error:", res.status, err.slice(0, 200));
-    return null;
-  } catch (err) {
-    console.error("[Newsletter] Failed to create coupon:", err);
-    return null;
-  }
-}
-
-async function sendWelcomeEmail(email: string, couponCode: string) {
+async function sendWelcomeEmail(email: string) {
   if (!RESEND_API_KEY || RESEND_API_KEY === "your_resend_api_key") return;
 
   const html = `
@@ -87,13 +34,13 @@ async function sendWelcomeEmail(email: string, couponCode: string) {
 
       <p style="font-size:16px;line-height:1.6;color:#ccc;">
         Danke für deine Anmeldung zum UncutTV Newsletter!
-        Hier ist dein persönlicher Rabattcode für <strong style="color:#fff;">10% auf deine erste Bestellung</strong>:
+        Hier ist dein Rabattcode für <strong style="color:#fff;">10% auf deine erste Bestellung</strong>:
       </p>
 
       <div style="margin:32px 0;text-align:center;padding:24px;border:2px solid #c0392b;background:#111;">
-        <p style="font-size:12px;color:#888;margin:0 0 8px 0;text-transform:uppercase;letter-spacing:0.15em;">Dein persönlicher Rabattcode</p>
-        <p style="font-size:32px;font-weight:900;color:#c0392b;margin:0;letter-spacing:0.1em;">${couponCode}</p>
-        <p style="font-size:11px;color:#555;margin:8px 0 0;">Einmalig gültig · 30 Tage · Nur für ${email}</p>
+        <p style="font-size:12px;color:#888;margin:0 0 8px 0;text-transform:uppercase;letter-spacing:0.15em;">Dein Rabattcode</p>
+        <p style="font-size:32px;font-weight:900;color:#c0392b;margin:0;letter-spacing:0.1em;">WELCOME10</p>
+        <p style="font-size:11px;color:#555;margin:8px 0 0;">Einmal pro Kunde gültig · Beim Checkout einlösbar auf uncuttv.at</p>
       </div>
 
       <p style="font-size:14px;line-height:1.6;color:#888;">
@@ -146,70 +93,72 @@ export async function POST(request: Request) {
 
     if (!email || !email.includes("@")) {
       return NextResponse.json(
-        { error: "Ungültige E-Mail-Adresse." },
+        { success: false, error: "Ungültige E-Mail-Adresse." },
         { status: 400 }
       );
     }
 
-    // Subscribe to Ghost
-    let isNewSubscriber = false;
-
-    if (GHOST_API_URL && GHOST_ADMIN_API_KEY) {
-      const token = createGhostToken();
-      if (token) {
-        const res = await fetch(
-          `${GHOST_API_URL}/ghost/api/admin/members/`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Ghost ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              members: [
-                { email, subscribed: true, labels: [{ name: "shop-subscriber" }] },
-              ],
-            }),
-          }
-        );
-
-        if (res.ok) {
-          isNewSubscriber = true;
-          console.log("[Newsletter] New subscriber:", email);
-        } else if (res.status === 409 || res.status === 422) {
-          console.log("[Newsletter] Already subscribed:", email);
-          return NextResponse.json({
-            success: false,
-            alreadySubscribed: true,
-            error: "Du bist bereits angemeldet.",
-          });
-        }
-      }
-    } else {
-      // Ghost not configured — treat as new subscriber for coupon generation
-      isNewSubscriber = true;
-    }
-
-    if (!isNewSubscriber) {
+    if (!(GHOST_API_URL && GHOST_ADMIN_API_KEY)) {
+      console.log("[Newsletter] Ghost not configured, treating as success:", email);
+      await sendWelcomeEmail(email);
       return NextResponse.json({ success: true });
     }
 
-    // Create unique WooCommerce coupon
-    const couponCode = await createWooCoupon(email);
-
-    // Send welcome email with the unique code
-    if (couponCode) {
-      await sendWelcomeEmail(email, couponCode);
+    const token = createGhostToken();
+    if (!token) {
+      console.error("[Newsletter] Could not create Ghost admin token.");
+      return NextResponse.json({
+        success: false,
+        error: "Anmeldung fehlgeschlagen.",
+      });
     }
 
+    const res = await fetch(`${GHOST_API_URL}/ghost/api/admin/members/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Ghost ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        members: [
+          {
+            email,
+            subscribed: true,
+            labels: [{ name: "shop-subscriber" }],
+          },
+        ],
+      }),
+    });
+
+    if (res.ok) {
+      console.log("[Newsletter] New subscriber:", email);
+      await sendWelcomeEmail(email);
+      return NextResponse.json({ success: true });
+    }
+
+    if (res.status === 409 || res.status === 422) {
+      console.log("[Newsletter] Already subscribed:", email);
+      return NextResponse.json({
+        success: false,
+        alreadySubscribed: true,
+        error: "Du bist bereits angemeldet.",
+      });
+    }
+
+    const errSnippet = await res.text();
+    console.error(
+      "[Newsletter] Ghost member create failed:",
+      res.status,
+      errSnippet.slice(0, 200)
+    );
     return NextResponse.json({
-      success: true,
-      couponCode: couponCode || null,
+      success: false,
+      error: "Anmeldung fehlgeschlagen.",
     });
   } catch (error) {
     console.error("[Newsletter] Error:", error);
     return NextResponse.json(
-      { error: "Anmeldung fehlgeschlagen." },
+      { success: false, error: "Anmeldung fehlgeschlagen." },
       { status: 500 }
     );
   }

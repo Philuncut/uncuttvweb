@@ -74,7 +74,7 @@ export default function CartDrawer() {
           body: JSON.stringify({ email: newsletterEmail.trim() }),
         });
         const data = await res.json();
-        if (data.couponCode) couponCode = data.couponCode;
+        if (data.success) couponCode = "WELCOME10";
       } catch {
         // Non-blocking — don't prevent checkout
       }

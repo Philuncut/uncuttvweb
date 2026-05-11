@@ -958,8 +958,8 @@ function CheckoutInner() {
                         setNewsletter(false);
                         return;
                       }
-                      if (data.couponCode) {
-                        setCouponName(data.couponCode);
+                      if (data.success) {
+                        setCouponName("WELCOME10");
                         setCouponDiscount("−10%");
                         setAutoCouponApplied(true);
                       }

@@ -129,6 +129,12 @@ export default function MobileNewsletterBanner() {
       toggle.style.display = 'none';
     }
 
+    function showAlreadySubscribed() {
+      formEl.innerHTML = '<div style="border:1px solid #222;background:#111;padding:10px 12px;"><p style="font-size:13px;line-height:1.5;color:#fff;font-weight:700;margin:0;">Diese E-Mail ist bereits angemeldet.</p><p style="font-size:11px;color:rgba(255,255,255,0.35);margin:8px 0 0 0;line-height:1.45;">Code schon erhalten? Schau in dein Postfach.</p></div>';
+      formWrap.style.maxHeight = '120px';
+      toggle.style.display = 'none';
+    }
+
     function showError(msg) {
       messageEl.textContent = msg || 'Anmeldung fehlgeschlagen.';
       messageEl.style.color = '#c0392b';
@@ -169,15 +175,16 @@ export default function MobileNewsletterBanner() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: email }),
         })
-          .then(function(res) {
-            if (res.ok) {
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.success === true) {
               showSuccess();
+            } else if (data.alreadySubscribed === true) {
+              showAlreadySubscribed();
             } else {
-              return res.json().then(function(data) {
-                showError(data.error || 'Anmeldung fehlgeschlagen.');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'ANMELDEN';
-              });
+              showError(data.error || 'Anmeldung fehlgeschlagen.');
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'ANMELDEN';
             }
           })
           .catch(function() {
