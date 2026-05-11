@@ -205,6 +205,22 @@ function ExpandableSection({
   );
 }
 
+const HAENDLER_DASHBOARD_SEEN_KEY = "haendler_dashboard_seen";
+
+function DashboardLoadSkeleton() {
+  return (
+    <div className="min-h-[50vh] animate-pulse space-y-6" aria-hidden>
+      <div className="h-9 w-2/3 max-w-sm rounded bg-white/10" />
+      <div className="h-10 w-full max-w-md rounded bg-white/5" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="aspect-square rounded bg-white/5" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function InvoiceButton({ orderId, orderNumber }: { orderId: number; orderNumber: string }) {
   const [loading, setLoading] = useState(false);
 
@@ -278,6 +294,10 @@ interface CustomerMeta {
 
 export default function HaendlerDashboard() {
   const router = useRouter();
+  const [showIntro] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem(HAENDLER_DASHBOARD_SEEN_KEY) !== "1";
+  });
   const [products, setProducts] = useState<HaendlerProduct[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [userName, setUserName] = useState("");
@@ -374,10 +394,13 @@ export default function HaendlerDashboard() {
         // Orders are optional
       }
 
+      if (typeof window !== "undefined" && showIntro) {
+        sessionStorage.setItem(HAENDLER_DASHBOARD_SEEN_KEY, "1");
+      }
       setLoading(false);
     }
     load();
-  }, [router]);
+  }, [router, showIntro]);
 
   const handleSave = useCallback(
     async (e: React.FormEvent) => {
@@ -503,7 +526,12 @@ export default function HaendlerDashboard() {
     router.push("/haendler");
   }, [router]);
 
-  if (loading) return <CinematicLoader show />;
+  if (loading) {
+    if (showIntro) {
+      return <CinematicLoader show />;
+    }
+    return <DashboardLoadSkeleton />;
+  }
 
   return (
     <div className="space-y-14">

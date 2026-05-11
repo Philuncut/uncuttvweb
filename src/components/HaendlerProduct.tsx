@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateDetailLabel } from "@/lib/translations";
@@ -60,6 +60,7 @@ export default function HaendlerProduct({
   initialProduct: HaendlerProductData;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [dealerCookie, setDealerCookie] = useState(false);
 
   useEffect(() => {
@@ -116,8 +117,26 @@ export default function HaendlerProduct({
   const isOutOfStock = product.stock_status === "outofstock";
   const hasHaendlerPreis = !!product.haendler_preis;
 
+  const handleBackToCatalog = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/haendler/dashboard");
+    }
+  }, [router]);
+
   return (
     <div key={slug}>
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={handleBackToCatalog}
+          className="inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center gap-2 px-1 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.2em] text-white/45 transition-colors hover:text-[#c0392b] sm:px-2"
+        >
+          ← Zurück zum Katalog
+        </button>
+      </div>
+
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Gallery */}
         <ProductGallery images={product.images} />
