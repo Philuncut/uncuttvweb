@@ -873,24 +873,6 @@ export default function Navbar() {
             {userName ? userName.toUpperCase() : t("ANMELDEN")}
           </a>
 
-          {/* HÄNDLER */}
-          <a
-            href="/haendler"
-            className="menu-link menu-main-link"
-            style={{
-              color: "white",
-              fontSize: "2.2rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              padding: "12px 32px",
-              animationDelay: "0.4s",
-            }}
-          >
-            {t("HAENDLER")}
-          </a>
-
           {/* KONTAKT */}
           <a
             href="/kontakt"
@@ -903,7 +885,7 @@ export default function Navbar() {
               letterSpacing: "0.15em",
               textTransform: "uppercase",
               padding: "12px 32px",
-              animationDelay: "0.45s",
+              animationDelay: "0.4s",
             }}
           >
             KONTAKT
@@ -919,7 +901,7 @@ export default function Navbar() {
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "4px 48px",
-              animationDelay: "0.5s",
+              animationDelay: "0.45s",
             }}
           >
             <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
@@ -936,12 +918,40 @@ export default function Navbar() {
               letterSpacing: "0.1em",
               textTransform: "uppercase",
               padding: "4px 48px",
-              animationDelay: "0.55s",
+              animationDelay: "0.5s",
             }}
           >
             <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
             DATENSCHUTZ
           </a>
+
+          {/* HÄNDLER — mobile-only bottom utility entry */}
+          <div
+            className="md:hidden"
+            style={{
+              borderTop: "1px solid #1a1a1a",
+              margin: "16px 32px 0",
+              paddingTop: 16,
+            }}
+          >
+            <a
+              href="/haendler"
+              className="menu-link menu-main-link"
+              style={{
+                color: "white",
+                fontSize: "2.2rem",
+                fontWeight: "bold",
+                textDecoration: "none",
+                letterSpacing: "0.15em",
+                textTransform: "uppercase",
+                padding: "12px 0",
+                animationDelay: "0.55s",
+                display: "block",
+              }}
+            >
+              {t("HAENDLER")}
+            </a>
+          </div>
         </nav>
 
         {/* Bottom: red separator + DE/EN toggle */}
