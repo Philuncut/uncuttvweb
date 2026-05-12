@@ -256,12 +256,7 @@ export async function GET() {
     }
 
     const customer = await fetchWooCustomer(customerId);
-    console.log(
-      "[PROFILE-GET] Customer meta_data:",
-      JSON.stringify(customer.meta_data)
-    );
     const resolvedVat = await resolveBillingVat(customer, { jwt: token });
-    console.log("[PROFILE-GET] Resolved vat:", resolvedVat);
     const profile = buildProfileFromCustomer(customer, cookieName, resolvedVat);
     return NextResponse.json(profile);
   } catch (error) {
@@ -282,7 +277,6 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as ProfilePayload;
-    console.log("[PROFILE-POST] Received body vat:", body?.billing?.vat);
     const role = asString(
       cookieStore.get("haendler_role")?.value ||
         cookieStore.get("woo_customer_role")?.value
@@ -355,17 +349,6 @@ export async function POST(request: Request) {
     } catch {
       existingCustomer = null;
     }
-    if (existingCustomer) {
-      console.log(
-        "[PROFILE-POST] Existing customer meta_data:",
-        JSON.stringify(existingCustomer.meta_data)
-      );
-    } else {
-      console.log(
-        "[PROFILE-POST] Existing customer meta_data:",
-        JSON.stringify(undefined)
-      );
-    }
     const meta_data = mergeMetaWithVat(existingCustomer?.meta_data);
 
     const putBody = {
@@ -376,10 +359,6 @@ export async function POST(request: Request) {
       shipping,
       meta_data,
     };
-    console.log(
-      "[PROFILE-POST] PUT body meta_data:",
-      JSON.stringify(putBody.meta_data)
-    );
 
     const putResponse = await fetch(
       `${WOO_URL}/wp-json/wc/v3/customers/${customerId}`,
@@ -402,16 +381,10 @@ export async function POST(request: Request) {
     }
 
     const updatedCustomer = (await putResponse.json()) as WooCustomer;
-    console.log("[PROFILE-POST] PUT response status:", putResponse.status);
-    console.log(
-      "[PROFILE-POST] PUT response meta_data:",
-      JSON.stringify(updatedCustomer.meta_data)
-    );
     const resolvedVat = await resolveBillingVat(updatedCustomer, {
       fallbackFromRequest: submittedVat,
       jwt: token,
     });
-    console.log("[PROFILE-POST] Resolved vat:", resolvedVat);
     const profile = buildProfileFromCustomer(
       updatedCustomer,
       "",
