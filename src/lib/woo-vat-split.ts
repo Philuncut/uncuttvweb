@@ -40,7 +40,7 @@ export function standardVatFraction(countryIso2: string): number {
   return STANDARD_VAT[c] ?? 0.2;
 }
 
-/** Split a tax-inclusive gross amount into WC REST net `total` + `total_tax` strings. */
+/** Split a tax-inclusive gross amount into WC REST net `total` + `total_tax` strings (B2C shipping). */
 export function splitGrossForWooRest(
   gross: number,
   countryIso2: string
@@ -52,15 +52,26 @@ export function splitGrossForWooRest(
   return { net: net.toFixed(2), tax: tax.toFixed(2) };
 }
 
-/** Woo REST line item: gross cart line (unit × qty) split into net + tax (wholesale non-RC). */
+/** Net line/shipping amount → WC REST net + tax strings (wholesale haendler_preis / wholesale shipping are net). */
+export function addTaxToNet(
+  netAmount: number,
+  countryIso2: string
+): { net: string; tax: string } {
+  const n = Math.max(0, netAmount);
+  const r = standardVatFraction(countryIso2);
+  const t = n * r;
+  return { net: n.toFixed(2), tax: t.toFixed(2) };
+}
+
+/** Woo REST line item: haendler_preis × qty is NET; add VAT for wholesale non-RC. */
 export function buildWholesaleNonRcLineItem(
   item: { id: number; price: string; qty: number },
   countryIso2: string
 ) {
   const qty = Math.max(1, Number(item.qty) || 1);
-  const unit = Math.max(0, parseFloat(item.price) || 0);
-  const gross = unit * qty;
-  const { net, tax } = splitGrossForWooRest(gross, countryIso2);
+  const unitNet = Math.max(0, parseFloat(item.price) || 0);
+  const lineNet = unitNet * qty;
+  const { net, tax } = addTaxToNet(lineNet, countryIso2);
   return {
     product_id: Number(item.id),
     quantity: item.qty,

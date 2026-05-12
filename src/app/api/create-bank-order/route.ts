@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { splitGrossForWooRest, buildWholesaleNonRcLineItem } from "@/lib/woo-vat-split";
+import { splitGrossForWooRest, buildWholesaleNonRcLineItem, addTaxToNet, standardVatFraction } from "@/lib/woo-vat-split";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -216,7 +216,7 @@ export async function POST(request: Request) {
       payment_method_title: "Überweisung",
       set_paid: false,
       /**
-       * B2C: product_id + qty only. Wholesale non-RC: net/tax from cart gross. RC: gross + zero tax.
+       * B2C: product_id + qty only. Wholesale non-RC: net/tax from Händlerpreis (net) + VAT. RC: line total + zero tax.
        */
       prices_include_tax: true,
       billing,
@@ -280,21 +280,30 @@ export async function POST(request: Request) {
     ) {
       const s = checkoutShipping;
       if (!(s.method_id === "none" && s.rate === 0)) {
-        const shipParts = splitGrossForWooRest(Math.max(0, s.rate), taxCountry);
+        const rate = Math.max(0, s.rate);
+        let shipTotal: string;
+        let shipTax: string;
+        let shipTaxes: unknown[] | undefined;
+        if (isReverseCharge) {
+          shipTotal = rate.toFixed(2);
+          shipTax = "0.00";
+          shipTaxes = [];
+        } else if (isWholesaleCheckout) {
+          const p = addTaxToNet(rate, taxCountry);
+          shipTotal = p.net;
+          shipTax = p.tax;
+        } else {
+          const p = splitGrossForWooRest(rate, taxCountry);
+          shipTotal = p.net;
+          shipTax = p.tax;
+        }
         orderData.shipping_lines = [
           {
             method_id: s.method_id || "flat_rate",
             method_title: s.label || "Versand",
-            ...(isReverseCharge
-              ? {
-                  total: Math.max(0, s.rate).toFixed(2),
-                  total_tax: "0.00",
-                  taxes: [] as unknown[],
-                }
-              : {
-                  total: shipParts.net,
-                  total_tax: shipParts.tax,
-                }),
+            total: shipTotal,
+            total_tax: shipTax,
+            ...(isReverseCharge ? { taxes: shipTaxes } : {}),
           },
         ];
       }
@@ -321,18 +330,32 @@ export async function POST(request: Request) {
     const order = await res.json();
 
     // Send bank transfer confirmation email
-    const itemsTotal = items.reduce(
-      (sum, item) => sum + parseFloat(item.price) * item.qty,
+    const itemsNetSum = items.reduce(
+      (sum, item) =>
+        sum +
+        Math.max(0, parseFloat(item.price) || 0) * Math.max(1, Number(item.qty) || 1),
       0
     );
-    const ship =
+    const shipNetAmt =
       checkoutShipping &&
       typeof checkoutShipping.rate === "number" &&
       !Number.isNaN(checkoutShipping.rate) &&
       !(checkoutShipping.method_id === "none" && checkoutShipping.rate === 0)
         ? checkoutShipping.rate
         : 0;
-    const total = (itemsTotal + ship).toFixed(2);
+    const total =
+      isWholesaleCheckout && !isReverseCharge
+        ? (() => {
+            const r = standardVatFraction(taxCountry);
+            const grossCents = items.reduce((sum, item) => {
+              const lineNet =
+                Math.max(0, parseFloat(item.price) || 0) *
+                Math.max(1, Number(item.qty) || 1);
+              return sum + Math.round(lineNet * (1 + r) * 100);
+            }, 0) + Math.round(shipNetAmt * (1 + r) * 100);
+            return (grossCents / 100).toFixed(2);
+          })()
+        : (itemsNetSum + shipNetAmt).toFixed(2);
 
     await sendBankTransferEmail(
       customer.email,

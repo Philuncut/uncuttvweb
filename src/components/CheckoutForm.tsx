@@ -31,6 +31,7 @@ import {
   persistCheckoutSyncPayload,
   type CheckoutShippingForWoo,
 } from "@/lib/checkout-order-extras";
+import { standardVatFraction } from "@/lib/woo-vat-split";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -265,6 +266,7 @@ function OrderSummary({
   shippingLoading,
   shippingError,
   shippingNoZone,
+  wholesaleNonRcTotals = null,
 }: {
   couponId: string | null;
   couponName: string | null;
@@ -279,6 +281,13 @@ function OrderSummary({
   shippingLoading: boolean;
   shippingError: string | null;
   shippingNoZone: boolean;
+  /** Wholesale non–Reverse-Charge: net lines + net shipping + VAT → gross total. */
+  wholesaleNonRcTotals?: {
+    itemsNet: number;
+    shipNet: number;
+    vatTotal: number;
+    grossTotal: number;
+  } | null;
 }) {
   const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
 
@@ -297,7 +306,9 @@ function OrderSummary({
     }
   }
 
-  const grandTotal = discountedSubtotal + shippingAmount;
+  const grandTotal = wholesaleNonRcTotals
+    ? wholesaleNonRcTotals.grossTotal
+    : discountedSubtotal + shippingAmount;
   const { items } = useCart();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -415,44 +426,84 @@ function OrderSummary({
         ))}
 
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-white/50">
-          <span>Zwischensumme</span>
-          <span>€{subtotal.toFixed(2)}</span>
-        </div>
-        {effectiveCouponDiscount && discountAmount > 0 && (
-          <div className="flex justify-between text-xs text-green-400">
-            <span>Rabatt ({effectiveCouponDiscount})</span>
-            <span>−€{discountAmount.toFixed(2)}</span>
-          </div>
+        {wholesaleNonRcTotals ? (
+          <>
+            <div className="flex justify-between text-xs text-white/50">
+              <span>Zwischensumme (netto)</span>
+              <span>€{wholesaleNonRcTotals.itemsNet.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-white/50">
+              <span className="flex flex-col gap-0.5">
+                <span>Versand (netto)</span>
+                {shippingLabel && !shippingLoading && !shippingError && (
+                  <span className="text-[9px] font-normal text-white/35">
+                    {shippingLabel}
+                  </span>
+                )}
+              </span>
+              <span className="text-right">
+                {shippingLoading ? (
+                  <span className="text-white/40">wird berechnet…</span>
+                ) : shippingError ? (
+                  <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
+                ) : shippingNoZone ? (
+                  <span className="text-[10px] text-[#c0392b]">
+                    Versand nicht verfügbar
+                  </span>
+                ) : wholesaleNonRcTotals.shipNet === 0 ? (
+                  <span className="text-green-400/90">Kostenlos</span>
+                ) : (
+                  `€${wholesaleNonRcTotals.shipNet.toFixed(2)}`
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-white/50">
+              <span>USt.</span>
+              <span>€{wholesaleNonRcTotals.vatTotal.toFixed(2)}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex justify-between text-xs text-white/50">
+              <span>Zwischensumme</span>
+              <span>€{subtotal.toFixed(2)}</span>
+            </div>
+            {effectiveCouponDiscount && discountAmount > 0 && (
+              <div className="flex justify-between text-xs text-green-400">
+                <span>Rabatt ({effectiveCouponDiscount})</span>
+                <span>−€{discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs text-white/50">
+              <span className="flex flex-col gap-0.5">
+                <span>Versand</span>
+                {shippingLabel && !shippingLoading && !shippingError && (
+                  <span className="text-[9px] font-normal text-white/35">
+                    {shippingLabel}
+                  </span>
+                )}
+              </span>
+              <span className="text-right">
+                {shippingLoading ? (
+                  <span className="text-white/40">wird berechnet…</span>
+                ) : shippingError ? (
+                  <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
+                ) : shippingNoZone ? (
+                  <span className="text-[10px] text-[#c0392b]">
+                    Versand nicht verfügbar
+                  </span>
+                ) : shippingAmount === 0 ? (
+                  <span className="text-green-400/90">Kostenlos</span>
+                ) : (
+                  `€${shippingAmount.toFixed(2)}`
+                )}
+              </span>
+            </div>
+          </>
         )}
-        <div className="flex justify-between text-xs text-white/50">
-          <span className="flex flex-col gap-0.5">
-            <span>Versand</span>
-            {shippingLabel && !shippingLoading && !shippingError && (
-              <span className="text-[9px] font-normal text-white/35">
-                {shippingLabel}
-              </span>
-            )}
-          </span>
-          <span className="text-right">
-            {shippingLoading ? (
-              <span className="text-white/40">wird berechnet…</span>
-            ) : shippingError ? (
-              <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
-            ) : shippingNoZone ? (
-              <span className="text-[10px] text-[#c0392b]">
-                Versand nicht verfügbar
-              </span>
-            ) : shippingAmount === 0 ? (
-              <span className="text-green-400/90">Kostenlos</span>
-            ) : (
-              `€${shippingAmount.toFixed(2)}`
-            )}
-          </span>
-        </div>
         <div className="flex justify-between border-t border-[#222] pt-2">
           <span className="text-sm font-bold tracking-wider text-white/60">
-            GESAMT
+            {wholesaleNonRcTotals ? "GESAMT (brutto)" : "GESAMT"}
           </span>
           <span className="text-xl font-black text-white">
             €{grandTotal.toFixed(2)}
@@ -497,6 +548,7 @@ function PayPalButtonWrapper({
   totalPrice,
   couponDiscount,
   shippingAmount,
+  resolvedOrderTotalEuro,
   onApprove,
   onError,
   disabled,
@@ -506,6 +558,8 @@ function PayPalButtonWrapper({
   couponDiscount: string | null;
   /** Brutto-Versand in EUR (nach Rabatt auf Warenkorb addieren) */
   shippingAmount: number;
+  /** Wenn gesetzt (z. B. Wholesale AT netto→brutto), dieser Betrag statt totalPrice + Versand + Gutschein. */
+  resolvedOrderTotalEuro?: number | null;
   onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
   onError: () => void;
   disabled?: boolean;
@@ -519,14 +573,24 @@ function PayPalButtonWrapper({
       if (onBeforePayPalCreateOrder) {
         await onBeforePayPalCreateOrder();
       }
-      let paypalTotal = totalPrice;
-      if (couponDiscount) {
-        const pctMatch = couponDiscount.match(/(\d+)%/);
-        const fixMatch = couponDiscount.match(/€([\d.]+)/);
-        if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
-        else if (fixMatch) paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
+      let paypalTotal: number;
+      if (
+        resolvedOrderTotalEuro != null &&
+        Number.isFinite(resolvedOrderTotalEuro)
+      ) {
+        paypalTotal = resolvedOrderTotalEuro;
+      } else {
+        paypalTotal = totalPrice;
+        if (couponDiscount) {
+          const pctMatch = couponDiscount.match(/(\d+)%/);
+          const fixMatch = couponDiscount.match(/€([\d.]+)/);
+          if (pctMatch)
+            paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
+          else if (fixMatch)
+            paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
+        }
+        paypalTotal += shippingAmount;
       }
-      paypalTotal += shippingAmount;
       return await actions.order.create({
         intent: "CAPTURE",
         purchase_units: [
@@ -540,7 +604,7 @@ function PayPalButtonWrapper({
         ],
       });
     },
-    [totalPrice, couponDiscount, shippingAmount, onBeforePayPalCreateOrder]
+    [totalPrice, couponDiscount, shippingAmount, resolvedOrderTotalEuro, onBeforePayPalCreateOrder]
   );
 
   return (
@@ -557,7 +621,7 @@ function PayPalButtonWrapper({
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
-        forceReRender={[totalPrice, couponDiscount, shippingAmount, disabled]}
+        forceReRender={[totalPrice, couponDiscount, shippingAmount, resolvedOrderTotalEuro ?? -1, disabled]}
       />
     </PayPalScriptProvider>
   );
@@ -898,6 +962,9 @@ function CheckoutInner() {
             isWholesale ? undefined : couponId || undefined,
           shippingCents: shipCents,
           isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
+          ...(isWholesale
+            ? { isWholesale: true, taxCountry: country }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -914,6 +981,7 @@ function CheckoutInner() {
     sessionReady,
     stripeShipCents,
     wholesaleReverseCharge,
+    country,
   ]);
 
   const cartMeta = items.map((i) => ({
@@ -993,6 +1061,35 @@ function CheckoutInner() {
     if (shipNoZone || shipRate === null) return 0;
     return shipRate;
   }, [shipResolved, shipFetchLoading, shipError, shipNoZone, shipRate]);
+
+  const wholesaleNonRcTotals = useMemo(() => {
+    if (!isWholesale || wholesaleReverseCharge) return null;
+    if (items.length === 0) return null;
+    const r = standardVatFraction(country);
+    const itemsNet = items.reduce(
+      (s, i) =>
+        s +
+        Math.max(0, parseFloat(i.product.price) || 0) * Math.max(1, i.quantity),
+      0
+    );
+    const shipNet = orderSummaryShippingAmount;
+    const netSum = itemsNet + shipNet;
+    const grossCents = items.reduce((sum, i) => {
+      const lineNet =
+        Math.max(0, parseFloat(i.product.price) || 0) *
+        Math.max(1, i.quantity);
+      return sum + Math.round(lineNet * (1 + r) * 100);
+    }, 0) + Math.round(shipNet * (1 + r) * 100);
+    const grossTotal = grossCents / 100;
+    const vatTotal = Math.round((grossTotal - netSum) * 100) / 100;
+    return { itemsNet, shipNet, vatTotal, grossTotal };
+  }, [
+    isWholesale,
+    wholesaleReverseCharge,
+    items,
+    country,
+    orderSummaryShippingAmount,
+  ]);
 
   const uiShippingLoading =
     items.length > 0 && ((!sessionReady && !isWholesale) || shipFetchLoading);
@@ -1600,6 +1697,9 @@ function CheckoutInner() {
                       totalPrice={totalPrice}
                       couponDiscount={paypalCouponDiscount}
                       shippingAmount={orderSummaryShippingAmount}
+                      resolvedOrderTotalEuro={
+                        wholesaleNonRcTotals?.grossTotal ?? null
+                      }
                       onApprove={handlePayPalApprove}
                       disabled={
                         wholesaleCheckoutBlocked || shippingBlocksCheckout
@@ -1694,6 +1794,7 @@ function CheckoutInner() {
             shippingLoading={uiShippingLoading}
             shippingError={shipError}
             shippingNoZone={shipNoZone}
+            wholesaleNonRcTotals={wholesaleNonRcTotals}
           />
         </div>
       </div>

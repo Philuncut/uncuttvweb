@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
-import { splitGrossForWooRest, buildWholesaleNonRcLineItem } from "@/lib/woo-vat-split";
+import { splitGrossForWooRest, buildWholesaleNonRcLineItem, addTaxToNet } from "@/lib/woo-vat-split";
 
 interface CartMeta {
   id: number;
@@ -326,7 +326,7 @@ export async function POST(request: Request) {
       set_paid: true,
       /**
        * B2C: only product_id + qty (catalog + Woo tax). Wholesale non-RC: explicit net/tax
-       * from cart gross (Händlerpreis). RC: explicit gross + zero tax.
+       * from Händlerpreis (net) + VAT. RC: explicit line total + zero tax.
        */
       prices_include_tax: true,
       billing,
@@ -371,21 +371,30 @@ export async function POST(request: Request) {
     ) {
       const s = body.checkoutShipping;
       if (!(s.method_id === "none" && s.rate === 0)) {
-        const shipParts = splitGrossForWooRest(Math.max(0, s.rate), taxCountry);
+        const rate = Math.max(0, s.rate);
+        let shipTotal: string;
+        let shipTax: string;
+        let shipTaxes: unknown[] | undefined;
+        if (isReverseCharge) {
+          shipTotal = rate.toFixed(2);
+          shipTax = "0.00";
+          shipTaxes = [];
+        } else if (isWholesaleCheckout) {
+          const p = addTaxToNet(rate, taxCountry);
+          shipTotal = p.net;
+          shipTax = p.tax;
+        } else {
+          const p = splitGrossForWooRest(rate, taxCountry);
+          shipTotal = p.net;
+          shipTax = p.tax;
+        }
         orderData.shipping_lines = [
           {
             method_id: s.method_id || "flat_rate",
             method_title: s.label || "Versand",
-            ...(isReverseCharge
-              ? {
-                  total: Math.max(0, s.rate).toFixed(2),
-                  total_tax: "0.00",
-                  taxes: [] as unknown[],
-                }
-              : {
-                  total: shipParts.net,
-                  total_tax: shipParts.tax,
-                }),
+            total: shipTotal,
+            total_tax: shipTax,
+            ...(isReverseCharge ? { taxes: shipTaxes } : {}),
           },
         ];
       }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
+import { standardVatFraction } from "@/lib/woo-vat-split";
 
 interface Body {
   items: CartItem[];
@@ -9,12 +10,22 @@ interface Body {
   shippingCents?: number;
   /** EU B2B Reverse Charge — echoed in PI metadata when true (optional). */
   isReverseCharge?: boolean;
+  /** Wholesale checkout — combined with taxCountry for net→gross PI amount when not RC. */
+  isWholesale?: boolean;
+  /** ISO2 shipping/billing country for wholesale net VAT gross-up. */
+  taxCountry?: string;
 }
 
 export async function POST(request: Request) {
   try {
-    const { items, couponId, shippingCents, isReverseCharge } =
-      (await request.json()) as Body;
+    const {
+      items,
+      couponId,
+      shippingCents,
+      isReverseCharge,
+      isWholesale,
+      taxCountry,
+    } = (await request.json()) as Body;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -23,9 +34,22 @@ export async function POST(request: Request) {
       );
     }
 
-    let totalCents = items.reduce((sum, item) => {
-      return sum + Math.round(parseFloat(item.product.price) * 100) * item.quantity;
-    }, 0);
+    const wholesaleNetPricing =
+      isWholesale === true &&
+      isReverseCharge !== true &&
+      Boolean(taxCountry?.trim());
+
+    let totalCents = wholesaleNetPricing
+      ? items.reduce((sum, item) => {
+          const lineNet =
+            Math.max(0, parseFloat(item.product.price) || 0) *
+            Math.max(1, item.quantity);
+          const r = standardVatFraction(taxCountry!);
+          return sum + Math.round(lineNet * (1 + r) * 100);
+        }, 0)
+      : items.reduce((sum, item) => {
+          return sum + Math.round(parseFloat(item.product.price) * 100) * item.quantity;
+        }, 0);
 
     // Apply coupon discount if provided
     let discountLabel = "";
@@ -53,7 +77,14 @@ export async function POST(request: Request) {
       shippingCents >= 0
         ? Math.round(shippingCents)
         : 0;
-    totalCents += ship;
+
+    if (wholesaleNetPricing) {
+      const r = standardVatFraction(taxCountry!);
+      const shipNetEuro = ship / 100;
+      totalCents += Math.round(shipNetEuro * (1 + r) * 100);
+    } else {
+      totalCents += ship;
+    }
 
     if (totalCents < 50) {
       return NextResponse.json(
