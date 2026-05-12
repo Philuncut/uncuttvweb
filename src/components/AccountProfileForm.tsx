@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ACCOUNT_COUNTRIES } from "@/lib/countries";
 
-type SessionType = "haendler" | "customer" | null;
+type SessionData = {
+  type: "haendler" | "customer" | null;
+  isWholesale: boolean;
+};
 
 type ProfileResponse = {
   first_name: string;
@@ -120,10 +123,14 @@ function CountrySelect({
 export default function AccountProfileForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [sessionType, setSessionType] = useState<SessionType>(null);
+  const [session, setSession] = useState<SessionData>({
+    type: null,
+    isWholesale: false,
+  });
   const [profile, setProfile] = useState<ProfileResponse>(emptyProfile);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [showBusinessFields, setShowBusinessFields] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -137,7 +144,10 @@ export default function AccountProfileForm() {
 
         if (sessionRes.ok) {
           const sessionData = await sessionRes.json();
-          setSessionType(sessionData.type ?? null);
+          setSession({
+            type: sessionData.type ?? null,
+            isWholesale: sessionData.isWholesale === true,
+          });
         }
 
         if (!profileRes.ok) {
@@ -169,13 +179,18 @@ export default function AccountProfileForm() {
     void load();
   }, []);
 
+  const hasStoredCompanyData = useMemo(
+    () => Boolean(profile.billing.company) || Boolean(profile.billing.vat),
+    [profile.billing.company, profile.billing.vat]
+  );
+
   const showCompanySection = useMemo(() => {
     return (
-      sessionType === "haendler" ||
-      Boolean(profile.billing.company) ||
-      Boolean(profile.billing.vat)
+      session.isWholesale ||
+      hasStoredCompanyData ||
+      showBusinessFields
     );
-  }, [profile.billing.company, profile.billing.vat, sessionType]);
+  }, [session.isWholesale, hasStoredCompanyData, showBusinessFields]);
 
   const updateProfile = useCallback(
     (updater: (prev: ProfileResponse) => ProfileResponse) => {
@@ -191,7 +206,7 @@ export default function AccountProfileForm() {
       setErrorMsg("");
       setSuccessMsg("");
       if (
-        sessionType === "haendler" &&
+        session.isWholesale &&
         (!profile.billing.company.trim() || !profile.billing.vat.trim())
       ) {
         setErrorMsg("Firmenname und UID-Nummer sind für Händler erforderlich.");
@@ -219,7 +234,7 @@ export default function AccountProfileForm() {
         setSaving(false);
       }
     },
-    [profile, sessionType]
+    [profile, session.isWholesale]
   );
 
   if (loading) {
@@ -288,6 +303,18 @@ export default function AccountProfileForm() {
         </div>
       </section>
 
+      {!showCompanySection && !session.isWholesale && (
+        <div className="rounded border border-[#333] bg-[#111] px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setShowBusinessFields(true)}
+            className="cursor-pointer text-xs font-bold tracking-[0.08em] text-white/60 underline underline-offset-2 hover:text-white"
+          >
+            Geschäftskunde? Firmendaten eingeben
+          </button>
+        </div>
+      )}
+
       {showCompanySection && (
         <section className="space-y-3">
           <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/50">
@@ -320,6 +347,7 @@ export default function AccountProfileForm() {
               />
               <p className="mt-1 text-[11px] text-white/40">
                 Pflichtfeld für Händler — wird auf Rechnungen ausgewiesen
+                {session.isWholesale ? " (erforderlich)" : ""}
               </p>
             </div>
           </div>

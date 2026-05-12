@@ -12,6 +12,15 @@ interface LoginBody {
   password: string;
 }
 
+function resolveSessionRole(wpRoles: string[], fallbackRole?: string): string {
+  const normalized = wpRoles.map((role) => String(role).toLowerCase());
+  if (normalized.includes("wholesale")) return "wholesale";
+  if (normalized.includes("administrator")) return "administrator";
+  if (normalized.includes("shop_manager")) return "shop_manager";
+  if (fallbackRole) return fallbackRole;
+  return "customer";
+}
+
 export async function POST(request: Request) {
   try {
     const { email, password } = (await request.json()) as LoginBody;
@@ -108,7 +117,7 @@ export async function POST(request: Request) {
       email: customer?.email || jwtEmail,
       first_name: customer?.first_name || nameParts[0] || "",
       last_name: customer?.last_name || nameParts.slice(1).join(" ") || "",
-      role: customer?.role || wpRoles[0] || "customer",
+      role: resolveSessionRole(wpRoles, customer?.role),
     };
 
     const cookieStore = await cookies();

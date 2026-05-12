@@ -320,6 +320,7 @@ export default function Navbar() {
         type: null,
         name: null,
         dashboardHref: null,
+        isWholesale: false,
       });
     } finally {
       setSessionReady(true);
