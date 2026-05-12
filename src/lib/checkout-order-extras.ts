@@ -3,8 +3,6 @@
  * override Woo profile when non-empty.
  */
 
-import type { ViesValidated } from "@/lib/vies-types";
-
 export type CheckoutCustomerPayload = {
   email: string;
   firstName: string;
@@ -57,7 +55,6 @@ export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
   ReturnType<typeof buildCheckoutOrderExtras> & {
     checkoutShipping?: CheckoutShippingForWoo;
     isReverseCharge?: boolean;
-    viesResult?: ViesValidated | null;
   };
 
 const PAYLOAD_PREFIX = "checkout_pi_payload_";

@@ -2,14 +2,6 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
 
-type ViesAuditBody = {
-  requestDate: string;
-  consultationNumber: string;
-  name?: string | null;
-  address?: string | null;
-  country?: string | null;
-};
-
 interface CartMeta {
   id: number;
   name: string;
@@ -37,9 +29,8 @@ interface SyncBody {
   /** Optional checkout extras — company / VAT take precedence over profile when non-empty */
   billing?: Record<string, string>;
   meta_data?: OrderMetaEntry[];
-  /** EU B2B Reverse Charge — requires VIES audit fields */
+  /** EU B2B Reverse Charge (UID + shipping rules — client-side). */
   isReverseCharge?: boolean;
-  viesResult?: ViesAuditBody | null;
   /** Versand — Checkout / Store API / Wholesale-Pauschale */
   checkoutShipping?: {
     rate: number;
@@ -84,6 +75,7 @@ function vatFromOrderMeta(meta: OrderMetaEntry[] | undefined): string {
  */
 const UNCUTTV_ORDER_META_KEYS = [
   "_uncuttv_reverse_charge",
+  /** Legacy VIES audit keys — stripped from incoming meta, no longer written. */
   "_uncuttv_vies_consultation",
   "_uncuttv_vies_request_date",
   "_uncuttv_vies_company_name",
@@ -114,23 +106,17 @@ function mergeOrderMetaData(
 
 function appendReverseChargeMeta(
   meta: OrderMetaEntry[] | undefined,
-  isRC: boolean,
-  vies: ViesAuditBody | null
+  isRC: boolean
 ): OrderMetaEntry[] | undefined {
-  if (!isRC || !vies?.consultationNumber || !vies.requestDate) return meta;
+  if (!isRC) return meta;
   const base = [...(meta ?? [])];
-  base.push(
-    { key: "_uncuttv_reverse_charge", value: "yes" },
-    { key: "_uncuttv_vies_consultation", value: vies.consultationNumber },
-    { key: "_uncuttv_vies_request_date", value: vies.requestDate },
-    { key: "_uncuttv_vies_company_name", value: vies.name ?? "" }
-  );
+  base.push({ key: "_uncuttv_reverse_charge", value: "yes" });
   return base;
 }
 
 async function reverseChargeFromStripePaymentIntent(
   piRef: string | { id?: string } | null | undefined
-): Promise<{ isReverseCharge: boolean; viesResult: ViesAuditBody | null }> {
+): Promise<boolean> {
   const id =
     typeof piRef === "string"
       ? piRef
@@ -138,26 +124,13 @@ async function reverseChargeFromStripePaymentIntent(
         ? piRef.id
         : undefined;
   if (!id || !id.startsWith("pi_")) {
-    return { isReverseCharge: false, viesResult: null };
+    return false;
   }
   try {
     const pi = await stripe.paymentIntents.retrieve(id);
-    const isRc = pi.metadata?.is_reverse_charge === "true";
-    const raw = pi.metadata?.vies_audit;
-    if (!isRc || !raw || typeof raw !== "string") {
-      return { isReverseCharge: false, viesResult: null };
-    }
-    const j = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      isReverseCharge: true,
-      viesResult: {
-        requestDate: String(j.requestDate ?? ""),
-        consultationNumber: String(j.consultationNumber ?? ""),
-        name: j.name != null ? String(j.name) : null,
-      },
-    };
+    return pi.metadata?.is_reverse_charge === "true";
   } catch {
-    return { isReverseCharge: false, viesResult: null };
+    return false;
   }
 }
 
@@ -205,7 +178,6 @@ export async function POST(request: Request) {
     let shipping: Record<string, string> = {};
     let transactionId = "";
     let isReverseCharge = false;
-    let viesAudit: ViesAuditBody | null = null;
 
     if (body.sessionId) {
       // Stripe Checkout Session flow
@@ -229,11 +201,9 @@ export async function POST(request: Request) {
             ? String((piField as { id: string }).id)
             : "";
 
-      const rcFromPi = await reverseChargeFromStripePaymentIntent(
+      isReverseCharge = await reverseChargeFromStripePaymentIntent(
         session.payment_intent
       );
-      isReverseCharge = rcFromPi.isReverseCharge;
-      viesAudit = rcFromPi.viesResult;
 
       const customer = session.customer_details;
       const ship = (session as unknown as Record<string, unknown>).shipping_details as {
@@ -273,7 +243,6 @@ export async function POST(request: Request) {
       cartItems = body.items;
       transactionId = body.paymentIntentId;
       isReverseCharge = body.isReverseCharge === true;
-      viesAudit = body.viesResult ?? null;
 
       const c = body.customer;
       billing = {
@@ -291,18 +260,6 @@ export async function POST(request: Request) {
         { error: "Fehlende Daten." },
         { status: 400 }
       );
-    }
-
-    if (isReverseCharge) {
-      if (
-        !viesAudit?.consultationNumber?.trim() ||
-        !viesAudit?.requestDate?.trim()
-      ) {
-        return NextResponse.json(
-          { error: "Reverse Charge unvollständig (VIES-Daten fehlen)." },
-          { status: 400 }
-        );
-      }
     }
 
     if (cartItems.length === 0) {
@@ -417,11 +374,7 @@ export async function POST(request: Request) {
       vatFromFrontendMeta,
       profileVat
     );
-    mergedMeta = appendReverseChargeMeta(
-      mergedMeta,
-      isReverseCharge,
-      viesAudit
-    );
+    mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
     if (mergedMeta && mergedMeta.length > 0) {
       orderData.meta_data = mergedMeta;
     }
@@ -459,9 +412,6 @@ export async function POST(request: Request) {
             : undefined,
         debug: {
           isReverseCharge: body?.isReverseCharge,
-          hasViesResult: !!body?.viesResult,
-          viesValid: (body?.viesResult as { valid?: unknown } | undefined)
-            ?.valid,
           itemsCount: body?.items?.length,
           customerEmail: body?.customer?.email,
         },

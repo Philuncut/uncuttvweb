@@ -10,12 +10,6 @@ interface CartMeta {
   price: string;
 }
 
-type ViesAuditBody = {
-  requestDate: string;
-  consultationNumber: string;
-  name?: string | null;
-};
-
 interface Body {
   customer: {
     email: string;
@@ -38,7 +32,6 @@ interface Body {
     instance_id?: number;
   };
   isReverseCharge?: boolean;
-  viesResult?: ViesAuditBody | null;
 }
 
 async function sendBankTransferEmail(
@@ -164,23 +157,9 @@ export async function POST(request: Request) {
       meta_data: bodyMeta,
       checkoutShipping,
       isReverseCharge: bodyIsRC,
-      viesResult: bodyVies,
     } = body;
 
     const isReverseCharge = bodyIsRC === true;
-    const viesAudit = bodyVies ?? null;
-
-    if (isReverseCharge) {
-      if (
-        !viesAudit?.consultationNumber?.trim() ||
-        !viesAudit?.requestDate?.trim()
-      ) {
-        return NextResponse.json(
-          { error: "Reverse Charge unvollständig (VIES-Daten fehlen)." },
-          { status: 400 }
-        );
-      }
-    }
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -273,19 +252,9 @@ export async function POST(request: Request) {
 
     if (isReverseCharge && orderData.meta_data) {
       const m = orderData.meta_data as Array<{ key: string; value: unknown }>;
-      m.push(
-        { key: "_uncuttv_reverse_charge", value: "yes" },
-        { key: "_uncuttv_vies_consultation", value: viesAudit!.consultationNumber },
-        { key: "_uncuttv_vies_request_date", value: viesAudit!.requestDate },
-        { key: "_uncuttv_vies_company_name", value: viesAudit!.name ?? "" }
-      );
+      m.push({ key: "_uncuttv_reverse_charge", value: "yes" });
     } else if (isReverseCharge && !orderData.meta_data) {
-      orderData.meta_data = [
-        { key: "_uncuttv_reverse_charge", value: "yes" },
-        { key: "_uncuttv_vies_consultation", value: viesAudit!.consultationNumber },
-        { key: "_uncuttv_vies_request_date", value: viesAudit!.requestDate },
-        { key: "_uncuttv_vies_company_name", value: viesAudit!.name ?? "" },
-      ];
+      orderData.meta_data = [{ key: "_uncuttv_reverse_charge", value: "yes" }];
     }
 
     if (

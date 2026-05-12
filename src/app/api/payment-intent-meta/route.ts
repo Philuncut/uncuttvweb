@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import type { ViesValidated } from "@/lib/vies-types";
 
 type Body = {
   paymentIntentId?: string;
   isReverseCharge?: boolean;
-  /** Client may send full /api/validate-vat payload; only audit fields are stored on the PI. */
-  viesResult?: ViesValidated | null;
 };
 
 /**
- * Attach Reverse Charge + VIES audit metadata to a PaymentIntent before confirmation
- * (so sync-order can recover flags from Stripe after redirect-only flows).
+ * Attach Reverse Charge flag to a PaymentIntent before confirmation
+ * (so sync-order can recover it from Stripe after redirect-only flows).
  */
 export async function POST(request: Request) {
   try {
@@ -22,20 +19,11 @@ export async function POST(request: Request) {
     }
 
     const isRc = body.isReverseCharge === true;
-    const v = body.viesResult;
-    const audit =
-      v && (v.requestDate || v.consultationNumber)
-        ? JSON.stringify({
-            requestDate: v.requestDate ?? "",
-            consultationNumber: v.consultationNumber ?? "",
-            name: v.name ?? "",
-          }).slice(0, 450)
-        : "";
 
     await stripe.paymentIntents.update(id, {
       metadata: {
         is_reverse_charge: isRc ? "true" : "false",
-        vies_audit: audit,
+        vies_audit: "",
       },
     });
 

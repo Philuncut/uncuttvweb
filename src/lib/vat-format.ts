@@ -7,7 +7,7 @@ function normalizeVat(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
 }
 
-/** Exported for server-side VIES + checkout (same normalization as `validateEuVatFormat`). */
+/** Exported for server-side checkout (same normalization as `validateEuVatFormat`). */
 export function normalizeEuVat(raw: string): string {
   return normalizeVat(raw);
 }

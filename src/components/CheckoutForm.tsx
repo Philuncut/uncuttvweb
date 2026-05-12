@@ -5,7 +5,6 @@ import {
   useEffect,
   useCallback,
   useMemo,
-  useRef,
   type FormEvent,
 } from "react";
 import { loadStripe } from "@stripe/stripe-js";
@@ -24,7 +23,6 @@ import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
 import { validateEuVatFormat } from "@/lib/vat-format";
 import { isReverseChargeEligible } from "@/lib/reverse-charge";
-import type { ValidateVatResponse, ViesValidated } from "@/lib/vies-types";
 import {
   buildCheckoutOrderExtras,
   buildCheckoutShippingBody,
@@ -489,14 +487,6 @@ function OrderSummary({
 
 /* ── Stable PayPal Button wrapper — prevents re-mount on parent re-renders ── */
 
-type WholesaleViesOk = {
-  ok: true;
-  vies: ViesValidated | null;
-  reverseCharge: boolean;
-};
-type WholesaleViesFail = { ok: false; message: string };
-type WholesaleViesGate = WholesaleViesOk | WholesaleViesFail;
-
 const paypalScriptOptions = {
   clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
   currency: "EUR",
@@ -519,7 +509,7 @@ function PayPalButtonWrapper({
   onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
   onError: () => void;
   disabled?: boolean;
-  /** Wholesale: VIES gate before PayPal order is created (throws Error with user message on failure). */
+  /** Wholesale: block PayPal order creation until company + UID format are valid. */
   onBeforePayPalCreateOrder?: () => Promise<void>;
 }) {
   // Memoize createOrder so PayPal doesn't reinitialize
@@ -881,6 +871,16 @@ function CheckoutInner() {
     items.length,
   ]);
 
+  const wholesaleReverseCharge = useMemo(
+    () =>
+      isReverseChargeEligible({
+        isWholesale,
+        vat,
+        shippingCountry: country,
+      }),
+    [isWholesale, vat, country]
+  );
+
   // Create PaymentIntent for card payments
   useEffect(() => {
     if (!sessionReady) return;
@@ -897,6 +897,7 @@ function CheckoutInner() {
           couponId:
             isWholesale ? undefined : couponId || undefined,
           shippingCents: shipCents,
+          isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
         }),
       });
       const data = await res.json();
@@ -912,6 +913,7 @@ function CheckoutInner() {
     isWholesale,
     sessionReady,
     stripeShipCents,
+    wholesaleReverseCharge,
   ]);
 
   const cartMeta = items.map((i) => ({
@@ -964,54 +966,6 @@ function CheckoutInner() {
     shipLabel,
     shipRateId,
   ]);
-
-  const paypalViesRef = useRef<{
-    reverseCharge: boolean;
-    vies: ViesValidated | null;
-  }>({ reverseCharge: false, vies: null });
-
-  const validateWholesaleVies = useCallback(async (): Promise<WholesaleViesGate> => {
-    if (!isWholesale || !vat.trim()) {
-      return { ok: true, vies: null, reverseCharge: false };
-    }
-    const res = await fetch("/api/validate-vat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vat }),
-    });
-    const data = (await res.json()) as ValidateVatResponse;
-    if ("error" in data && data.valid === null) {
-      if (data.error === "vies_timeout") {
-        return {
-          ok: false,
-          message:
-            "UID-Validierung beim EU-Service VIES dauert länger als gewöhnlich. Bitte in einem Moment erneut versuchen — der Service ist gerade ausgelastet.",
-        };
-      }
-      return {
-        ok: false,
-        message:
-          "EU-Validierungsservice (VIES) ist aktuell nicht erreichbar. Bitte in ein paar Minuten erneut versuchen.",
-      };
-    }
-    if (data.valid === false) {
-      return { ok: false, message: "UID ungültig laut VIES — bitte prüfen." };
-    }
-    if (data.valid !== true) {
-      return {
-        ok: false,
-        message:
-          "EU-Validierungsservice (VIES) ist aktuell nicht erreichbar. Bitte in ein paar Minuten erneut versuchen.",
-      };
-    }
-    const reverseCharge = isReverseChargeEligible({
-      isWholesale: true,
-      vat,
-      shippingCountry: country,
-      viesResult: data,
-    });
-    return { ok: true, vies: data, reverseCharge };
-  }, [isWholesale, vat, country]);
 
   const shippingBlocksCheckout = useMemo(() => {
     if (isWholesale) return false;
@@ -1073,13 +1027,6 @@ function CheckoutInner() {
         return;
       }
 
-      const viesGate = await validateWholesaleVies();
-      if (!viesGate.ok) {
-        setError(viesGate.message);
-        setProcessing(false);
-        return;
-      }
-
       if (paymentMethod === "card") {
         if (!stripe || !elements || !clientSecret) {
           setProcessing(false);
@@ -1094,15 +1041,14 @@ function CheckoutInner() {
         }
 
         const piId = parsePiIdFromClientSecret(clientSecret);
-        if (isWholesale && viesGate.vies && piId) {
+        if (isWholesale && piId) {
           try {
             const piRes = await fetch("/api/payment-intent-meta", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 paymentIntentId: piId,
-                isReverseCharge: viesGate.reverseCharge,
-                viesResult: viesGate.vies,
+                isReverseCharge: wholesaleReverseCharge,
               }),
             });
             if (!piRes.ok) {
@@ -1119,7 +1065,7 @@ function CheckoutInner() {
             setProcessing(false);
             return;
           }
-        } else if (isWholesale && viesGate.vies && !piId) {
+        } else if (isWholesale && !piId) {
           setError("Zahlungsaufbau fehlerhaft — bitte Seite neu laden.");
           setProcessing(false);
           return;
@@ -1156,19 +1102,8 @@ function CheckoutInner() {
               items: cartMeta,
               ...buildCheckoutOrderExtras(company, vat),
               ...buildCheckoutShippingBody(checkoutShippingForWoo),
-              ...(viesGate.reverseCharge && viesGate.vies
-                ? {
-                    isReverseCharge: true,
-                    viesResult: viesGate.vies,
-                  }
-                : {}),
+              ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
             };
-            if (viesGate.reverseCharge && viesGate.vies) {
-              console.log(
-                "[checkout] sending viesResult:",
-                JSON.stringify(viesGate.vies)
-              );
-            }
             await fetch("/api/sync-order", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1190,19 +1125,8 @@ function CheckoutInner() {
             items: cartMeta,
             ...buildCheckoutOrderExtras(company, vat),
             ...buildCheckoutShippingBody(checkoutShippingForWoo),
-            ...(viesGate.reverseCharge && viesGate.vies
-              ? {
-                  isReverseCharge: true,
-                  viesResult: viesGate.vies,
-                }
-              : {}),
+            ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           };
-          if (viesGate.reverseCharge && viesGate.vies) {
-            console.log(
-              "[checkout] sending viesResult:",
-              JSON.stringify(viesGate.vies)
-            );
-          }
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1243,15 +1167,14 @@ function CheckoutInner() {
         };
 
         const piIdForStorage = parsePiIdFromClientSecret(clientSecret);
-        if (isWholesale && viesGate.vies && piIdForStorage) {
+        if (isWholesale && piIdForStorage) {
           try {
             const piRes = await fetch("/api/payment-intent-meta", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 paymentIntentId: piIdForStorage,
-                isReverseCharge: viesGate.reverseCharge,
-                viesResult: viesGate.vies,
+                isReverseCharge: wholesaleReverseCharge,
               }),
             });
             if (!piRes.ok) {
@@ -1277,8 +1200,7 @@ function CheckoutInner() {
             ...(checkoutShippingForWoo
               ? { checkoutShipping: checkoutShippingForWoo }
               : {}),
-            isReverseCharge: viesGate.reverseCharge,
-            viesResult: viesGate.reverseCharge ? viesGate.vies : null,
+            isReverseCharge: wholesaleReverseCharge,
           });
         }
 
@@ -1323,7 +1245,7 @@ function CheckoutInner() {
       router,
       shippingBlocksCheckout,
       checkoutShippingForWoo,
-      validateWholesaleVies,
+      wholesaleReverseCharge,
     ]
   );
 
@@ -1338,22 +1260,8 @@ function CheckoutInner() {
           items: cartMeta,
           ...buildCheckoutOrderExtras(company, vat),
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
-          ...(paypalViesRef.current.reverseCharge && paypalViesRef.current.vies
-            ? {
-                isReverseCharge: true,
-                viesResult: paypalViesRef.current.vies,
-              }
-            : {}),
+          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
         };
-        if (
-          paypalViesRef.current.reverseCharge &&
-          paypalViesRef.current.vies
-        ) {
-          console.log(
-            "[checkout] sending viesResult:",
-            JSON.stringify(paypalViesRef.current.vies)
-          );
-        }
         await fetch("/api/sync-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1365,7 +1273,7 @@ function CheckoutInner() {
       clearCart();
       router.push("/bestellung/erfolg?method=paypal");
     },
-    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo]
+    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge]
   );
 
   if (items.length === 0) {
@@ -1698,18 +1606,11 @@ function CheckoutInner() {
                         )
                       }
                       onBeforePayPalCreateOrder={async () => {
-                        paypalViesRef.current = {
-                          reverseCharge: false,
-                          vies: null,
-                        };
-                        const g = await validateWholesaleVies();
-                        if (!g.ok) {
-                          throw new Error(g.message);
+                        if (wholesaleCheckoutBlocked) {
+                          throw new Error(
+                            "Bitte Firmenname und gültige UID eingeben."
+                          );
                         }
-                        paypalViesRef.current = {
-                          reverseCharge: g.reverseCharge,
-                          vies: g.vies,
-                        };
                       }}
                     />
                   ) : (
