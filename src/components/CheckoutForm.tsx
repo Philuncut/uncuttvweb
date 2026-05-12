@@ -261,12 +261,14 @@ function OrderSummary({
   /** Wholesale: hide coupon input and applied-coupon UI (B2C unchanged). */
   hideCoupon?: boolean;
 }) {
-  // Calculate discounted total
+  const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
+
+  // Calculate discounted total (wholesale: never subtract coupon in math)
   let discountedTotal = subtotal;
   let discountAmount = 0;
-  if (couponDiscount) {
-    const percentMatch = couponDiscount.match(/(\d+)%/);
-    const fixedMatch = couponDiscount.match(/€([\d.]+)/);
+  if (effectiveCouponDiscount) {
+    const percentMatch = effectiveCouponDiscount.match(/(\d+)%/);
+    const fixedMatch = effectiveCouponDiscount.match(/€([\d.]+)/);
     if (percentMatch) {
       discountAmount = subtotal * (parseFloat(percentMatch[1]) / 100);
       discountedTotal = subtotal - discountAmount;
@@ -396,9 +398,9 @@ function OrderSummary({
           <span>Zwischensumme</span>
           <span>€{subtotal.toFixed(2)}</span>
         </div>
-        {couponDiscount && discountAmount > 0 && !hideCoupon && (
+        {effectiveCouponDiscount && discountAmount > 0 && (
           <div className="flex justify-between text-xs text-green-400">
-            <span>Rabatt ({couponDiscount})</span>
+            <span>Rabatt ({effectiveCouponDiscount})</span>
             <span>−€{discountAmount.toFixed(2)}</span>
           </div>
         )}
@@ -520,6 +522,7 @@ function CheckoutInner() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("AT");
   const [isWholesale, setIsWholesale] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [company, setCompany] = useState("");
   const [vat, setVat] = useState("");
   const [vatFieldError, setVatFieldError] = useState("");
@@ -528,61 +531,76 @@ function CheckoutInner() {
     let cancelled = false;
     async function load() {
       try {
-        const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
-        if (!cancelled && sessionRes.ok) {
-          const s = await sessionRes.json();
-          setIsWholesale(s.isWholesale === true);
+        try {
+          const sessionRes = await fetch("/api/auth/session", {
+            cache: "no-store",
+          });
+          if (!cancelled && sessionRes.ok) {
+            const s = await sessionRes.json();
+            setIsWholesale(s.isWholesale === true);
+          }
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
 
-      try {
-        const profileRes = await fetch("/api/auth/profile", { cache: "no-store" });
-        if (profileRes.ok) {
-          const p = (await profileRes.json()) as {
-            email?: string;
-            first_name?: string;
-            last_name?: string;
-            billing?: {
-              company?: string;
-              vat?: string;
-              address_1?: string;
-              postcode?: string;
-              city?: string;
-              country?: string;
+        let filledFromProfile = false;
+        try {
+          const profileRes = await fetch("/api/auth/profile", {
+            cache: "no-store",
+          });
+          if (profileRes.ok) {
+            const p = (await profileRes.json()) as {
+              email?: string;
+              first_name?: string;
+              last_name?: string;
+              billing?: {
+                company?: string;
+                vat?: string;
+                address_1?: string;
+                postcode?: string;
+                city?: string;
+                country?: string;
+              };
             };
-          };
-          if (cancelled) return;
-          if (p.billing?.company) setCompany(String(p.billing.company).trim());
-          if (p.billing?.vat) setVat(String(p.billing.vat).trim().toUpperCase());
-          if (p.email) setEmail(p.email);
-          if (p.first_name) setFirstName(p.first_name);
-          if (p.last_name) setLastName(p.last_name);
-          if (p.billing?.address_1) setStreet(p.billing.address_1);
-          if (p.billing?.postcode) setZip(p.billing.postcode);
-          if (p.billing?.city) setCity(p.billing.city);
-          if (p.billing?.country) setCountry(p.billing.country);
-          return;
+            if (cancelled) return;
+            if (p.billing?.company)
+              setCompany(String(p.billing.company).trim());
+            if (p.billing?.vat)
+              setVat(String(p.billing.vat).trim().toUpperCase());
+            if (p.email) setEmail(p.email);
+            if (p.first_name) setFirstName(p.first_name);
+            if (p.last_name) setLastName(p.last_name);
+            if (p.billing?.address_1) setStreet(p.billing.address_1);
+            if (p.billing?.postcode) setZip(p.billing.postcode);
+            if (p.billing?.city) setCity(p.billing.city);
+            if (p.billing?.country) setCountry(p.billing.country);
+            filledFromProfile = true;
+          }
+        } catch {
+          /* fall through */
         }
-      } catch {
-        /* fall through */
-      }
 
-      try {
-        const res = await fetch("/api/auth/me");
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled) return;
-        if (data.email) setEmail(data.email);
-        if (data.firstName) setFirstName(data.firstName);
-        if (data.lastName) setLastName(data.lastName);
-        if (data.billing?.address_1) setStreet(data.billing.address_1);
-        if (data.billing?.postcode) setZip(data.billing.postcode);
-        if (data.billing?.city) setCity(data.billing.city);
-        if (data.billing?.country) setCountry(data.billing.country);
-      } catch {
-        /* guest */
+        if (!filledFromProfile) {
+          try {
+            const res = await fetch("/api/auth/me");
+            if (!res.ok || cancelled) return;
+            const data = await res.json();
+            if (cancelled) return;
+            if (data.email) setEmail(data.email);
+            if (data.firstName) setFirstName(data.firstName);
+            if (data.lastName) setLastName(data.lastName);
+            if (data.billing?.address_1) setStreet(data.billing.address_1);
+            if (data.billing?.postcode) setZip(data.billing.postcode);
+            if (data.billing?.city) setCity(data.billing.city);
+            if (data.billing?.country) setCountry(data.billing.country);
+          } catch {
+            /* guest */
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionReady(true);
+        }
       }
     }
     void load();
@@ -590,14 +608,6 @@ function CheckoutInner() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isWholesale) return;
-    setCouponId(null);
-    setCouponName(null);
-    setCouponDiscount(null);
-    setAutoCouponApplied(false);
-  }, [isWholesale]);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
 
@@ -610,9 +620,27 @@ function CheckoutInner() {
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
 
+  useEffect(() => {
+    if (!isWholesale) return;
+    setCouponId(null);
+    setCouponName(null);
+    setCouponDiscount(null);
+    setAutoCouponApplied(false);
+  }, [isWholesale]);
+
+  useEffect(() => {
+    if (isWholesale && couponId) {
+      setCouponId(null);
+      setCouponName(null);
+      setCouponDiscount(null);
+      setAutoCouponApplied(false);
+    }
+  }, [isWholesale, couponId]);
+
   // Read ?coupon= from URL and auto-apply (B2C / guest only)
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!sessionReady) return;
     if (isWholesale) return;
     const params = new URLSearchParams(window.location.search);
     const urlCoupon = params.get("coupon");
@@ -645,10 +673,11 @@ function CheckoutInner() {
       }
     }
     void applyCoupon();
-  }, [isWholesale]);
+  }, [sessionReady, isWholesale]);
 
   // Create PaymentIntent for card payments
   useEffect(() => {
+    if (!sessionReady) return;
     if (items.length === 0 || (paymentMethod !== "card" && paymentMethod !== "klarna" && paymentMethod !== "eps")) return;
 
     async function createPI() {
@@ -667,7 +696,7 @@ function CheckoutInner() {
       }
     }
     createPI();
-  }, [items, couponId, paymentMethod, isWholesale]);
+  }, [items, couponId, paymentMethod, isWholesale, sessionReady]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -693,6 +722,11 @@ function CheckoutInner() {
         !vat.trim() ||
         !validateEuVatFormat(vat)),
     [isWholesale, company, vat]
+  );
+
+  const paypalCouponDiscount = useMemo(
+    () => (isWholesale ? null : couponDiscount),
+    [isWholesale, couponDiscount]
   );
 
   const handleSubmit = useCallback(
@@ -1227,7 +1261,7 @@ function CheckoutInner() {
                   {process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? (
                     <PayPalButtonWrapper
                       totalPrice={totalPrice}
-                      couponDiscount={couponDiscount}
+                      couponDiscount={paypalCouponDiscount}
                       onApprove={handlePayPalApprove}
                       disabled={wholesaleCheckoutBlocked}
                       onError={() =>
