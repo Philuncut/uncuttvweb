@@ -60,7 +60,11 @@ type ProfilePayload = {
 };
 
 function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value))
+    return String(value).trim();
+  return String(value).trim();
 }
 
 function buildProfileFromCustomer(

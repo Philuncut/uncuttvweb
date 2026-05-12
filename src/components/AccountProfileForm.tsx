@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ACCOUNT_COUNTRIES } from "@/lib/countries";
 
 type SessionData = {
@@ -68,6 +74,62 @@ const emptyProfile: ProfileResponse = {
   shipping_same_as_billing: true,
 };
 
+/** Map API/profile JSON onto a controlled form state (`billing.vat` always defined). */
+function normalizeProfileFromApi(raw: unknown): ProfileResponse {
+  const profileData = raw as Partial<ProfileResponse> & {
+    billing?: Partial<ProfileResponse["billing"]>;
+    shipping?: Partial<ProfileResponse["shipping"]>;
+  };
+
+  const b: Partial<ProfileResponse["billing"]> = profileData.billing ?? {};
+
+  const vatRaw = b.vat;
+  const vat =
+    typeof vatRaw === "string"
+      ? vatRaw.trim().toUpperCase()
+      : String(vatRaw ?? "").trim().toUpperCase();
+
+  return {
+    ...emptyProfile,
+    ...profileData,
+    billing: {
+      ...emptyProfile.billing,
+      ...b,
+      company: String(b.company ?? "").trim(),
+      vat,
+      phone: String(b.phone ?? "").trim(),
+      address_1: String(b.address_1 ?? "").trim(),
+      address_2: String(b.address_2 ?? "").trim(),
+      city: String(b.city ?? "").trim(),
+      postcode: String(b.postcode ?? "").trim(),
+      country: String(b.country ?? "").trim() || "AT",
+      state: String(b.state ?? "").trim(),
+    },
+    shipping: {
+      ...emptyProfile.shipping,
+      ...(profileData.shipping ?? {}),
+      first_name: String(profileData.shipping?.first_name ?? "").trim(),
+      last_name: String(profileData.shipping?.last_name ?? "").trim(),
+      company: String(profileData.shipping?.company ?? "").trim(),
+      address_1: String(profileData.shipping?.address_1 ?? "").trim(),
+      address_2: String(profileData.shipping?.address_2 ?? "").trim(),
+      city: String(profileData.shipping?.city ?? "").trim(),
+      postcode: String(profileData.shipping?.postcode ?? "").trim(),
+      country:
+        String(profileData.shipping?.country ?? "").trim() || "AT",
+      state: String(profileData.shipping?.state ?? "").trim(),
+    },
+    first_name: String(profileData.first_name ?? "").trim(),
+    last_name: String(profileData.last_name ?? "").trim(),
+    email: String(profileData.email ?? "").trim(),
+    phone: String(profileData.phone ?? "").trim(),
+    shipping_same_as_billing:
+      profileData.shipping_same_as_billing !== undefined
+        ? Boolean(profileData.shipping_same_as_billing)
+        : emptyProfile.shipping_same_as_billing,
+  };
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.1em] text-[#888]">
@@ -128,11 +190,16 @@ export default function AccountProfileForm() {
     isWholesale: false,
   });
   const [profile, setProfile] = useState<ProfileResponse>(emptyProfile);
+  const profileRef = useRef<ProfileResponse>(emptyProfile);
+  profileRef.current = profile;
+
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [showBusinessFields, setShowBusinessFields] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
       setLoading(true);
       setErrorMsg("");
@@ -142,7 +209,7 @@ export default function AccountProfileForm() {
           fetch("/api/auth/profile"),
         ]);
 
-        if (sessionRes.ok) {
+        if (!cancelled && sessionRes.ok) {
           const sessionData = await sessionRes.json();
           setSession({
             type: sessionData.type ?? null,
@@ -151,32 +218,36 @@ export default function AccountProfileForm() {
         }
 
         if (!profileRes.ok) {
-          const error = await profileRes.json().catch(() => ({ error: "Profil konnte nicht geladen werden." }));
-          setErrorMsg(error.error || "Profil konnte nicht geladen werden.");
-          setLoading(false);
+          const error = await profileRes.json().catch(() => ({
+            error: "Profil konnte nicht geladen werden.",
+          }));
+          if (!cancelled) {
+            setErrorMsg(error.error || "Profil konnte nicht geladen werden.");
+          }
           return;
         }
 
-        const profileData = (await profileRes.json()) as ProfileResponse;
-        setProfile({
-          ...profileData,
-          billing: {
-            ...profileData.billing,
-            country: profileData.billing.country || "AT",
-          },
-          shipping: {
-            ...profileData.shipping,
-            country: profileData.shipping.country || "AT",
-          },
-        });
+        const raw = await profileRes.json();
+
+        if (!cancelled) {
+          setProfile(normalizeProfileFromApi(raw));
+        }
       } catch {
-        setErrorMsg("Profil konnte nicht geladen werden.");
+        if (!cancelled) {
+          setErrorMsg("Profil konnte nicht geladen werden.");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const hasStoredCompanyData = useMemo(
@@ -205,9 +276,10 @@ export default function AccountProfileForm() {
       setSaving(true);
       setErrorMsg("");
       setSuccessMsg("");
+      const snapshot = profileRef.current;
       if (
         session.isWholesale &&
-        (!profile.billing.company.trim() || !profile.billing.vat.trim())
+        (!snapshot.billing.company.trim() || !snapshot.billing.vat.trim())
       ) {
         setErrorMsg("Firmenname und UID-Nummer sind für Händler erforderlich.");
         setSaving(false);
@@ -217,7 +289,7 @@ export default function AccountProfileForm() {
         const res = await fetch("/api/auth/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(profile),
+          body: JSON.stringify(snapshot),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -225,7 +297,9 @@ export default function AccountProfileForm() {
           setSaving(false);
           return;
         }
-        setProfile(data.profile);
+        if (data.profile) {
+          setProfile(normalizeProfileFromApi(data.profile));
+        }
         setSuccessMsg("Daten gespeichert");
         setTimeout(() => setSuccessMsg(""), 3000);
       } catch {
@@ -234,7 +308,7 @@ export default function AccountProfileForm() {
         setSaving(false);
       }
     },
-    [profile, session.isWholesale]
+    [session.isWholesale]
   );
 
   if (loading) {
@@ -337,12 +411,13 @@ export default function AccountProfileForm() {
               <FieldLabel>UID-NUMMER</FieldLabel>
               <Input
                 value={profile.billing.vat}
-                onChange={(value) =>
+                onChange={(value) => {
+                  const next = String(value).toUpperCase().trimEnd();
                   updateProfile((prev) => ({
                     ...prev,
-                    billing: { ...prev.billing, vat: value.toUpperCase() },
-                  }))
-                }
+                    billing: { ...prev.billing, vat: next },
+                  }));
+                }}
                 placeholder="ATU12345678"
               />
               <p className="mt-1 text-[11px] text-white/40">
