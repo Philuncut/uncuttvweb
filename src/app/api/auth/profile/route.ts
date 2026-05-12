@@ -67,14 +67,70 @@ function asString(value: unknown): string {
   return String(value).trim();
 }
 
+/** WC REST responses often omit internal keys like `_billing_vat` from `meta_data`. */
+function billingVatFromCustomerMeta(customer: WooCustomer): string {
+  const entry = customer.meta_data?.find(
+    (meta) => meta?.key === "_billing_vat" || meta?.key === "billing_vat"
+  );
+  return asString(entry?.value);
+}
+
+/**
+ * Fallback: Woo stores `_billing_vat` on user meta; WP `/users/me?context=edit`
+ * exposes it while WC customer JSON hides it from some installs.
+ */
+async function billingVatFromWpUserMe(jwt: string): Promise<string> {
+  if (!jwt) return "";
+  try {
+    const res = await fetch(
+      `${WOO_URL}/wp-json/wp/v2/users/me?context=edit`,
+      {
+        headers: { Authorization: `Bearer ${jwt}` },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return "";
+    const data = (await res.json()) as { meta?: Record<string, unknown> };
+    const meta = data.meta;
+    if (!meta || typeof meta !== "object") return "";
+    return asString(meta._billing_vat ?? meta.billing_vat);
+  } catch {
+    return "";
+  }
+}
+
+async function resolveBillingVat(
+  customer: WooCustomer,
+  opts: {
+    /** After POST: use request VAT if WC hides meta in response body */
+    fallbackFromRequest?: string;
+    jwt?: string | null;
+  }
+): Promise<string> {
+  const fromMeta = billingVatFromCustomerMeta(customer);
+  if (fromMeta) return fromMeta.toUpperCase();
+
+  const fromBody = opts.fallbackFromRequest !== undefined
+    ? asString(opts.fallbackFromRequest).toUpperCase()
+    : "";
+  if (fromBody) return fromBody;
+
+  if (opts.jwt) {
+    const fromWp = await billingVatFromWpUserMe(opts.jwt);
+    if (fromWp) return fromWp.toUpperCase();
+  }
+
+  return "";
+}
+
 function buildProfileFromCustomer(
   customer: WooCustomer,
-  cookieName: string
+  cookieName: string,
+  billingVatResolved: string
 ): ProfilePayload {
   const billing = customer.billing ?? {};
   const shipping = customer.shipping ?? {};
-  const vat =
-    customer.meta_data?.find((meta) => meta?.key === "_billing_vat")?.value ?? "";
+  const vat = billingVatResolved;
 
   const firstName = asString(customer.first_name) || cookieName;
   const lastName = asString(customer.last_name);
@@ -200,7 +256,8 @@ export async function GET() {
     }
 
     const customer = await fetchWooCustomer(customerId);
-    const profile = buildProfileFromCustomer(customer, cookieName);
+    const billingVat = await resolveBillingVat(customer, { jwt: token });
+    const profile = buildProfileFromCustomer(customer, cookieName, billingVat);
     return NextResponse.json(profile);
   } catch (error) {
     const message =
@@ -269,6 +326,31 @@ export async function POST(request: Request) {
           state: asString(body.shipping.state),
         };
 
+    const submittedVat = asString(body.billing.vat);
+
+    const mergeMetaWithVat = (existingMeta: WooCustomer["meta_data"]) => {
+      const next = [...(existingMeta ?? [])];
+      let replaced = false;
+      for (let i = 0; i < next.length; i++) {
+        const key = next[i]?.key;
+        if (key === "_billing_vat" || key === "billing_vat") {
+          next[i] = { ...next[i], key: "_billing_vat", value: submittedVat };
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) next.push({ key: "_billing_vat", value: submittedVat });
+      return next;
+    };
+
+    let existingCustomer: WooCustomer | null = null;
+    try {
+      existingCustomer = await fetchWooCustomer(customerId);
+    } catch {
+      existingCustomer = null;
+    }
+    const meta_data = mergeMetaWithVat(existingCustomer?.meta_data);
+
     const updateRes = await fetch(
       `${WOO_URL}/wp-json/wc/v3/customers/${customerId}`,
       {
@@ -283,7 +365,7 @@ export async function POST(request: Request) {
           email: asString(body.email),
           billing,
           shipping,
-          meta_data: [{ key: "_billing_vat", value: asString(body.billing.vat) }],
+          meta_data,
         }),
       }
     );
@@ -297,7 +379,15 @@ export async function POST(request: Request) {
     }
 
     const updatedCustomer = (await updateRes.json()) as WooCustomer;
-    const profile = buildProfileFromCustomer(updatedCustomer, "");
+    const billingVatResolved = await resolveBillingVat(updatedCustomer, {
+      fallbackFromRequest: submittedVat,
+      jwt: token,
+    });
+    const profile = buildProfileFromCustomer(
+      updatedCustomer,
+      "",
+      billingVatResolved
+    );
 
     return NextResponse.json({ success: true, profile });
   } catch (error) {
