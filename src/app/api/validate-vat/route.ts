@@ -61,9 +61,10 @@ function hasSoapFault(xml: string): boolean {
   return /<(?:\w+:)?Fault[\s>]/i.test(xml) || /<faultcode>/i.test(xml);
 }
 
-async function callVies(
+async function callViesWithTimeout(
   countryCode: string,
-  vatNumber: string
+  vatNumber: string,
+  timeoutMs: number
 ): Promise<
   { ok: true; xml: string } | { ok: false; reason: "fault" | "network" | "timeout" }
 > {
@@ -78,7 +79,7 @@ async function callVies(
 </soapenv:Envelope>`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(VIES_URL, {
       method: "POST",
@@ -132,6 +133,54 @@ function parseViesXml(xml: string): ValidateVatResponse {
   return { valid: false };
 }
 
+const VIES_FETCH_TIMEOUT_MS = 12_000;
+const VIES_MAX_ATTEMPTS = 3;
+
+type RetryableViesError = Extract<
+  ValidateVatResponse,
+  { valid: null }
+>["error"];
+
+async function fetchViesWithRetries(
+  countryCode: string,
+  vatNumber: string
+): Promise<ValidateVatResponse> {
+  let lastError: RetryableViesError = "vies_unavailable";
+
+  for (let attempt = 1; attempt <= VIES_MAX_ATTEMPTS; attempt++) {
+    const transport = await callViesWithTimeout(
+      countryCode,
+      vatNumber,
+      VIES_FETCH_TIMEOUT_MS
+    );
+
+    if (!transport.ok) {
+      lastError =
+        transport.reason === "timeout" ? "vies_timeout" : "vies_unavailable";
+      if (transport.reason === "fault") {
+        console.error(
+          "[validate-vat] VIES SOAP fault for",
+          `${countryCode}|${vatNumber}`,
+          "attempt",
+          attempt
+        );
+      }
+    } else {
+      const parsed = parseViesXml(transport.xml);
+      if (parsed.valid === true || parsed.valid === false) {
+        return parsed;
+      }
+      lastError = parsed.error;
+    }
+
+    if (attempt < VIES_MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+
+  return { valid: null, error: lastError };
+}
+
 export async function POST(request: Request) {
   try {
     const json = (await request.json()) as { vat?: string };
@@ -158,24 +207,10 @@ export async function POST(request: Request) {
       return NextResponse.json(cached);
     }
 
-    const vies = await callVies(split.countryCode, split.vatNumber);
-    if (!vies.ok) {
-      if (vies.reason === "timeout") {
-        return NextResponse.json({
-          valid: null,
-          error: "vies_timeout",
-        } satisfies ValidateVatResponse);
-      }
-      if (vies.reason === "fault") {
-        console.error("[validate-vat] VIES SOAP fault for", cacheKey);
-      }
-      return NextResponse.json({
-        valid: null,
-        error: "vies_unavailable",
-      } satisfies ValidateVatResponse);
-    }
-
-    const parsed = parseViesXml(vies.xml);
+    const parsed = await fetchViesWithRetries(
+      split.countryCode,
+      split.vatNumber
+    );
     if (parsed.valid === true || parsed.valid === false) {
       viesCacheSet(cacheKey, parsed);
     }

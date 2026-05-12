@@ -985,13 +985,13 @@ function CheckoutInner() {
         return {
           ok: false,
           message:
-            "UID-Validierung dauerte zu lange — bitte erneut versuchen.",
+            "UID-Validierung beim EU-Service VIES dauert länger als gewöhnlich. Bitte in einem Moment erneut versuchen — der Service ist gerade ausgelastet.",
         };
       }
       return {
         ok: false,
         message:
-          "VAT-Validierung aktuell nicht verfügbar — bitte später erneut versuchen.",
+          "EU-Validierungsservice (VIES) ist aktuell nicht erreichbar. Bitte in ein paar Minuten erneut versuchen.",
       };
     }
     if (data.valid === false) {
@@ -1001,7 +1001,7 @@ function CheckoutInner() {
       return {
         ok: false,
         message:
-          "VAT-Validierung aktuell nicht verfügbar — bitte später erneut versuchen.",
+          "EU-Validierungsservice (VIES) ist aktuell nicht erreichbar. Bitte in ein paar Minuten erneut versuchen.",
       };
     }
     const reverseCharge = isReverseChargeEligible({
