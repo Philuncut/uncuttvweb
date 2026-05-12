@@ -18,9 +18,11 @@ import { useRouter } from "next/navigation";
 import { validateEuVatFormat } from "@/lib/vat-format";
 import {
   buildCheckoutOrderExtras,
+  buildCheckoutShippingBody,
   markCheckoutPiSynced,
   parsePiIdFromClientSecret,
   persistCheckoutSyncPayload,
+  type CheckoutShippingForWoo,
 } from "@/lib/checkout-order-extras";
 
 const stripePromise = loadStripe(
@@ -251,6 +253,11 @@ function OrderSummary({
   onCouponRemoved,
   subtotal,
   hideCoupon,
+  shippingAmount,
+  shippingLabel,
+  shippingLoading,
+  shippingError,
+  shippingNoZone,
 }: {
   couponId: string | null;
   couponName: string | null;
@@ -260,23 +267,30 @@ function OrderSummary({
   subtotal: number;
   /** Wholesale: hide coupon input and applied-coupon UI (B2C unchanged). */
   hideCoupon?: boolean;
+  shippingAmount: number;
+  shippingLabel: string;
+  shippingLoading: boolean;
+  shippingError: string | null;
+  shippingNoZone: boolean;
 }) {
   const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
 
-  // Calculate discounted total (wholesale: never subtract coupon in math)
-  let discountedTotal = subtotal;
+  // Calculate discounted subtotal (wholesale: never subtract coupon in math)
+  let discountedSubtotal = subtotal;
   let discountAmount = 0;
   if (effectiveCouponDiscount) {
     const percentMatch = effectiveCouponDiscount.match(/(\d+)%/);
     const fixedMatch = effectiveCouponDiscount.match(/€([\d.]+)/);
     if (percentMatch) {
       discountAmount = subtotal * (parseFloat(percentMatch[1]) / 100);
-      discountedTotal = subtotal - discountAmount;
+      discountedSubtotal = subtotal - discountAmount;
     } else if (fixedMatch) {
       discountAmount = parseFloat(fixedMatch[1]);
-      discountedTotal = Math.max(0, subtotal - discountAmount);
+      discountedSubtotal = Math.max(0, subtotal - discountAmount);
     }
   }
+
+  const grandTotal = discountedSubtotal + shippingAmount;
   const { items } = useCart();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -404,18 +418,43 @@ function OrderSummary({
             <span>−€{discountAmount.toFixed(2)}</span>
           </div>
         )}
+        <div className="flex justify-between text-xs text-white/50">
+          <span className="flex flex-col gap-0.5">
+            <span>Versand</span>
+            {shippingLabel && !shippingLoading && !shippingError && (
+              <span className="text-[9px] font-normal text-white/35">
+                {shippingLabel}
+              </span>
+            )}
+          </span>
+          <span className="text-right">
+            {shippingLoading ? (
+              <span className="text-white/40">wird berechnet…</span>
+            ) : shippingError ? (
+              <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
+            ) : shippingNoZone ? (
+              <span className="text-[10px] text-[#c0392b]">
+                Versand nicht verfügbar
+              </span>
+            ) : shippingAmount === 0 ? (
+              <span className="text-green-400/90">Kostenlos</span>
+            ) : (
+              `€${shippingAmount.toFixed(2)}`
+            )}
+          </span>
+        </div>
         <div className="flex justify-between border-t border-[#222] pt-2">
           <span className="text-sm font-bold tracking-wider text-white/60">
             GESAMT
           </span>
           <span className="text-xl font-black text-white">
-            €{discountedTotal.toFixed(2)}
+            €{grandTotal.toFixed(2)}
           </span>
         </div>
       </div>
 
       <p className="mt-4 text-[10px] text-white/30">
-        Versandkosten werden im nächsten Schritt berechnet.
+        Versand per WooCommerce-Store-API (bzw. pauschal für Wholesale).
       </p>
 
       <div className="mt-4 flex items-center gap-2 text-white/30">
@@ -450,12 +489,15 @@ const paypalScriptOptions = {
 function PayPalButtonWrapper({
   totalPrice,
   couponDiscount,
+  shippingAmount,
   onApprove,
   onError,
   disabled,
 }: {
   totalPrice: number;
   couponDiscount: string | null;
+  /** Brutto-Versand in EUR (nach Rabatt auf Warenkorb addieren) */
+  shippingAmount: number;
   onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
   onError: () => void;
   disabled?: boolean;
@@ -471,6 +513,7 @@ function PayPalButtonWrapper({
         if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
         else if (fixMatch) paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
       }
+      paypalTotal += shippingAmount;
       return actions.order.create({
         intent: "CAPTURE",
         purchase_units: [
@@ -484,7 +527,7 @@ function PayPalButtonWrapper({
         ],
       });
     },
-    [totalPrice, couponDiscount]
+    [totalPrice, couponDiscount, shippingAmount]
   );
 
   return (
@@ -501,7 +544,7 @@ function PayPalButtonWrapper({
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
-        forceReRender={[totalPrice, couponDiscount, disabled]}
+        forceReRender={[totalPrice, couponDiscount, shippingAmount, disabled]}
       />
     </PayPalScriptProvider>
   );
@@ -620,6 +663,16 @@ function CheckoutInner() {
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
 
+  const [shipFetchLoading, setShipFetchLoading] = useState(false);
+  const [shipResolved, setShipResolved] = useState(false);
+  const [shipRate, setShipRate] = useState<number | null>(null);
+  const [shipLabel, setShipLabel] = useState("");
+  const [shipMethodId, setShipMethodId] = useState("");
+  const [shipRateId, setShipRateId] = useState("");
+  const [shipError, setShipError] = useState<string | null>(null);
+  const [shipNoZone, setShipNoZone] = useState(false);
+  const [stripeShipCents, setStripeShipCents] = useState<number | null>(null);
+
   useEffect(() => {
     if (!isWholesale) return;
     setCouponId(null);
@@ -675,12 +728,144 @@ function CheckoutInner() {
     void applyCoupon();
   }, [sessionReady, isWholesale]);
 
+  const itemsKey = items.map((i) => `${i.product.id}:${i.quantity}`).join(",");
+
+  useEffect(() => {
+    if (!sessionReady) return;
+
+    if (items.length === 0) {
+      setShipFetchLoading(false);
+      setShipResolved(true);
+      setShipRate(0);
+      setShipLabel("");
+      setShipMethodId("none");
+      setShipRateId("");
+      setShipError(null);
+      setShipNoZone(false);
+      setStripeShipCents(0);
+      return;
+    }
+
+    if (isWholesale) {
+      setShipFetchLoading(false);
+      setShipResolved(true);
+      setShipRate(10);
+      setShipLabel("Wholesale-Versand");
+      setShipMethodId("flat_rate");
+      setShipRateId("wholesale_flat");
+      setShipError(null);
+      setShipNoZone(false);
+      setStripeShipCents(1000);
+      return;
+    }
+
+    let cancelled = false;
+    setShipFetchLoading(true);
+    setShipError(null);
+    setShipNoZone(false);
+    setShipResolved(false);
+    setStripeShipCents(null);
+    setShipRate(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/shipping-rate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: items.map((i) => ({
+              id: i.product.id,
+              quantity: i.quantity,
+            })),
+            country,
+            postcode: zip,
+            city,
+            address_1: street,
+            isWholesale: false,
+          }),
+        });
+        const data = (await res.json()) as {
+          rate?: number | null;
+          label?: string;
+          method_id?: string;
+          rate_id?: string;
+          source?: string;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          if (res.status === 503 || data.error === "shipping_unavailable") {
+            setShipError(
+              "Versand konnte nicht berechnet werden — bitte Land prüfen"
+            );
+            setShipResolved(true);
+            setStripeShipCents(null);
+            setShipRate(null);
+          } else {
+            setShipError(
+              "Versand konnte nicht berechnet werden — bitte Land prüfen"
+            );
+            setShipResolved(true);
+            setStripeShipCents(null);
+            setShipRate(null);
+          }
+          return;
+        }
+        if (data.source === "no-zone" || data.rate === null) {
+          setShipRate(null);
+          setShipLabel(data.label || "Versand nicht verfügbar");
+          setShipMethodId("");
+          setShipRateId("");
+          setShipNoZone(true);
+          setShipResolved(true);
+          setStripeShipCents(null);
+          return;
+        }
+        const r = typeof data.rate === "number" ? data.rate : 0;
+        setShipRate(r);
+        setShipLabel(data.label || "Versand");
+        setShipMethodId(data.method_id || "flat_rate");
+        setShipRateId(data.rate_id || "");
+        setShipNoZone(false);
+        setShipResolved(true);
+        setStripeShipCents(Math.round(r * 100));
+      } catch {
+        if (!cancelled) {
+          setShipError(
+            "Versand konnte nicht berechnet werden — bitte Land prüfen"
+          );
+          setShipResolved(true);
+          setStripeShipCents(null);
+          setShipRate(null);
+        }
+      } finally {
+        if (!cancelled) setShipFetchLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    sessionReady,
+    isWholesale,
+    itemsKey,
+    country,
+    zip,
+    city,
+    street,
+    items.length,
+  ]);
+
   // Create PaymentIntent for card payments
   useEffect(() => {
     if (!sessionReady) return;
     if (items.length === 0 || (paymentMethod !== "card" && paymentMethod !== "klarna" && paymentMethod !== "eps")) return;
+    if (!isWholesale && stripeShipCents === null) return;
 
     async function createPI() {
+      const shipCents = isWholesale ? 1000 : (stripeShipCents ?? 0);
       const res = await fetch("/api/create-payment-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -688,6 +873,7 @@ function CheckoutInner() {
           items,
           couponId:
             isWholesale ? undefined : couponId || undefined,
+          shippingCents: shipCents,
         }),
       });
       const data = await res.json();
@@ -696,7 +882,14 @@ function CheckoutInner() {
       }
     }
     createPI();
-  }, [items, couponId, paymentMethod, isWholesale, sessionReady]);
+  }, [
+    items,
+    couponId,
+    paymentMethod,
+    isWholesale,
+    sessionReady,
+    stripeShipCents,
+  ]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -729,6 +922,56 @@ function CheckoutInner() {
     [isWholesale, couponDiscount]
   );
 
+  const checkoutShippingForWoo = useMemo((): CheckoutShippingForWoo | null => {
+    if (!shipResolved || shipError) return null;
+    if (shipNoZone || shipRate === null) return null;
+    if (shipMethodId === "none" && shipRate === 0) return null;
+    return {
+      rate: shipRate,
+      label: shipLabel || "Versand",
+      method_id: shipMethodId || "flat_rate",
+      ...(shipRateId ? { rate_id: shipRateId } : {}),
+    };
+  }, [
+    shipResolved,
+    shipError,
+    shipNoZone,
+    shipRate,
+    shipMethodId,
+    shipLabel,
+    shipRateId,
+  ]);
+
+  const shippingBlocksCheckout = useMemo(() => {
+    if (isWholesale) return false;
+    if (items.length === 0) return false;
+    if (!sessionReady) return true;
+    if (!shipResolved || shipFetchLoading) return true;
+    if (shipError) return true;
+    if (shipNoZone || shipRate === null) return true;
+    if (stripeShipCents === null) return true;
+    return false;
+  }, [
+    isWholesale,
+    items.length,
+    sessionReady,
+    shipResolved,
+    shipFetchLoading,
+    shipError,
+    shipNoZone,
+    shipRate,
+    stripeShipCents,
+  ]);
+
+  const orderSummaryShippingAmount = useMemo(() => {
+    if (!shipResolved || shipFetchLoading || shipError) return 0;
+    if (shipNoZone || shipRate === null) return 0;
+    return shipRate;
+  }, [shipResolved, shipFetchLoading, shipError, shipNoZone, shipRate]);
+
+  const uiShippingLoading =
+    items.length > 0 && ((!sessionReady && !isWholesale) || shipFetchLoading);
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
@@ -749,6 +992,14 @@ function CheckoutInner() {
           setProcessing(false);
           return;
         }
+      }
+
+      if (shippingBlocksCheckout) {
+        setError(
+          "Versand: Bitte warten oder Lieferland prüfen — Bestellung noch nicht möglich."
+        );
+        setProcessing(false);
+        return;
       }
 
       if (paymentMethod === "card") {
@@ -797,6 +1048,7 @@ function CheckoutInner() {
                 customer: customerData,
                 items: cartMeta,
                 ...buildCheckoutOrderExtras(company, vat),
+                ...buildCheckoutShippingBody(checkoutShippingForWoo),
               }),
             });
             markCheckoutPiSynced(paymentIntent.id);
@@ -817,6 +1069,7 @@ function CheckoutInner() {
               customer: customerData,
               items: cartMeta,
               ...buildCheckoutOrderExtras(company, vat),
+              ...buildCheckoutShippingBody(checkoutShippingForWoo),
             }),
           });
           const data = await res.json();
@@ -874,6 +1127,9 @@ function CheckoutInner() {
           persistCheckoutSyncPayload(piIdForStorage, {
             ...customerData,
             ...buildCheckoutOrderExtras(company, vat),
+            ...(checkoutShippingForWoo
+              ? { checkoutShipping: checkoutShippingForWoo }
+              : {}),
           });
         }
 
@@ -916,6 +1172,8 @@ function CheckoutInner() {
       isWholesale,
       clearCart,
       router,
+      shippingBlocksCheckout,
+      checkoutShippingForWoo,
     ]
   );
 
@@ -932,6 +1190,7 @@ function CheckoutInner() {
             customer: customerData,
             items: cartMeta,
             ...buildCheckoutOrderExtras(company, vat),
+            ...buildCheckoutShippingBody(checkoutShippingForWoo),
           }),
         });
       } catch {
@@ -940,7 +1199,7 @@ function CheckoutInner() {
       clearCart();
       router.push("/bestellung/erfolg?method=paypal");
     },
-    [customerData, cartMeta, clearCart, router, company, vat]
+    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo]
   );
 
   if (items.length === 0) {
@@ -1262,8 +1521,11 @@ function CheckoutInner() {
                     <PayPalButtonWrapper
                       totalPrice={totalPrice}
                       couponDiscount={paypalCouponDiscount}
+                      shippingAmount={orderSummaryShippingAmount}
                       onApprove={handlePayPalApprove}
-                      disabled={wholesaleCheckoutBlocked}
+                      disabled={
+                        wholesaleCheckoutBlocked || shippingBlocksCheckout
+                      }
                       onError={() =>
                         setError(
                           "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut."
@@ -1310,7 +1572,8 @@ function CheckoutInner() {
               disabled={
                 processing ||
                 isStripeDisabled ||
-                wholesaleCheckoutBlocked
+                wholesaleCheckoutBlocked ||
+                shippingBlocksCheckout
               }
               className="mt-8 flex w-full cursor-pointer items-center justify-center bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:cursor-default disabled:opacity-60"
             >
@@ -1341,6 +1604,11 @@ function CheckoutInner() {
             }}
             subtotal={totalPrice}
             hideCoupon={isWholesale}
+            shippingAmount={orderSummaryShippingAmount}
+            shippingLabel={shipLabel}
+            shippingLoading={uiShippingLoading}
+            shippingError={shipError}
+            shippingNoZone={shipNoZone}
           />
         </div>
       </div>

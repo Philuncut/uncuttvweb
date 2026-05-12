@@ -29,6 +29,14 @@ interface SyncBody {
   /** Optional checkout extras — company / VAT take precedence over profile when non-empty */
   billing?: Record<string, string>;
   meta_data?: OrderMetaEntry[];
+  /** Versand — Checkout / Store API / Wholesale-Pauschale */
+  checkoutShipping?: {
+    rate: number;
+    label: string;
+    method_id: string;
+    rate_id?: string;
+    instance_id?: number;
+  };
 }
 
 function asString(value: unknown): string {
@@ -268,6 +276,23 @@ export async function POST(request: Request) {
     const parsedId = customerIdStr ? parseInt(customerIdStr, 10) : NaN;
     if (customerIdStr && Number.isFinite(parsedId) && parsedId > 0) {
       orderData.customer_id = parsedId;
+    }
+
+    if (
+      body.checkoutShipping &&
+      typeof body.checkoutShipping.rate === "number" &&
+      !Number.isNaN(body.checkoutShipping.rate)
+    ) {
+      const s = body.checkoutShipping;
+      if (!(s.method_id === "none" && s.rate === 0)) {
+        orderData.shipping_lines = [
+          {
+            method_id: s.method_id || "flat_rate",
+            method_title: s.label || "Versand",
+            total: Math.max(0, s.rate).toFixed(2),
+          },
+        ];
+      }
     }
 
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {

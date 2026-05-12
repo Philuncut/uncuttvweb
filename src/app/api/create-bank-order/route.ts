@@ -24,6 +24,13 @@ interface Body {
   /** Optional — same shape as /api/sync-order (checkout passes company + VAT). */
   billing?: Record<string, string>;
   meta_data?: Array<{ key: string; value: unknown }>;
+  checkoutShipping?: {
+    rate: number;
+    label: string;
+    method_id: string;
+    rate_id?: string;
+    instance_id?: number;
+  };
 }
 
 async function sendBankTransferEmail(
@@ -142,7 +149,13 @@ async function sendBankTransferEmail(
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Body;
-    const { customer, items, billing: bodyBilling, meta_data: bodyMeta } = body;
+    const {
+      customer,
+      items,
+      billing: bodyBilling,
+      meta_data: bodyMeta,
+      checkoutShipping,
+    } = body;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -214,6 +227,23 @@ export async function POST(request: Request) {
       orderData.meta_data = meta_data;
     }
 
+    if (
+      checkoutShipping &&
+      typeof checkoutShipping.rate === "number" &&
+      !Number.isNaN(checkoutShipping.rate)
+    ) {
+      const s = checkoutShipping;
+      if (!(s.method_id === "none" && s.rate === 0)) {
+        orderData.shipping_lines = [
+          {
+            method_id: s.method_id || "flat_rate",
+            method_title: s.label || "Versand",
+            total: Math.max(0, s.rate).toFixed(2),
+          },
+        ];
+      }
+    }
+
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
@@ -235,9 +265,18 @@ export async function POST(request: Request) {
     const order = await res.json();
 
     // Send bank transfer confirmation email
-    const total = items
-      .reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0)
-      .toFixed(2);
+    const itemsTotal = items.reduce(
+      (sum, item) => sum + parseFloat(item.price) * item.qty,
+      0
+    );
+    const ship =
+      checkoutShipping &&
+      typeof checkoutShipping.rate === "number" &&
+      !Number.isNaN(checkoutShipping.rate) &&
+      !(checkoutShipping.method_id === "none" && checkoutShipping.rate === 0)
+        ? checkoutShipping.rate
+        : 0;
+    const total = (itemsTotal + ship).toFixed(2);
 
     await sendBankTransferEmail(
       customer.email,

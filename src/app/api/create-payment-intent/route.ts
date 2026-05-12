@@ -5,12 +5,13 @@ import type { CartItem } from "@/lib/CartContext";
 interface Body {
   items: CartItem[];
   couponId?: string;
+  /** Versand in Cent (>= 0), aus Checkout */
+  shippingCents?: number;
 }
 
 export async function POST(request: Request) {
-  console.log("[Stripe Debug] SECRET_KEY prefix:", process.env.STRIPE_SECRET_KEY?.slice(0, 20));
   try {
-    const { items, couponId } = (await request.json()) as Body;
+    const { items, couponId, shippingCents } = (await request.json()) as Body;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -42,6 +43,14 @@ export async function POST(request: Request) {
         // Invalid coupon — ignore silently, charge full price
       }
     }
+
+    const ship =
+      typeof shippingCents === "number" &&
+      Number.isFinite(shippingCents) &&
+      shippingCents >= 0
+        ? Math.round(shippingCents)
+        : 0;
+    totalCents += ship;
 
     if (totalCents < 50) {
       return NextResponse.json(

@@ -25,8 +25,31 @@ export function buildCheckoutOrderExtras(company: string, vat: string) {
   return extras;
 }
 
+/** Shipped to /api/sync-order, /api/create-bank-order, and Klarna sessionStorage payload. */
+export type CheckoutShippingForWoo = {
+  rate: number;
+  label: string;
+  method_id: string;
+  rate_id?: string;
+  instance_id?: number;
+};
+
+export function buildCheckoutShippingBody(
+  shipping: CheckoutShippingForWoo | null | undefined
+): { checkoutShipping?: CheckoutShippingForWoo } {
+  if (!shipping || typeof shipping.rate !== "number" || Number.isNaN(shipping.rate)) {
+    return {};
+  }
+  if (shipping.method_id === "none" && shipping.rate === 0) {
+    return {};
+  }
+  return { checkoutShipping: shipping };
+}
+
 export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
-  ReturnType<typeof buildCheckoutOrderExtras>;
+  ReturnType<typeof buildCheckoutOrderExtras> & {
+    checkoutShipping?: CheckoutShippingForWoo;
+  };
 
 const PAYLOAD_PREFIX = "checkout_pi_payload_";
 const SYNCED_PREFIX = "checkout_pi_synced_";

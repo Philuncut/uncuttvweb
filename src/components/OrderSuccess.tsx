@@ -134,6 +134,9 @@ export default function OrderSuccess() {
                   ...(stored?.meta_data
                     ? { meta_data: stored.meta_data }
                     : {}),
+                  ...(stored?.checkoutShipping
+                    ? { checkoutShipping: stored.checkoutShipping }
+                    : {}),
                 }),
               });
             }
