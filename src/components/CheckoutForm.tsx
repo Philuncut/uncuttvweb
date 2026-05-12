@@ -1102,11 +1102,7 @@ function CheckoutInner() {
               body: JSON.stringify({
                 paymentIntentId: piId,
                 isReverseCharge: viesGate.reverseCharge,
-                viesResult: {
-                  requestDate: viesGate.vies.requestDate,
-                  consultationNumber: viesGate.vies.consultationNumber,
-                  name: viesGate.vies.name,
-                },
+                viesResult: viesGate.vies,
               }),
             });
             if (!piRes.ok) {
@@ -1154,26 +1150,29 @@ function CheckoutInner() {
 
         if (paymentIntent?.status === "succeeded") {
           try {
+            const syncBody = {
+              paymentIntentId: paymentIntent.id,
+              customer: customerData,
+              items: cartMeta,
+              ...buildCheckoutOrderExtras(company, vat),
+              ...buildCheckoutShippingBody(checkoutShippingForWoo),
+              ...(viesGate.reverseCharge && viesGate.vies
+                ? {
+                    isReverseCharge: true,
+                    viesResult: viesGate.vies,
+                  }
+                : {}),
+            };
+            if (viesGate.reverseCharge && viesGate.vies) {
+              console.log(
+                "[checkout] sending viesResult:",
+                JSON.stringify(viesGate.vies)
+              );
+            }
             await fetch("/api/sync-order", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                paymentIntentId: paymentIntent.id,
-                customer: customerData,
-                items: cartMeta,
-                ...buildCheckoutOrderExtras(company, vat),
-                ...buildCheckoutShippingBody(checkoutShippingForWoo),
-                ...(viesGate.reverseCharge && viesGate.vies
-                  ? {
-                      isReverseCharge: true,
-                      viesResult: {
-                        requestDate: viesGate.vies.requestDate,
-                        consultationNumber: viesGate.vies.consultationNumber,
-                        name: viesGate.vies.name,
-                      },
-                    }
-                  : {}),
-              }),
+              body: JSON.stringify(syncBody),
             });
             markCheckoutPiSynced(paymentIntent.id);
           } catch {
@@ -1186,25 +1185,28 @@ function CheckoutInner() {
         }
       } else if (paymentMethod === "bank") {
         try {
+          const bankBody = {
+            customer: customerData,
+            items: cartMeta,
+            ...buildCheckoutOrderExtras(company, vat),
+            ...buildCheckoutShippingBody(checkoutShippingForWoo),
+            ...(viesGate.reverseCharge && viesGate.vies
+              ? {
+                  isReverseCharge: true,
+                  viesResult: viesGate.vies,
+                }
+              : {}),
+          };
+          if (viesGate.reverseCharge && viesGate.vies) {
+            console.log(
+              "[checkout] sending viesResult:",
+              JSON.stringify(viesGate.vies)
+            );
+          }
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              customer: customerData,
-              items: cartMeta,
-              ...buildCheckoutOrderExtras(company, vat),
-              ...buildCheckoutShippingBody(checkoutShippingForWoo),
-              ...(viesGate.reverseCharge && viesGate.vies
-                ? {
-                    isReverseCharge: true,
-                    viesResult: {
-                      requestDate: viesGate.vies.requestDate,
-                      consultationNumber: viesGate.vies.consultationNumber,
-                      name: viesGate.vies.name,
-                    },
-                  }
-                : {}),
-            }),
+            body: JSON.stringify(bankBody),
           });
           const data = await res.json();
           if (data.success) {
@@ -1249,11 +1251,7 @@ function CheckoutInner() {
               body: JSON.stringify({
                 paymentIntentId: piIdForStorage,
                 isReverseCharge: viesGate.reverseCharge,
-                viesResult: {
-                  requestDate: viesGate.vies.requestDate,
-                  consultationNumber: viesGate.vies.consultationNumber,
-                  name: viesGate.vies.name,
-                },
+                viesResult: viesGate.vies,
               }),
             });
             if (!piRes.ok) {
@@ -1334,27 +1332,32 @@ function CheckoutInner() {
     async (_data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => {
       const details = await actions.order?.capture();
       try {
+        const paypalSyncBody = {
+          paymentIntentId: `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`,
+          customer: customerData,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...buildCheckoutShippingBody(checkoutShippingForWoo),
+          ...(paypalViesRef.current.reverseCharge && paypalViesRef.current.vies
+            ? {
+                isReverseCharge: true,
+                viesResult: paypalViesRef.current.vies,
+              }
+            : {}),
+        };
+        if (
+          paypalViesRef.current.reverseCharge &&
+          paypalViesRef.current.vies
+        ) {
+          console.log(
+            "[checkout] sending viesResult:",
+            JSON.stringify(paypalViesRef.current.vies)
+          );
+        }
         await fetch("/api/sync-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            paymentIntentId: `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`,
-            customer: customerData,
-            items: cartMeta,
-            ...buildCheckoutOrderExtras(company, vat),
-            ...buildCheckoutShippingBody(checkoutShippingForWoo),
-            ...(paypalViesRef.current.reverseCharge && paypalViesRef.current.vies
-              ? {
-                  isReverseCharge: true,
-                  viesResult: {
-                    requestDate: paypalViesRef.current.vies.requestDate,
-                    consultationNumber:
-                      paypalViesRef.current.vies.consultationNumber,
-                    name: paypalViesRef.current.vies.name,
-                  },
-                }
-              : {}),
-          }),
+          body: JSON.stringify(paypalSyncBody),
         });
       } catch {
         // non-blocking

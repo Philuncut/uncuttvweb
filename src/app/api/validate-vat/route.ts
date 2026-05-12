@@ -28,6 +28,20 @@ function splitVatForVies(
   return { countryCode: cc, vatNumber: rest };
 }
 
+/** Standard VIES checkVat XML has no requestIdentifier; legacy cache may still omit consultationNumber. */
+function ensureConsultationNumber(
+  parsed: ValidateVatResponse,
+  split: { countryCode: string; vatNumber: string }
+): ValidateVatResponse {
+  if (parsed.valid !== true) return parsed;
+  if (parsed.consultationNumber.trim()) return parsed;
+  const rd = parsed.requestDate?.trim() || new Date().toISOString();
+  return {
+    ...parsed,
+    consultationNumber: `checkVat:${split.countryCode}:${split.vatNumber}:${rd}`,
+  };
+}
+
 function decodeXml(s: string): string {
   return s
     .replace(/&amp;/g, "&")
@@ -35,6 +49,15 @@ function decodeXml(s: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'");
+}
+
+/** VIES often wraps trader name/address in CDATA. */
+function stripCdata(s: string): string {
+  const t = s.trim();
+  if (!t.toUpperCase().startsWith("<![CDATA[")) return s.trim();
+  const end = t.indexOf("]]>");
+  if (end === -1) return s.trim();
+  return t.slice("<![CDATA[".length, end).trim();
 }
 
 function pickSimpleTag(xml: string, localName: string): string | null {
@@ -111,15 +134,24 @@ function parseViesXml(xml: string): ValidateVatResponse {
   }
   const valid = validStr === "true";
   const country = pickSimpleTag(xml, "countryCode");
+  const vatNumberFromXml = pickSimpleTag(xml, "vatNumber");
   const requestDate = pickSimpleTag(xml, "requestDate") ?? "";
-  const consultationNumber =
+  let consultationNumber =
     pickSimpleTag(xml, "requestIdentifier") ??
     pickSimpleTag(xml, "consultationNumber") ??
     "";
-  const nameRaw = pickMultilineTag(xml, "name");
-  const addressRaw = pickMultilineTag(xml, "address");
+  const nameRaw0 = pickMultilineTag(xml, "name");
+  const addressRaw0 = pickMultilineTag(xml, "address");
+  const nameRaw = nameRaw0 != null ? stripCdata(nameRaw0) : null;
+  const addressRaw = addressRaw0 != null ? stripCdata(addressRaw0) : null;
 
   if (valid) {
+    if (!consultationNumber.trim()) {
+      const cc = (country ?? "").trim();
+      const vn = (vatNumberFromXml ?? "").trim();
+      const rd = (requestDate ?? "").trim() || new Date().toISOString();
+      consultationNumber = `checkVat:${cc}:${vn}:${rd}`;
+    }
     const out: ViesValidated = {
       valid: true,
       country: country || null,
@@ -204,17 +236,24 @@ export async function POST(request: Request) {
     const cacheKey = `${split.countryCode}|${split.vatNumber}`;
     const cached = viesCacheGet(cacheKey);
     if (cached) {
-      return NextResponse.json(cached);
+      const patched = ensureConsultationNumber(cached, split);
+      console.log(
+        "[validate-vat] returning (cache):",
+        JSON.stringify(patched)
+      );
+      return NextResponse.json(patched);
     }
 
     const parsed = await fetchViesWithRetries(
       split.countryCode,
       split.vatNumber
     );
-    if (parsed.valid === true || parsed.valid === false) {
-      viesCacheSet(cacheKey, parsed);
+    const patched = ensureConsultationNumber(parsed, split);
+    if (patched.valid === true || patched.valid === false) {
+      viesCacheSet(cacheKey, patched);
     }
-    return NextResponse.json(parsed);
+    console.log("[validate-vat] returning:", JSON.stringify(patched));
+    return NextResponse.json(patched);
   } catch (e) {
     console.error("[validate-vat]", e);
     return NextResponse.json(

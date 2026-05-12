@@ -5,10 +5,8 @@ import type { ViesValidated } from "@/lib/vies-types";
 type Body = {
   paymentIntentId?: string;
   isReverseCharge?: boolean;
-  viesResult?: Pick<
-    ViesValidated,
-    "requestDate" | "consultationNumber" | "name"
-  > | null;
+  /** Client may send full /api/validate-vat payload; only audit fields are stored on the PI. */
+  viesResult?: ViesValidated | null;
 };
 
 /**
