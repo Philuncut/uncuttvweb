@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
 
 interface CartMeta {
@@ -18,13 +19,97 @@ interface CustomerInfo {
   country: string;
 }
 
+type OrderMetaEntry = { key: string; value: unknown };
+
 interface SyncBody {
-  // Stripe Checkout Session flow
   sessionId?: string;
-  // Direct PaymentIntent flow
   paymentIntentId?: string;
   customer?: CustomerInfo;
   items?: CartMeta[];
+  /** Optional checkout extras — company / VAT take precedence over profile when non-empty */
+  billing?: Record<string, string>;
+  meta_data?: OrderMetaEntry[];
+}
+
+function asString(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value))
+    return String(value).trim();
+  return String(value).trim();
+}
+
+type WooCustomer = {
+  billing?: { company?: string; [key: string]: unknown };
+  meta_data?: Array<{ key?: string; value?: unknown }>;
+};
+
+function billingVatFromCustomerMeta(customer: WooCustomer): string {
+  const entry = customer.meta_data?.find(
+    (m) => m?.key === "_billing_vat" || m?.key === "billing_vat"
+  );
+  return asString(entry?.value);
+}
+
+function vatFromOrderMeta(meta: OrderMetaEntry[] | undefined): string {
+  const entry = meta?.find(
+    (m) => m.key === "_billing_vat" || m.key === "billing_vat"
+  );
+  return asString(entry?.value);
+}
+
+/**
+ * Keeps all non-VAT meta entries, then sets a single `_billing_vat` from
+ * frontend meta (if non-empty) else profile.
+ */
+function mergeOrderMetaData(
+  existing: OrderMetaEntry[] | undefined,
+  vatFromFrontend: string,
+  vatFromProfile: string
+): OrderMetaEntry[] | undefined {
+  const base = [...(existing ?? [])].filter(
+    (m) => m.key !== "_billing_vat" && m.key !== "billing_vat"
+  );
+  const vat = asString(vatFromFrontend) || asString(vatFromProfile);
+  if (!vat) {
+    return base.length > 0 ? base : undefined;
+  }
+  base.push({ key: "_billing_vat", value: vat });
+  return base;
+}
+
+function resolveLoggedInCustomerId(cookieStore: Awaited<
+  ReturnType<typeof cookies>
+>): string | undefined {
+  const wooId = cookieStore.get("woo_customer_id")?.value?.trim();
+  if (wooId) return wooId;
+  const haendlerToken = cookieStore.get("haendler_token")?.value;
+  const haendlerId = cookieStore.get("haendler_id")?.value?.trim();
+  if (haendlerToken && haendlerId) return haendlerId;
+  return undefined;
+}
+
+async function fetchWooCustomer(
+  customerId: string,
+  wooUrl: string,
+  authHeader: string
+): Promise<WooCustomer | null> {
+  try {
+    const res = await fetch(
+      `${wooUrl}/wp-json/wc/v3/customers/${encodeURIComponent(customerId)}`,
+      {
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as WooCustomer;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: Request) {
@@ -115,7 +200,48 @@ export async function POST(request: Request) {
       );
     }
 
-    const orderData = {
+    if (body.billing && typeof body.billing === "object") {
+      for (const [key, val] of Object.entries(body.billing)) {
+        if (typeof val === "string" && val.trim()) {
+          billing[key] = val;
+        }
+      }
+    }
+
+    const WOOCOMMERCE_URL = process.env.WOOCOMMERCE_URL!;
+    const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
+    const WOOCOMMERCE_SECRET = process.env.WOOCOMMERCE_SECRET!;
+    const AUTH_HEADER =
+      "Basic " +
+      Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString("base64");
+
+    const cookieStore = await cookies();
+    const customerIdStr = resolveLoggedInCustomerId(cookieStore);
+
+    let profileCompany = "";
+    let profileVat = "";
+    if (customerIdStr) {
+      const wcCustomer = await fetchWooCustomer(
+        customerIdStr,
+        WOOCOMMERCE_URL,
+        AUTH_HEADER
+      );
+      if (wcCustomer) {
+        profileCompany = asString(wcCustomer.billing?.company);
+        profileVat = billingVatFromCustomerMeta(wcCustomer);
+      }
+    }
+
+    const companyFromFrontend = asString(body.billing?.company);
+    const companyMerged =
+      companyFromFrontend || profileCompany || asString(billing.company);
+    if (companyMerged) {
+      billing.company = companyMerged;
+    }
+
+    const vatFromFrontendMeta = vatFromOrderMeta(body.meta_data);
+
+    const orderData: Record<string, unknown> = {
       status: "processing",
       payment_method: "stripe",
       payment_method_title: "Stripe",
@@ -130,18 +256,24 @@ export async function POST(request: Request) {
       transaction_id: transactionId,
     };
 
-    const WOOCOMMERCE_URL = process.env.WOOCOMMERCE_URL!;
-    const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
-    const WOOCOMMERCE_SECRET = process.env.WOOCOMMERCE_SECRET!;
+    const mergedMeta = mergeOrderMetaData(
+      body.meta_data,
+      vatFromFrontendMeta,
+      profileVat
+    );
+    if (mergedMeta && mergedMeta.length > 0) {
+      orderData.meta_data = mergedMeta;
+    }
+
+    const parsedId = customerIdStr ? parseInt(customerIdStr, 10) : NaN;
+    if (customerIdStr && Number.isFinite(parsedId) && parsedId > 0) {
+      orderData.customer_id = parsedId;
+    }
 
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
-        Authorization:
-          "Basic " +
-          Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString(
-            "base64"
-          ),
+        Authorization: AUTH_HEADER,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(orderData),
