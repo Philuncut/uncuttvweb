@@ -140,6 +140,7 @@ export default function OrderSuccess() {
                   ...(stored?.isReverseCharge
                     ? { isReverseCharge: true }
                     : {}),
+                  ...(stored?.isWholesale ? { isWholesale: true } : {}),
                 }),
               });
             }

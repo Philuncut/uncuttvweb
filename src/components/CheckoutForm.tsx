@@ -1103,6 +1103,7 @@ function CheckoutInner() {
               ...buildCheckoutOrderExtras(company, vat),
               ...buildCheckoutShippingBody(checkoutShippingForWoo),
               ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+              ...(isWholesale ? { isWholesale: true } : {}),
             };
             await fetch("/api/sync-order", {
               method: "POST",
@@ -1126,6 +1127,7 @@ function CheckoutInner() {
             ...buildCheckoutOrderExtras(company, vat),
             ...buildCheckoutShippingBody(checkoutShippingForWoo),
             ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+            ...(isWholesale ? { isWholesale: true } : {}),
           };
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
@@ -1201,6 +1203,7 @@ function CheckoutInner() {
               ? { checkoutShipping: checkoutShippingForWoo }
               : {}),
             isReverseCharge: wholesaleReverseCharge,
+            ...(isWholesale ? { isWholesale: true } : {}),
           });
         }
 
@@ -1261,6 +1264,7 @@ function CheckoutInner() {
           ...buildCheckoutOrderExtras(company, vat),
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+          ...(isWholesale ? { isWholesale: true } : {}),
         };
         await fetch("/api/sync-order", {
           method: "POST",
@@ -1273,7 +1277,7 @@ function CheckoutInner() {
       clearCart();
       router.push("/bestellung/erfolg?method=paypal");
     },
-    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge]
+    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge, isWholesale]
   );
 
   if (items.length === 0) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
+import { splitGrossForWooRest, buildWholesaleNonRcLineItem } from "@/lib/woo-vat-split";
 
 interface CartMeta {
   id: number;
@@ -31,6 +32,8 @@ interface SyncBody {
   meta_data?: OrderMetaEntry[];
   /** EU B2B Reverse Charge (UID + shipping rules — client-side). */
   isReverseCharge?: boolean;
+  /** Wholesale checkout (Händlerpreis in cart) — used when !isReverseCharge to avoid catalog override. */
+  isWholesale?: boolean;
   /** Versand — Checkout / Store API / Wholesale-Pauschale */
   checkoutShipping?: {
     rate: number;
@@ -175,6 +178,8 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as SyncBody;
 
+    const isWholesaleCheckout = body.isWholesale === true;
+
     let cartItems: CartMeta[] = [];
     let billing: Record<string, string> = {};
     let shipping: Record<string, string> = {};
@@ -312,32 +317,40 @@ export async function POST(request: Request) {
 
     const vatFromFrontendMeta = vatFromOrderMeta(body.meta_data);
 
+    const taxCountry = billing.country || shipping.country || "";
+
     const orderData: Record<string, unknown> = {
       status: "processing",
       payment_method: "stripe",
       payment_method_title: "Stripe",
       set_paid: true,
-      /** Line totals from checkout are gross (incl. VAT); avoids WC recomputing subtotal from catalog. */
+      /**
+       * B2C: only product_id + qty (catalog + Woo tax). Wholesale non-RC: explicit net/tax
+       * from cart gross (Händlerpreis). RC: explicit gross + zero tax.
+       */
       prices_include_tax: true,
       billing,
       shipping,
       line_items: cartItems.map((item) => {
-        const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
-        const base = {
-          product_id: Number(item.id),
-          quantity: item.qty,
-          subtotal: lineTotal,
-          total: lineTotal,
-        };
         if (isReverseCharge) {
+          const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
           return {
-            ...base,
+            product_id: Number(item.id),
+            quantity: item.qty,
+            subtotal: lineTotal,
+            total: lineTotal,
             subtotal_tax: "0.00",
             total_tax: "0.00",
             taxes: [],
           };
         }
-        return base;
+        if (isWholesaleCheckout) {
+          return buildWholesaleNonRcLineItem(item, taxCountry);
+        }
+        return {
+          product_id: Number(item.id),
+          quantity: item.qty,
+        };
       }),
       transaction_id: transactionId,
     };
@@ -358,14 +371,21 @@ export async function POST(request: Request) {
     ) {
       const s = body.checkoutShipping;
       if (!(s.method_id === "none" && s.rate === 0)) {
+        const shipParts = splitGrossForWooRest(Math.max(0, s.rate), taxCountry);
         orderData.shipping_lines = [
           {
             method_id: s.method_id || "flat_rate",
             method_title: s.label || "Versand",
-            total: Math.max(0, s.rate).toFixed(2),
             ...(isReverseCharge
-              ? { total_tax: "0.00", taxes: [] as unknown[] }
-              : {}),
+              ? {
+                  total: Math.max(0, s.rate).toFixed(2),
+                  total_tax: "0.00",
+                  taxes: [] as unknown[],
+                }
+              : {
+                  total: shipParts.net,
+                  total_tax: shipParts.tax,
+                }),
           },
         ];
       }
@@ -414,6 +434,7 @@ export async function POST(request: Request) {
             : undefined,
         debug: {
           isReverseCharge: body?.isReverseCharge,
+          isWholesale: body?.isWholesale,
           itemsCount: body?.items?.length,
           customerEmail: body?.customer?.email,
         },

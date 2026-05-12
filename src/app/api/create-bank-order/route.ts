@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { splitGrossForWooRest, buildWholesaleNonRcLineItem } from "@/lib/woo-vat-split";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -32,6 +33,7 @@ interface Body {
     instance_id?: number;
   };
   isReverseCharge?: boolean;
+  isWholesale?: boolean;
 }
 
 async function sendBankTransferEmail(
@@ -160,6 +162,7 @@ export async function POST(request: Request) {
     } = body;
 
     const isReverseCharge = bodyIsRC === true;
+    const isWholesaleCheckout = body.isWholesale === true;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -200,6 +203,8 @@ export async function POST(request: Request) {
       billing.company = companyFromBody;
     }
 
+    const taxCountry = billing.country || customer.country || "";
+
     const meta_data =
       bodyMeta && bodyMeta.length > 0
         ? [...bodyMeta].filter((e) => e.key !== "_eu_vat_guard_order_vat_exempt")
@@ -210,7 +215,9 @@ export async function POST(request: Request) {
       payment_method: "bacs",
       payment_method_title: "Überweisung",
       set_paid: false,
-      /** Line totals from checkout are gross (incl. VAT); avoids WC recomputing subtotal from catalog. */
+      /**
+       * B2C: product_id + qty only. Wholesale non-RC: net/tax from cart gross. RC: gross + zero tax.
+       */
       prices_include_tax: true,
       billing,
       shipping: {
@@ -222,22 +229,25 @@ export async function POST(request: Request) {
         country: customer.country,
       },
       line_items: items.map((item) => {
-        const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
-        const base = {
-          product_id: Number(item.id),
-          quantity: item.qty,
-          subtotal: lineTotal,
-          total: lineTotal,
-        };
         if (isReverseCharge) {
+          const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
           return {
-            ...base,
+            product_id: Number(item.id),
+            quantity: item.qty,
+            subtotal: lineTotal,
+            total: lineTotal,
             subtotal_tax: "0.00",
             total_tax: "0.00",
             taxes: [],
           };
         }
-        return base;
+        if (isWholesaleCheckout) {
+          return buildWholesaleNonRcLineItem(item, taxCountry);
+        }
+        return {
+          product_id: Number(item.id),
+          quantity: item.qty,
+        };
       }),
     };
 
@@ -270,14 +280,21 @@ export async function POST(request: Request) {
     ) {
       const s = checkoutShipping;
       if (!(s.method_id === "none" && s.rate === 0)) {
+        const shipParts = splitGrossForWooRest(Math.max(0, s.rate), taxCountry);
         orderData.shipping_lines = [
           {
             method_id: s.method_id || "flat_rate",
             method_title: s.label || "Versand",
-            total: Math.max(0, s.rate).toFixed(2),
             ...(isReverseCharge
-              ? { total_tax: "0.00", taxes: [] as unknown[] }
-              : {}),
+              ? {
+                  total: Math.max(0, s.rate).toFixed(2),
+                  total_tax: "0.00",
+                  taxes: [] as unknown[],
+                }
+              : {
+                  total: shipParts.net,
+                  total_tax: shipParts.tax,
+                }),
           },
         ];
       }

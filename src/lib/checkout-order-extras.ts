@@ -55,6 +55,7 @@ export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
   ReturnType<typeof buildCheckoutOrderExtras> & {
     checkoutShipping?: CheckoutShippingForWoo;
     isReverseCharge?: boolean;
+    isWholesale?: boolean;
   };
 
 const PAYLOAD_PREFIX = "checkout_pi_payload_";
