@@ -91,6 +91,7 @@ function mergeOrderMetaData(
       m.key !== "_billing_vat" &&
       m.key !== "billing_vat" &&
       m.key !== "_eu_vat_guard_order_vat_number" &&
+      m.key !== "_eu_vat_guard_order_vat_exempt" &&
       !UNCUTTV_ORDER_META_KEYS.includes(
         m.key as (typeof UNCUTTV_ORDER_META_KEYS)[number]
       )
@@ -111,6 +112,7 @@ function appendReverseChargeMeta(
   if (!isRC) return meta;
   const base = [...(meta ?? [])];
   base.push({ key: "_uncuttv_reverse_charge", value: "yes" });
+  base.push({ key: "_eu_vat_guard_order_vat_exempt", value: "yes" });
   return base;
 }
 

@@ -201,7 +201,9 @@ export async function POST(request: Request) {
     }
 
     const meta_data =
-      bodyMeta && bodyMeta.length > 0 ? [...bodyMeta] : undefined;
+      bodyMeta && bodyMeta.length > 0
+        ? [...bodyMeta].filter((e) => e.key !== "_eu_vat_guard_order_vat_exempt")
+        : undefined;
 
     const orderData: Record<string, unknown> = {
       status: "pending",
@@ -253,8 +255,12 @@ export async function POST(request: Request) {
     if (isReverseCharge && orderData.meta_data) {
       const m = orderData.meta_data as Array<{ key: string; value: unknown }>;
       m.push({ key: "_uncuttv_reverse_charge", value: "yes" });
+      m.push({ key: "_eu_vat_guard_order_vat_exempt", value: "yes" });
     } else if (isReverseCharge && !orderData.meta_data) {
-      orderData.meta_data = [{ key: "_uncuttv_reverse_charge", value: "yes" }];
+      orderData.meta_data = [
+        { key: "_uncuttv_reverse_charge", value: "yes" },
+        { key: "_eu_vat_guard_order_vat_exempt", value: "yes" },
+      ];
     }
 
     if (
