@@ -67,8 +67,9 @@ function vatFromOrderMeta(meta: OrderMetaEntry[] | undefined): string {
 }
 
 /**
- * Keeps all non-VAT meta entries, then sets a single `_billing_vat` from
- * frontend meta (if non-empty) else profile.
+ * Keeps non-VAT meta entries, then sets `_billing_vat` and
+ * `_eu_vat_guard_order_vat_number` (VAT Guard plugin) from frontend meta if
+ * non-empty, else from Woo customer profile.
  */
 function mergeOrderMetaData(
   existing: OrderMetaEntry[] | undefined,
@@ -76,13 +77,17 @@ function mergeOrderMetaData(
   vatFromProfile: string
 ): OrderMetaEntry[] | undefined {
   const base = [...(existing ?? [])].filter(
-    (m) => m.key !== "_billing_vat" && m.key !== "billing_vat"
+    (m) =>
+      m.key !== "_billing_vat" &&
+      m.key !== "billing_vat" &&
+      m.key !== "_eu_vat_guard_order_vat_number"
   );
   const vat = asString(vatFromFrontend) || asString(vatFromProfile);
   if (!vat) {
     return base.length > 0 ? base : undefined;
   }
   base.push({ key: "_billing_vat", value: vat });
+  base.push({ key: "_eu_vat_guard_order_vat_number", value: vat });
   return base;
 }
 

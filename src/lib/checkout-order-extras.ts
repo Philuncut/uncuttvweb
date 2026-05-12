@@ -21,7 +21,12 @@ export function buildCheckoutOrderExtras(company: string, vat: string) {
     meta_data?: Array<{ key: string; value: string }>;
   } = {};
   if (trimmedCompany) extras.billing = { company: trimmedCompany };
-  if (trimmedVat) extras.meta_data = [{ key: "_billing_vat", value: trimmedVat }];
+  if (trimmedVat) {
+    extras.meta_data = [
+      { key: "_billing_vat", value: trimmedVat },
+      { key: "_eu_vat_guard_order_vat_number", value: trimmedVat },
+    ];
+  }
   return extras;
 }
 
