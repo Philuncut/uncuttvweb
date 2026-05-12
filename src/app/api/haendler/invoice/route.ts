@@ -112,11 +112,20 @@ export async function GET(request: Request) {
       console.log("[Invoice] No customer_id on order");
     }
 
-    // Extract UID from customer meta_data (primary) or order meta_data (fallback)
-    const customerUid = customerData?.meta_data?.find((m) => m.key === "uid_nummer")?.value || "";
-    const orderUid = order.meta_data?.find((m) => m.key === "uid_nummer")?.value || "";
-    const uidNummer = customerUid || orderUid;
-    console.log("[Invoice] UID found:", uidNummer, "(customer:", customerUid, "order:", orderUid, ")");
+    // UID: canonical _billing_vat (order + checkout sync), legacy uid_nummer on customer/order
+    const orderVat =
+      String(order.meta_data?.find((m) => m.key === "_billing_vat")?.value ?? "").trim();
+    const customerVat =
+      String(customerData?.meta_data?.find((m) => m.key === "_billing_vat")?.value ?? "").trim();
+    const orderUidLegacy =
+      String(order.meta_data?.find((m) => m.key === "uid_nummer")?.value ?? "").trim();
+    const customerUidLegacy =
+      String(customerData?.meta_data?.find((m) => m.key === "uid_nummer")?.value ?? "").trim();
+    const uidNummer =
+      orderVat ||
+      customerVat ||
+      orderUidLegacy ||
+      customerUidLegacy;
 
     // Use customer company if order billing company is empty
     const firma = order.billing.company || customerData?.billing?.company || "";
@@ -378,6 +387,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="Rechnung-${invoiceNumber}.pdf"`,
+        "Cache-Control": "no-store, no-cache, must-revalidate",
       },
     });
   } catch (error) {

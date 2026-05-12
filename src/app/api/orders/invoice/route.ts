@@ -31,6 +31,7 @@ interface WooOrder {
     email: string;
   };
   line_items: LineItem[];
+  meta_data?: Array<{ key: string; value: unknown }>;
 }
 
 export async function GET(request: Request) {
@@ -62,6 +63,12 @@ export async function GET(request: Request) {
     if (order.billing.email.toLowerCase() !== customerEmail.toLowerCase()) {
       return NextResponse.json({ error: "Zugriff verweigert." }, { status: 403 });
     }
+
+    const rawVat = order.meta_data?.find((m) => m.key === "_billing_vat")?.value;
+    const vat =
+      rawVat != null && typeof rawVat !== "object"
+        ? String(rawVat).trim()
+        : "";
 
     // Generate PDF
     const pdf = await PDFDocument.create();
@@ -103,6 +110,11 @@ export async function GET(request: Request) {
 
     for (const line of recipientLines) {
       page.drawText(line, { x: 50, y, size: 10, font, color: TEXT });
+      y -= 15;
+    }
+
+    if (vat) {
+      page.drawText(`UID-Nr.: ${vat}`, { x: 50, y, size: 10, font, color: TEXT });
       y -= 15;
     }
 
@@ -192,6 +204,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="Rechnung-${invoiceNumber}.pdf"`,
+        "Cache-Control": "no-store, no-cache, must-revalidate",
       },
     });
   } catch (error) {
