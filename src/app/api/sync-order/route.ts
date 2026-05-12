@@ -196,8 +196,9 @@ async function fetchWooCustomer(
 }
 
 export async function POST(request: Request) {
+  let body: SyncBody | undefined;
   try {
-    const body = (await request.json()) as SyncBody;
+    body = (await request.json()) as SyncBody;
 
     let cartItems: CartMeta[] = [];
     let billing: Record<string, string> = {};
@@ -446,9 +447,26 @@ export async function POST(request: Request) {
       orderId: order.id,
       orderNumber: order.number,
     });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Sync fehlgeschlagen.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (err) {
+    console.error("[sync-order] failed:", err);
+    return NextResponse.json(
+      {
+        error: "sync-order-failed",
+        message: err instanceof Error ? err.message : String(err),
+        stack:
+          err instanceof Error
+            ? err.stack?.split("\n").slice(0, 5).join("\n")
+            : undefined,
+        debug: {
+          isReverseCharge: body?.isReverseCharge,
+          hasViesResult: !!body?.viesResult,
+          viesValid: (body?.viesResult as { valid?: unknown } | undefined)
+            ?.valid,
+          itemsCount: body?.items?.length,
+          customerEmail: body?.customer?.email,
+        },
+      },
+      { status: 400 }
+    );
   }
 }
