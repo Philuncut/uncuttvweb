@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -15,8 +15,14 @@ import {
 } from "@paypal/react-paypal-js";
 import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
+import { validateEuVatFormat } from "@/lib/vat-format";
+import {
+  buildCheckoutOrderExtras,
+  markCheckoutPiSynced,
+  parsePiIdFromClientSecret,
+  persistCheckoutSyncPayload,
+} from "@/lib/checkout-order-extras";
 
-console.log("[Stripe Debug] PUBLISHABLE_KEY prefix:", process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.slice(0, 20));
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
@@ -130,12 +136,14 @@ function Label({ children }: { children: React.ReactNode }) {
 function Input({
   value,
   onChange,
+  onBlur,
   placeholder,
   type = "text",
   required,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   type?: string;
   required?: boolean;
@@ -145,6 +153,7 @@ function Input({
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       required={required}
       className="w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white placeholder:text-[#555] outline-none focus:border-[#c0392b]"
@@ -241,6 +250,7 @@ function OrderSummary({
   onCouponApplied,
   onCouponRemoved,
   subtotal,
+  hideCoupon,
 }: {
   couponId: string | null;
   couponName: string | null;
@@ -248,6 +258,8 @@ function OrderSummary({
   onCouponApplied: (id: string, name: string, display: string) => void;
   onCouponRemoved: () => void;
   subtotal: number;
+  /** Wholesale: hide coupon input and applied-coupon UI (B2C unchanged). */
+  hideCoupon?: boolean;
 }) {
   // Calculate discounted total
   let discountedTotal = subtotal;
@@ -336,54 +348,55 @@ function OrderSummary({
 
       <div className="my-4 border-t border-[#222]" />
 
-      {couponId ? (
-        <div className="mb-4 flex items-center justify-between bg-[#0a0a0a] px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold tracking-wider text-green-400">
-              {couponName}
-            </span>
-            <span className="text-xs text-green-400/70">{couponDiscount}</span>
-          </div>
-          <button
-            type="button"
-            onClick={onCouponRemoved}
-            className="cursor-pointer bg-transparent text-xs text-white/30 hover:text-white/60"
-          >
-            ×
-          </button>
-        </div>
-      ) : (
-        <div className="mb-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && validate()}
-              placeholder="Gutschein-Code eingeben"
-              className="flex-1 border border-[#333] bg-[#0a0a0a] px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
-            />
+      {!hideCoupon &&
+        (couponId ? (
+          <div className="mb-4 flex items-center justify-between bg-[#0a0a0a] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold tracking-wider text-green-400">
+                {couponName}
+              </span>
+              <span className="text-xs text-green-400/70">{couponDiscount}</span>
+            </div>
             <button
               type="button"
-              onClick={validate}
-              disabled={loading}
-              className="shrink-0 cursor-pointer border border-[#c0392b] bg-transparent px-4 py-2 text-[10px] font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
+              onClick={onCouponRemoved}
+              className="cursor-pointer bg-transparent text-xs text-white/30 hover:text-white/60"
             >
-              {loading ? "..." : "EINLÖSEN"}
+              ×
             </button>
           </div>
-          {error && (
-            <p className="mt-1 text-[10px] text-[#c0392b]">{error}</p>
-          )}
-        </div>
-      )}
+        ) : (
+          <div className="mb-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && validate()}
+                placeholder="Gutschein-Code eingeben"
+                className="flex-1 border border-[#333] bg-[#0a0a0a] px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
+              />
+              <button
+                type="button"
+                onClick={validate}
+                disabled={loading}
+                className="shrink-0 cursor-pointer border border-[#c0392b] bg-transparent px-4 py-2 text-[10px] font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
+              >
+                {loading ? "..." : "EINLÖSEN"}
+              </button>
+            </div>
+            {error && (
+              <p className="mt-1 text-[10px] text-[#c0392b]">{error}</p>
+            )}
+          </div>
+        ))}
 
       <div className="space-y-2">
         <div className="flex justify-between text-xs text-white/50">
           <span>Zwischensumme</span>
           <span>€{subtotal.toFixed(2)}</span>
         </div>
-        {couponDiscount && discountAmount > 0 && (
+        {couponDiscount && discountAmount > 0 && !hideCoupon && (
           <div className="flex justify-between text-xs text-green-400">
             <span>Rabatt ({couponDiscount})</span>
             <span>−€{discountAmount.toFixed(2)}</span>
@@ -437,11 +450,13 @@ function PayPalButtonWrapper({
   couponDiscount,
   onApprove,
   onError,
+  disabled,
 }: {
   totalPrice: number;
   couponDiscount: string | null;
   onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
   onError: () => void;
+  disabled?: boolean;
 }) {
   // Memoize createOrder so PayPal doesn't reinitialize
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -474,6 +489,7 @@ function PayPalButtonWrapper({
     <PayPalScriptProvider options={paypalScriptOptions}>
       <PayPalButtons
         fundingSource={FUNDING.PAYPAL}
+        disabled={disabled}
         style={{
           color: "gold",
           shape: "rect",
@@ -483,7 +499,7 @@ function PayPalButtonWrapper({
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
-        forceReRender={[totalPrice, couponDiscount]}
+        forceReRender={[totalPrice, couponDiscount, disabled]}
       />
     </PayPalScriptProvider>
   );
@@ -503,28 +519,85 @@ function CheckoutInner() {
   const [zip, setZip] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("AT");
+  const [isWholesale, setIsWholesale] = useState(false);
+  const [company, setCompany] = useState("");
+  const [vat, setVat] = useState("");
+  const [vatFieldError, setVatFieldError] = useState("");
 
-  // Pre-fill fields from logged-in user data
   useEffect(() => {
-    async function prefill() {
+    let cancelled = false;
+    async function load() {
+      try {
+        const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!cancelled && sessionRes.ok) {
+          const s = await sessionRes.json();
+          setIsWholesale(s.isWholesale === true);
+        }
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        const profileRes = await fetch("/api/auth/profile", { cache: "no-store" });
+        if (profileRes.ok) {
+          const p = (await profileRes.json()) as {
+            email?: string;
+            first_name?: string;
+            last_name?: string;
+            billing?: {
+              company?: string;
+              vat?: string;
+              address_1?: string;
+              postcode?: string;
+              city?: string;
+              country?: string;
+            };
+          };
+          if (cancelled) return;
+          if (p.billing?.company) setCompany(String(p.billing.company).trim());
+          if (p.billing?.vat) setVat(String(p.billing.vat).trim().toUpperCase());
+          if (p.email) setEmail(p.email);
+          if (p.first_name) setFirstName(p.first_name);
+          if (p.last_name) setLastName(p.last_name);
+          if (p.billing?.address_1) setStreet(p.billing.address_1);
+          if (p.billing?.postcode) setZip(p.billing.postcode);
+          if (p.billing?.city) setCity(p.billing.city);
+          if (p.billing?.country) setCountry(p.billing.country);
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+
       try {
         const res = await fetch("/api/auth/me");
-        if (!res.ok) return;
+        if (!res.ok || cancelled) return;
         const data = await res.json();
-        if (data.email && !email) setEmail(data.email);
-        if (data.firstName && !firstName) setFirstName(data.firstName);
-        if (data.lastName && !lastName) setLastName(data.lastName);
-        if (data.billing?.address_1 && !street) setStreet(data.billing.address_1);
-        if (data.billing?.postcode && !zip) setZip(data.billing.postcode);
-        if (data.billing?.city && !city) setCity(data.billing.city);
-        if (data.billing?.country && !country) setCountry(data.billing.country);
+        if (cancelled) return;
+        if (data.email) setEmail(data.email);
+        if (data.firstName) setFirstName(data.firstName);
+        if (data.lastName) setLastName(data.lastName);
+        if (data.billing?.address_1) setStreet(data.billing.address_1);
+        if (data.billing?.postcode) setZip(data.billing.postcode);
+        if (data.billing?.city) setCity(data.billing.city);
+        if (data.billing?.country) setCountry(data.billing.country);
       } catch {
-        // Not logged in — fields stay empty
+        /* guest */
       }
     }
-    prefill();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isWholesale) return;
+    setCouponId(null);
+    setCouponName(null);
+    setCouponDiscount(null);
+    setAutoCouponApplied(false);
+  }, [isWholesale]);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
 
@@ -537,22 +610,20 @@ function CheckoutInner() {
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
 
-  // Read ?coupon= from URL and auto-apply
+  // Read ?coupon= from URL and auto-apply (B2C / guest only)
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (isWholesale) return;
     const params = new URLSearchParams(window.location.search);
     const urlCoupon = params.get("coupon");
-    console.log("[Checkout] URL coupon param:", urlCoupon);
     if (!urlCoupon) return;
 
     async function applyCoupon() {
       try {
-        // First try Stripe validation
         const res = await fetch(
           `/api/validate-coupon?code=${encodeURIComponent(urlCoupon!)}`
         );
         const data = await res.json();
-        console.log("[Checkout] Coupon validation result:", data);
 
         if (data.valid) {
           const display = data.percent_off
@@ -564,21 +635,17 @@ function CheckoutInner() {
           setCouponName(data.name || urlCoupon);
           setCouponDiscount(display);
           setAutoCouponApplied(true);
-          console.log("[Checkout] Coupon auto-applied:", data.couponId, display);
         } else {
-          // Coupon not in Stripe — still show banner as applied (discount handled server-side)
-          console.log("[Checkout] Coupon not valid in Stripe, applying as display-only");
           setCouponName(urlCoupon!);
           setCouponDiscount("−10%");
           setAutoCouponApplied(true);
         }
-      } catch (err) {
-        console.error("[Checkout] Coupon validation error:", err);
+      } catch {
+        /* ignore */
       }
     }
-    applyCoupon();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void applyCoupon();
+  }, [isWholesale]);
 
   // Create PaymentIntent for card payments
   useEffect(() => {
@@ -590,7 +657,8 @@ function CheckoutInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items,
-          couponId: couponId || undefined,
+          couponId:
+            isWholesale ? undefined : couponId || undefined,
         }),
       });
       const data = await res.json();
@@ -599,7 +667,7 @@ function CheckoutInner() {
       }
     }
     createPI();
-  }, [items, couponId, paymentMethod]);
+  }, [items, couponId, paymentMethod, isWholesale]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -618,11 +686,36 @@ function CheckoutInner() {
     country,
   };
 
+  const wholesaleCheckoutBlocked = useMemo(
+    () =>
+      isWholesale &&
+      (!company.trim() ||
+        !vat.trim() ||
+        !validateEuVatFormat(vat)),
+    [isWholesale, company, vat]
+  );
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       setProcessing(true);
       setError("");
+
+      if (isWholesale) {
+        if (!company.trim()) {
+          setError("Bitte Firmennamen angeben.");
+          setProcessing(false);
+          return;
+        }
+        if (!vat.trim() || !validateEuVatFormat(vat)) {
+          setError("Bitte gültige UID-Nr. eingeben.");
+          setVatFieldError(
+            "UID-Format ungültig — Beispiel: ATU12345678"
+          );
+          setProcessing(false);
+          return;
+        }
+      }
 
       if (paymentMethod === "card") {
         if (!stripe || !elements || !clientSecret) {
@@ -669,8 +762,10 @@ function CheckoutInner() {
                 paymentIntentId: paymentIntent.id,
                 customer: customerData,
                 items: cartMeta,
+                ...buildCheckoutOrderExtras(company, vat),
               }),
             });
+            markCheckoutPiSynced(paymentIntent.id);
           } catch {
             // non-blocking
           }
@@ -687,6 +782,7 @@ function CheckoutInner() {
             body: JSON.stringify({
               customer: customerData,
               items: cartMeta,
+              ...buildCheckoutOrderExtras(company, vat),
             }),
           });
           const data = await res.json();
@@ -709,6 +805,22 @@ function CheckoutInner() {
           return;
         }
 
+        if (isWholesale) {
+          if (!company.trim()) {
+            setError("Bitte Firmennamen angeben.");
+            setProcessing(false);
+            return;
+          }
+          if (!vat.trim() || !validateEuVatFormat(vat)) {
+            setError("Bitte gültige UID-Nr. eingeben.");
+            setVatFieldError(
+              "UID-Format ungültig — Beispiel: ATU12345678"
+            );
+            setProcessing(false);
+            return;
+          }
+        }
+
         const returnUrl = `${window.location.origin}/bestellung/erfolg?method=${paymentMethod}`;
 
         // Confirm payment with redirect for Klarna/EPS
@@ -722,6 +834,14 @@ function CheckoutInner() {
             country,
           },
         };
+
+        const piIdForStorage = parsePiIdFromClientSecret(clientSecret);
+        if (piIdForStorage) {
+          persistCheckoutSyncPayload(piIdForStorage, {
+            ...customerData,
+            ...buildCheckoutOrderExtras(company, vat),
+          });
+        }
 
         const { error: confirmError } = await stripe.confirmPayment({
           clientSecret,
@@ -757,6 +877,9 @@ function CheckoutInner() {
       items,
       cartMeta,
       customerData,
+      company,
+      vat,
+      isWholesale,
       clearCart,
       router,
     ]
@@ -774,6 +897,7 @@ function CheckoutInner() {
             paymentIntentId: `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`,
             customer: customerData,
             items: cartMeta,
+            ...buildCheckoutOrderExtras(company, vat),
           }),
         });
       } catch {
@@ -782,7 +906,7 @@ function CheckoutInner() {
       clearCart();
       router.push("/bestellung/erfolg?method=paypal");
     },
-    [customerData, cartMeta, clearCart, router]
+    [customerData, cartMeta, clearCart, router, company, vat]
   );
 
   if (items.length === 0) {
@@ -807,8 +931,8 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
-          {/* Auto-applied coupon banner */}
-          {autoCouponApplied && (
+          {/* Auto-applied coupon banner (B2C / guest only — wholesale must not stack discounts) */}
+          {!isWholesale && autoCouponApplied && (
             <div
               style={{
                 background: "rgba(39, 174, 96, 0.08)",
@@ -927,13 +1051,61 @@ function CheckoutInner() {
                   { value: "AT", label: "Österreich" },
                   { value: "DE", label: "Deutschland" },
                   { value: "CH", label: "Schweiz" },
+                  { value: "IT", label: "Italien" },
+                  { value: "FR", label: "Frankreich" },
+                  { value: "NL", label: "Niederlande" },
+                  { value: "BE", label: "Belgien" },
+                  { value: "ES", label: "Spanien" },
                 ]}
               />
             </div>
+            <div className="mt-3">
+              <Label>FIRMA {isWholesale ? "" : "(optional)"}</Label>
+              <Input
+                value={company}
+                onChange={(v) => {
+                  setCompany(v);
+                  if (error && isWholesale) setError("");
+                }}
+                placeholder="z. B. Muster GmbH"
+                required={isWholesale}
+              />
+            </div>
+            {isWholesale && (
+              <div className="mt-3">
+                <Label>UID-NR.</Label>
+                <Input
+                  value={vat}
+                  onChange={(v) => {
+                    setVat(v.toUpperCase());
+                    setVatFieldError("");
+                    if (error) setError("");
+                  }}
+                  onBlur={() => {
+                    if (!vat.trim()) {
+                      setVatFieldError("UID ist erforderlich.");
+                      return;
+                    }
+                    if (!validateEuVatFormat(vat)) {
+                      setVatFieldError(
+                        "UID-Format ungültig — Beispiel: ATU12345678"
+                      );
+                      return;
+                    }
+                    setVatFieldError("");
+                  }}
+                  placeholder="ATU12345678"
+                  required
+                />
+                {vatFieldError && (
+                  <p className="mt-1 text-[10px] text-[#c0392b]">{vatFieldError}</p>
+                )}
+              </div>
+            )}
           </section>
 
-          {/* Newsletter + Rabatt */}
-          {!autoCouponApplied && (
+          {/* 10% SPAREN — Newsletter opt-in + WELCOME coupon (B2C / guest only) */}
+          {!isWholesale && !autoCouponApplied && (
             <div
               className="mt-8"
               style={{
@@ -1019,6 +1191,7 @@ function CheckoutInner() {
                 <div className="border border-[#333] bg-[#111] p-4">
                   <CardElement
                     options={{
+                      hidePostalCode: true,
                       style: {
                         base: {
                           color: "#ffffff",
@@ -1056,6 +1229,7 @@ function CheckoutInner() {
                       totalPrice={totalPrice}
                       couponDiscount={couponDiscount}
                       onApprove={handlePayPalApprove}
+                      disabled={wholesaleCheckoutBlocked}
                       onError={() =>
                         setError(
                           "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut."
@@ -1099,7 +1273,11 @@ function CheckoutInner() {
           {paymentMethod !== "paypal" && (
             <button
               type="submit"
-              disabled={processing || isStripeDisabled}
+              disabled={
+                processing ||
+                isStripeDisabled ||
+                wholesaleCheckoutBlocked
+              }
               className="mt-8 flex w-full cursor-pointer items-center justify-center bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:cursor-default disabled:opacity-60"
             >
               {processing ? (
@@ -1128,6 +1306,7 @@ function CheckoutInner() {
               setCouponDiscount(null);
             }}
             subtotal={totalPrice}
+            hideCoupon={isWholesale}
           />
         </div>
       </div>

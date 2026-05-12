@@ -4,6 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import Link from "next/link";
+import {
+  clearCheckoutPiSynced,
+  consumeCheckoutSyncPayload,
+  wasCheckoutPiSynced,
+} from "@/lib/checkout-order-extras";
 
 interface OrderDetails {
   customerName: string;
@@ -77,36 +82,61 @@ export default function OrderSuccess() {
         // PaymentIntent flow: sync was already done in CheckoutForm before redirect
         // but for Klarna/EPS redirects, we need to sync here too
         if (paymentIntentId && !sessionId) {
-          const pi = await fetch(
-            `/api/order-details?payment_intent=${paymentIntentId}`
-          );
-          if (pi.ok) {
-            const piData = await pi.json();
-            await fetch("/api/sync-order", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                paymentIntentId,
-                customer: {
-                  email: piData.customerEmail || "",
-                  firstName: piData.customerName?.split(" ")[0] || "",
-                  lastName:
-                    piData.customerName?.split(" ").slice(1).join(" ") || "",
-                  street: "",
-                  zip: "",
-                  city: "",
-                  country: "",
-                },
-                items: piData.items?.map(
-                  (i: { description: string; quantity: number; amount: number }) => ({
-                    id: 0,
-                    name: i.description,
-                    qty: i.quantity,
-                    price: (i.amount / 100 / i.quantity).toFixed(2),
-                  })
-                ) || [],
-              }),
-            });
+          if (wasCheckoutPiSynced(paymentIntentId)) {
+            clearCheckoutPiSynced(paymentIntentId);
+          } else {
+            const stored = consumeCheckoutSyncPayload(paymentIntentId);
+            const pi = await fetch(
+              `/api/order-details?payment_intent=${paymentIntentId}`
+            );
+            if (pi.ok) {
+              const piData = await pi.json();
+              const customer = stored
+                ? {
+                    email: stored.email,
+                    firstName: stored.firstName,
+                    lastName: stored.lastName,
+                    street: stored.street,
+                    zip: stored.zip,
+                    city: stored.city,
+                    country: stored.country,
+                  }
+                : {
+                    email: piData.customerEmail || "",
+                    firstName: piData.customerName?.split(" ")[0] || "",
+                    lastName:
+                      piData.customerName?.split(" ").slice(1).join(" ") || "",
+                    street: "",
+                    zip: "",
+                    city: "",
+                    country: "",
+                  };
+              await fetch("/api/sync-order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  paymentIntentId,
+                  customer,
+                  items:
+                    piData.items?.map(
+                      (i: {
+                        description: string;
+                        quantity: number;
+                        amount: number;
+                      }) => ({
+                        id: 0,
+                        name: i.description,
+                        qty: i.quantity,
+                        price: (i.amount / 100 / i.quantity).toFixed(2),
+                      })
+                    ) || [],
+                  ...(stored?.billing ? { billing: stored.billing } : {}),
+                  ...(stored?.meta_data
+                    ? { meta_data: stored.meta_data }
+                    : {}),
+                }),
+              });
+            }
           }
         }
 

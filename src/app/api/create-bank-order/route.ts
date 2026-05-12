@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -20,6 +21,9 @@ interface Body {
     country: string;
   };
   items: CartMeta[];
+  /** Optional — same shape as /api/sync-order (checkout passes company + VAT). */
+  billing?: Record<string, string>;
+  meta_data?: Array<{ key: string; value: unknown }>;
 }
 
 async function sendBankTransferEmail(
@@ -137,7 +141,8 @@ async function sendBankTransferEmail(
 
 export async function POST(request: Request) {
   try {
-    const { customer, items } = (await request.json()) as Body;
+    const body = (await request.json()) as Body;
+    const { customer, items, billing: bodyBilling, meta_data: bodyMeta } = body;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -150,20 +155,43 @@ export async function POST(request: Request) {
     const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
     const WOOCOMMERCE_SECRET = process.env.WOOCOMMERCE_SECRET!;
 
-    const orderData = {
+    const cookieStore = await cookies();
+    const wooId = cookieStore.get("woo_customer_id")?.value?.trim();
+    const haendlerTok = cookieStore.get("haendler_token")?.value;
+    const haendlerId = cookieStore.get("haendler_id")?.value?.trim();
+    const customerIdStr =
+      wooId || (haendlerTok && haendlerId ? haendlerId : undefined);
+    const parsedCustomerId = customerIdStr
+      ? parseInt(customerIdStr, 10)
+      : NaN;
+
+    const companyFromBody =
+      typeof bodyBilling?.company === "string"
+        ? bodyBilling.company.trim()
+        : "";
+
+    const billing: Record<string, string> = {
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      address_1: customer.street,
+      city: customer.city,
+      postcode: customer.zip,
+      country: customer.country,
+    };
+    if (companyFromBody) {
+      billing.company = companyFromBody;
+    }
+
+    const meta_data =
+      bodyMeta && bodyMeta.length > 0 ? [...bodyMeta] : undefined;
+
+    const orderData: Record<string, unknown> = {
       status: "pending",
       payment_method: "bacs",
       payment_method_title: "Überweisung",
       set_paid: false,
-      billing: {
-        first_name: customer.firstName,
-        last_name: customer.lastName,
-        email: customer.email,
-        address_1: customer.street,
-        city: customer.city,
-        postcode: customer.zip,
-        country: customer.country,
-      },
+      billing,
       shipping: {
         first_name: customer.firstName,
         last_name: customer.lastName,
@@ -178,6 +206,13 @@ export async function POST(request: Request) {
         total: (parseFloat(item.price) * item.qty).toFixed(2),
       })),
     };
+
+    if (Number.isFinite(parsedCustomerId) && parsedCustomerId > 0) {
+      orderData.customer_id = parsedCustomerId;
+    }
+    if (meta_data) {
+      orderData.meta_data = meta_data;
+    }
 
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
