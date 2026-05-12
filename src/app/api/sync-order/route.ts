@@ -254,13 +254,19 @@ export async function POST(request: Request) {
       payment_method: "stripe",
       payment_method_title: "Stripe",
       set_paid: true,
+      /** Line totals from checkout are gross (incl. VAT); avoids WC recomputing subtotal from catalog. */
+      prices_include_tax: true,
       billing,
       shipping,
-      line_items: cartItems.map((item) => ({
-        product_id: item.id,
-        quantity: item.qty,
-        total: (parseFloat(item.price) * item.qty).toFixed(2),
-      })),
+      line_items: cartItems.map((item) => {
+        const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+        return {
+          product_id: Number(item.id),
+          quantity: item.qty,
+          subtotal: lineTotal,
+          total: lineTotal,
+        };
+      }),
       transaction_id: transactionId,
     };
 

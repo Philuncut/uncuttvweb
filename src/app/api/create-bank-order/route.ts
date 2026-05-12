@@ -204,6 +204,8 @@ export async function POST(request: Request) {
       payment_method: "bacs",
       payment_method_title: "Überweisung",
       set_paid: false,
+      /** Line totals from checkout are gross (incl. VAT); avoids WC recomputing subtotal from catalog. */
+      prices_include_tax: true,
       billing,
       shipping: {
         first_name: customer.firstName,
@@ -213,11 +215,15 @@ export async function POST(request: Request) {
         postcode: customer.zip,
         country: customer.country,
       },
-      line_items: items.map((item) => ({
-        product_id: item.id,
-        quantity: item.qty,
-        total: (parseFloat(item.price) * item.qty).toFixed(2),
-      })),
+      line_items: items.map((item) => {
+        const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+        return {
+          product_id: Number(item.id),
+          quantity: item.qty,
+          subtotal: lineTotal,
+          total: lineTotal,
+        };
+      }),
     };
 
     if (Number.isFinite(parsedCustomerId) && parsedCustomerId > 0) {
