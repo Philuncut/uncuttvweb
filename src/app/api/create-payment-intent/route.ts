@@ -7,11 +7,14 @@ interface Body {
   couponId?: string;
   /** Versand in Cent (>= 0), aus Checkout */
   shippingCents?: number;
+  /** EU B2B Reverse Charge — echoed in PI metadata when true (optional). */
+  isReverseCharge?: boolean;
 }
 
 export async function POST(request: Request) {
   try {
-    const { items, couponId, shippingCents } = (await request.json()) as Body;
+    const { items, couponId, shippingCents, isReverseCharge } =
+      (await request.json()) as Body;
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -74,6 +77,7 @@ export async function POST(request: Request) {
         ),
         coupon: couponId || "",
         discount: discountLabel,
+        is_reverse_charge: isReverseCharge === true ? "true" : "false",
       },
     });
 

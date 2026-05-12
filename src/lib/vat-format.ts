@@ -7,6 +7,11 @@ function normalizeVat(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
 }
 
+/** Exported for server-side VIES + checkout (same normalization as `validateEuVatFormat`). */
+export function normalizeEuVat(raw: string): string {
+  return normalizeVat(raw);
+}
+
 /** Country-specific patterns (pragmatic; VAT Guard may still reject server-side). */
 const VAT_PATTERNS: Array<{ prefix: string; pattern: RegExp }> = [
   { prefix: "CHE", pattern: /^CHE\d{9}(MWST|TVA|IVA)?$/ },

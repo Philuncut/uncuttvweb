@@ -137,6 +137,17 @@ export default function OrderSuccess() {
                   ...(stored?.checkoutShipping
                     ? { checkoutShipping: stored.checkoutShipping }
                     : {}),
+                  ...(stored?.isReverseCharge && stored?.viesResult
+                    ? {
+                        isReverseCharge: true,
+                        viesResult: {
+                          requestDate: stored.viesResult.requestDate,
+                          consultationNumber:
+                            stored.viesResult.consultationNumber,
+                          name: stored.viesResult.name,
+                        },
+                      }
+                    : {}),
                 }),
               });
             }

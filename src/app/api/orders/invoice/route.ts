@@ -70,6 +70,12 @@ export async function GET(request: Request) {
         ? String(rawVat).trim()
         : "";
 
+    const reverseChargeRaw = order.meta_data?.find(
+      (m) => m.key === "_uncuttv_reverse_charge"
+    )?.value;
+    const isReverseCharge =
+      String(reverseChargeRaw ?? "").trim().toLowerCase() === "yes";
+
     // Generate PDF
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([595, 842]);
@@ -116,6 +122,22 @@ export async function GET(request: Request) {
     if (vat) {
       page.drawText(`UID-Nr.: ${vat}`, { x: 50, y, size: 10, font, color: TEXT });
       y -= 15;
+    }
+
+    if (isReverseCharge) {
+      page.drawText(
+        "Steuerschuldnerschaft des Leistungsempfängers gem. Art. 196",
+        { x: 50, y, size: 8, font, color: GREY }
+      );
+      y -= 12;
+      page.drawText("MwStSystRL (Reverse Charge)", {
+        x: 50,
+        y,
+        size: 8,
+        font,
+        color: GREY,
+      });
+      y -= 12;
     }
 
     y -= 20;
@@ -174,12 +196,14 @@ export async function GET(request: Request) {
     const vatAmount = subtotal - netAmount;
     const total = parseFloat(order.total);
 
-    page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
-    page.drawText(`€${netAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
-    y -= 16;
-    page.drawText("USt. 20%:", { x: 380, y, size: 9, font, color: GREY });
-    page.drawText(`€${vatAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
-    y -= 16;
+    if (!isReverseCharge) {
+      page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
+      page.drawText(`€${netAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
+      y -= 16;
+      page.drawText("USt. 20%:", { x: 380, y, size: 9, font, color: GREY });
+      page.drawText(`€${vatAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
+      y -= 16;
+    }
     page.drawLine({ start: { x: 380, y: y + 6 }, end: { x: 545, y: y + 6 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     page.drawText("Gesamtbetrag:", { x: 380, y, size: 11, font: fontBold, color: TEXT });
     page.drawText(`€${total.toFixed(2)}`, { x: colX.total, y, size: 11, font: fontBold, color: RED });

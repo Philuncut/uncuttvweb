@@ -10,6 +10,12 @@ interface CartMeta {
   price: string;
 }
 
+type ViesAuditBody = {
+  requestDate: string;
+  consultationNumber: string;
+  name?: string | null;
+};
+
 interface Body {
   customer: {
     email: string;
@@ -31,6 +37,8 @@ interface Body {
     rate_id?: string;
     instance_id?: number;
   };
+  isReverseCharge?: boolean;
+  viesResult?: ViesAuditBody | null;
 }
 
 async function sendBankTransferEmail(
@@ -155,7 +163,24 @@ export async function POST(request: Request) {
       billing: bodyBilling,
       meta_data: bodyMeta,
       checkoutShipping,
+      isReverseCharge: bodyIsRC,
+      viesResult: bodyVies,
     } = body;
+
+    const isReverseCharge = bodyIsRC === true;
+    const viesAudit = bodyVies ?? null;
+
+    if (isReverseCharge) {
+      if (
+        !viesAudit?.consultationNumber?.trim() ||
+        !viesAudit?.requestDate?.trim()
+      ) {
+        return NextResponse.json(
+          { error: "Reverse Charge unvollständig (VIES-Daten fehlen)." },
+          { status: 400 }
+        );
+      }
+    }
 
     if (!items || items.length === 0) {
       return NextResponse.json(
@@ -217,20 +242,50 @@ export async function POST(request: Request) {
       },
       line_items: items.map((item) => {
         const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
-        return {
+        const base = {
           product_id: Number(item.id),
           quantity: item.qty,
           subtotal: lineTotal,
           total: lineTotal,
         };
+        if (isReverseCharge) {
+          return {
+            ...base,
+            subtotal_tax: "0.00",
+            total_tax: "0.00",
+            taxes: [],
+          };
+        }
+        return base;
       }),
     };
+
+    if (isReverseCharge) {
+      orderData.tax_lines = [];
+    }
 
     if (Number.isFinite(parsedCustomerId) && parsedCustomerId > 0) {
       orderData.customer_id = parsedCustomerId;
     }
     if (meta_data) {
       orderData.meta_data = meta_data;
+    }
+
+    if (isReverseCharge && orderData.meta_data) {
+      const m = orderData.meta_data as Array<{ key: string; value: unknown }>;
+      m.push(
+        { key: "_uncuttv_reverse_charge", value: "yes" },
+        { key: "_uncuttv_vies_consultation", value: viesAudit!.consultationNumber },
+        { key: "_uncuttv_vies_request_date", value: viesAudit!.requestDate },
+        { key: "_uncuttv_vies_company_name", value: viesAudit!.name ?? "" }
+      );
+    } else if (isReverseCharge && !orderData.meta_data) {
+      orderData.meta_data = [
+        { key: "_uncuttv_reverse_charge", value: "yes" },
+        { key: "_uncuttv_vies_consultation", value: viesAudit!.consultationNumber },
+        { key: "_uncuttv_vies_request_date", value: viesAudit!.requestDate },
+        { key: "_uncuttv_vies_company_name", value: viesAudit!.name ?? "" },
+      ];
     }
 
     if (
@@ -245,6 +300,9 @@ export async function POST(request: Request) {
             method_id: s.method_id || "flat_rate",
             method_title: s.label || "Versand",
             total: Math.max(0, s.rate).toFixed(2),
+            ...(isReverseCharge
+              ? { total_tax: "0.00", taxes: [] as unknown[] }
+              : {}),
           },
         ];
       }

@@ -127,6 +127,12 @@ export async function GET(request: Request) {
       orderUidLegacy ||
       customerUidLegacy;
 
+    const reverseChargeRaw = order.meta_data?.find(
+      (m) => m.key === "_uncuttv_reverse_charge"
+    )?.value;
+    const isReverseCharge =
+      String(reverseChargeRaw ?? "").trim().toLowerCase() === "yes";
+
     // Use customer company if order billing company is empty
     const firma = order.billing.company || customerData?.billing?.company || "";
     console.log("[Invoice] Firma:", firma);
@@ -204,6 +210,8 @@ export async function GET(request: Request) {
       billing.country,
     ].filter(Boolean);
 
+    const shipAnchorY = y;
+
     for (const line of recipientLines) {
       page.drawText(line, { x: 50, y, size: 10, font, color: WHITE_TEXT });
       y -= 15;
@@ -215,9 +223,25 @@ export async function GET(request: Request) {
       y -= 15;
     }
 
+    if (isReverseCharge) {
+      page.drawText(
+        "Steuerschuldnerschaft des Leistungsempfängers gem. Art. 196",
+        { x: 50, y, size: 8, font, color: GREY }
+      );
+      y -= 12;
+      page.drawText("MwStSystRL (Reverse Charge)", {
+        x: 50,
+        y,
+        size: 8,
+        font,
+        color: GREY,
+      });
+      y -= 12;
+    }
+
     // ── Lieferanschrift (from customer.shipping) ──
     if (cusShip?.address_1?.trim()) {
-      const shipStartY = y + recipientLines.length * 15 + (uidNummer ? 15 : 0);
+      const shipStartY = shipAnchorY;
       page.drawText("Lieferanschrift:", { x: 320, y: shipStartY + 12, size: 7, font, color: GREY });
       let sy = shipStartY;
       const shipLines = [
@@ -339,13 +363,15 @@ export async function GET(request: Request) {
     const vatAmount = subtotal - netAmount;
     const total = parseFloat(order.total);
 
-    page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
-    page.drawText(`€${netAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: WHITE_TEXT });
-    y -= 16;
+    if (!isReverseCharge) {
+      page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
+      page.drawText(`€${netAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: WHITE_TEXT });
+      y -= 16;
 
-    page.drawText("USt. 20%:", { x: 380, y, size: 9, font, color: GREY });
-    page.drawText(`€${vatAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: WHITE_TEXT });
-    y -= 16;
+      page.drawText("USt. 20%:", { x: 380, y, size: 9, font, color: GREY });
+      page.drawText(`€${vatAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: WHITE_TEXT });
+      y -= 16;
+    }
 
     page.drawLine({
       start: { x: 380, y: y + 6 },
