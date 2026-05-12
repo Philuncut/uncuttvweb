@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import CinematicLoader from "@/components/CinematicLoader";
+import AccountProfileForm from "@/components/AccountProfileForm";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 
@@ -126,18 +127,6 @@ export default function Dashboard() {
   const [customer, setCustomer] = useState<CustomerData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Edit profile
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState("");
-  const [editFirst, setEditFirst] = useState("");
-  const [editLast, setEditLast] = useState("");
-  const [editStreet, setEditStreet] = useState("");
-  const [editCity, setEditCity] = useState("");
-  const [editZip, setEditZip] = useState("");
-  const [editCountry, setEditCountry] = useState("");
-  const [editPhone, setEditPhone] = useState("");
-
   // Orders pagination + detail
   const [ordersShown, setOrdersShown] = useState(ORDERS_PER_PAGE);
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
@@ -162,72 +151,10 @@ export default function Dashboard() {
       }
       const data = await res.json();
       setCustomer(data);
-      setEditFirst(data.firstName || "");
-      setEditLast(data.lastName || "");
-      setEditStreet(data.billing?.address_1 || "");
-      setEditCity(data.billing?.city || "");
-      setEditZip(data.billing?.postcode || "");
-      setEditCountry(data.billing?.country || "");
-      setEditPhone(data.billing?.phone || "");
       setLoading(false);
     }
     load();
   }, [router]);
-
-  const handleSave = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      setSaving(true);
-      setSaveMsg("");
-
-      const res = await fetch("/api/auth/update", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          first_name: editFirst,
-          last_name: editLast,
-          billing: {
-            first_name: editFirst,
-            last_name: editLast,
-            address_1: editStreet,
-            city: editCity,
-            postcode: editZip,
-            country: editCountry,
-            phone: editPhone,
-          },
-          shipping: {
-            first_name: editFirst,
-            last_name: editLast,
-            address_1: editStreet,
-            city: editCity,
-            postcode: editZip,
-            country: editCountry,
-          },
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setCustomer((prev) =>
-          prev
-            ? {
-                ...prev,
-                firstName: data.firstName,
-                lastName: data.lastName,
-                billing: data.billing,
-              }
-            : prev
-        );
-        setEditing(false);
-        setSaveMsg("Daten gespeichert.");
-        setTimeout(() => setSaveMsg(""), 3000);
-      } else {
-        setSaveMsg("Fehler beim Speichern.");
-      }
-      setSaving(false);
-    },
-    [editFirst, editLast, editStreet, editCity, editZip, editCountry, editPhone]
-  );
 
   const handlePasswordChange = useCallback(
     async (e: FormEvent) => {
@@ -444,114 +371,7 @@ export default function Dashboard() {
       {/* Section 2 — My Data */}
       <section>
         <SectionTitle>{t("MEINE_DATEN")}</SectionTitle>
-        {saveMsg && (
-          <p className="mt-3 text-xs text-green-400">{saveMsg}</p>
-        )}
-
-        {editing ? (
-          <form onSubmit={handleSave} className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <FieldLabel>VORNAME</FieldLabel>
-                <Input value={editFirst} onChange={setEditFirst} />
-              </div>
-              <div>
-                <FieldLabel>NACHNAME</FieldLabel>
-                <Input value={editLast} onChange={setEditLast} />
-              </div>
-            </div>
-            <div>
-              <FieldLabel>STRASSE</FieldLabel>
-              <Input value={editStreet} onChange={setEditStreet} />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <FieldLabel>PLZ</FieldLabel>
-                <Input value={editZip} onChange={setEditZip} />
-              </div>
-              <div>
-                <FieldLabel>ORT</FieldLabel>
-                <Input value={editCity} onChange={setEditCity} />
-              </div>
-              <div>
-                <FieldLabel>LAND</FieldLabel>
-                <Input
-                  value={editCountry}
-                  onChange={setEditCountry}
-                  placeholder="AT"
-                />
-              </div>
-            </div>
-            <div>
-              <FieldLabel>TELEFON</FieldLabel>
-              <Input value={editPhone} onChange={setEditPhone} />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="cursor-pointer bg-[#c0392b] px-6 py-3 text-xs font-bold tracking-wider text-white transition-colors hover:bg-[#e74c3c] disabled:opacity-60"
-              >
-                {saving ? "..." : t("SPEICHERN")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="cursor-pointer border border-[#333] bg-transparent px-6 py-3 text-xs font-bold tracking-wider text-white/50 transition-colors hover:text-white"
-              >
-                {t("ABBRECHEN")}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="mt-4">
-            <div className="space-y-2 text-sm text-white/60">
-              <p>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#888]">
-                  NAME:{" "}
-                </span>
-                <span className="text-white/80">
-                  {customer.firstName} {customer.lastName}
-                </span>
-              </p>
-              <p>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#888]">
-                  E-MAIL:{" "}
-                </span>
-                <span className="text-white/80">{customer.email}</span>
-              </p>
-              {customer.billing?.address_1 && (
-                <p>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#888]">
-                    ADRESSE:{" "}
-                  </span>
-                  <span className="text-white/80">
-                    {customer.billing.address_1},{" "}
-                    {customer.billing.postcode} {customer.billing.city},{" "}
-                    {customer.billing.country}
-                  </span>
-                </p>
-              )}
-              {customer.billing?.phone && (
-                <p>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#888]">
-                    TELEFON:{" "}
-                  </span>
-                  <span className="text-white/80">
-                    {customer.billing.phone}
-                  </span>
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="mt-4 cursor-pointer border border-[#c0392b] bg-transparent px-6 py-2.5 text-xs font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white"
-            >
-              {t("BEARBEITEN")}
-            </button>
-          </div>
-        )}
+        <AccountProfileForm />
       </section>
 
       {/* Section 3 — Change Password */}

@@ -311,6 +311,7 @@ export default function HaendlerDashboard() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [showCompanyWarning, setShowCompanyWarning] = useState(false);
 
   // Edit fields
   const [editFirst, setEditFirst] = useState("");
@@ -401,6 +402,23 @@ export default function HaendlerDashboard() {
     }
     load();
   }, [router, showIntro]);
+
+  useEffect(() => {
+    async function loadProfileWarning() {
+      try {
+        const res = await fetch("/api/auth/profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        const missingCompany = !String(data?.billing?.company || "").trim();
+        const missingVat = !String(data?.billing?.vat || "").trim();
+        setShowCompanyWarning(missingCompany || missingVat);
+      } catch {
+        // keep dashboard usable even if profile endpoint fails
+      }
+    }
+
+    void loadProfileWarning();
+  }, []);
 
   const handleSave = useCallback(
     async (e: React.FormEvent) => {
@@ -537,6 +555,28 @@ export default function HaendlerDashboard() {
   return (
     <div className="space-y-14">
       {/* Greeting */}
+      {showCompanyWarning && (
+        <div className="flex items-start justify-between gap-4 border border-[#c0392b] bg-[#3a1310] px-4 py-3 text-sm text-white">
+          <p>
+            <span className="font-bold">
+              ⚠ Bitte vervollständige deine Firmendaten (Firmenname + UID) —
+              ohne diese können wir keine korrekte Rechnung ausstellen.
+            </span>{" "}
+            <Link href="/konto" className="underline underline-offset-2">
+              Jetzt vervollständigen
+            </Link>
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowCompanyWarning(false)}
+            className="cursor-pointer text-white/70 transition-colors hover:text-white"
+            aria-label="Warnung schließen"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
           {t("WILLKOMMEN")}, {userName.toUpperCase()}
