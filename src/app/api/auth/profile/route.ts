@@ -256,8 +256,13 @@ export async function GET() {
     }
 
     const customer = await fetchWooCustomer(customerId);
-    const billingVat = await resolveBillingVat(customer, { jwt: token });
-    const profile = buildProfileFromCustomer(customer, cookieName, billingVat);
+    console.log(
+      "[PROFILE-GET] Customer meta_data:",
+      JSON.stringify(customer.meta_data)
+    );
+    const resolvedVat = await resolveBillingVat(customer, { jwt: token });
+    console.log("[PROFILE-GET] Resolved vat:", resolvedVat);
+    const profile = buildProfileFromCustomer(customer, cookieName, resolvedVat);
     return NextResponse.json(profile);
   } catch (error) {
     const message =
@@ -277,6 +282,7 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as ProfilePayload;
+    console.log("[PROFILE-POST] Received body vat:", body?.billing?.vat);
     const role = asString(
       cookieStore.get("haendler_role")?.value ||
         cookieStore.get("woo_customer_role")?.value
@@ -349,9 +355,33 @@ export async function POST(request: Request) {
     } catch {
       existingCustomer = null;
     }
+    if (existingCustomer) {
+      console.log(
+        "[PROFILE-POST] Existing customer meta_data:",
+        JSON.stringify(existingCustomer.meta_data)
+      );
+    } else {
+      console.log(
+        "[PROFILE-POST] Existing customer meta_data:",
+        JSON.stringify(undefined)
+      );
+    }
     const meta_data = mergeMetaWithVat(existingCustomer?.meta_data);
 
-    const updateRes = await fetch(
+    const putBody = {
+      first_name: asString(body.first_name),
+      last_name: asString(body.last_name),
+      email: asString(body.email),
+      billing,
+      shipping,
+      meta_data,
+    };
+    console.log(
+      "[PROFILE-POST] PUT body meta_data:",
+      JSON.stringify(putBody.meta_data)
+    );
+
+    const putResponse = await fetch(
       `${WOO_URL}/wp-json/wc/v3/customers/${customerId}`,
       {
         method: "PUT",
@@ -359,34 +389,33 @@ export async function POST(request: Request) {
           Authorization: AUTH_HEADER,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          first_name: asString(body.first_name),
-          last_name: asString(body.last_name),
-          email: asString(body.email),
-          billing,
-          shipping,
-          meta_data,
-        }),
+        body: JSON.stringify(putBody),
       }
     );
 
-    if (!updateRes.ok) {
-      const text = await updateRes.text();
+    if (!putResponse.ok) {
+      const text = await putResponse.text();
       return NextResponse.json(
         { error: text || "Profil konnte nicht gespeichert werden." },
         { status: 500 }
       );
     }
 
-    const updatedCustomer = (await updateRes.json()) as WooCustomer;
-    const billingVatResolved = await resolveBillingVat(updatedCustomer, {
+    const updatedCustomer = (await putResponse.json()) as WooCustomer;
+    console.log("[PROFILE-POST] PUT response status:", putResponse.status);
+    console.log(
+      "[PROFILE-POST] PUT response meta_data:",
+      JSON.stringify(updatedCustomer.meta_data)
+    );
+    const resolvedVat = await resolveBillingVat(updatedCustomer, {
       fallbackFromRequest: submittedVat,
       jwt: token,
     });
+    console.log("[PROFILE-POST] Resolved vat:", resolvedVat);
     const profile = buildProfileFromCustomer(
       updatedCustomer,
       "",
-      billingVatResolved
+      resolvedVat
     );
 
     return NextResponse.json({ success: true, profile });
