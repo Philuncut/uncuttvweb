@@ -20,8 +20,12 @@ export async function POST(request: Request) {
 
     const isRc = body.isReverseCharge === true;
 
+    const existing = await stripe.paymentIntents.retrieve(id);
+    const prev = existing.metadata ?? {};
+
     await stripe.paymentIntents.update(id, {
       metadata: {
+        ...prev,
         is_reverse_charge: isRc ? "true" : "false",
         vies_audit: "",
       },

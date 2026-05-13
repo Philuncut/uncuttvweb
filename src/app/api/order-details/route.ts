@@ -19,12 +19,19 @@ export async function GET(request: Request) {
           amount: item.amount_total ?? 0,
         })) ?? [];
 
+      const shippingCents =
+        session.total_details?.amount_shipping != null
+          ? session.total_details.amount_shipping
+          : 0;
+
       return NextResponse.json({
         customerName: session.customer_details?.name || "",
         customerEmail: session.customer_details?.email || "",
         total: ((session.amount_total ?? 0) / 100).toFixed(2),
         currency: session.currency || "eur",
         items,
+        shippingCents,
+        isWholesaleShipping: false,
       });
     }
 
@@ -48,6 +55,11 @@ export async function GET(request: Request) {
         amount: Math.round(parseFloat(item.price) * 100) * item.qty,
       }));
 
+      const shippingMeta = parseInt(pi.metadata?.shipping_cents ?? "", 10);
+      const shippingCents =
+        Number.isFinite(shippingMeta) && shippingMeta > 0 ? shippingMeta : 0;
+      const isWholesaleShipping = pi.metadata?.is_wholesale === "true";
+
       // Try to get customer email from the payment method's billing details
       let customerEmail = "";
       let customerName = "";
@@ -69,6 +81,8 @@ export async function GET(request: Request) {
         total: (pi.amount / 100).toFixed(2),
         currency: pi.currency || "eur",
         items,
+        shippingCents,
+        isWholesaleShipping,
       });
     }
 

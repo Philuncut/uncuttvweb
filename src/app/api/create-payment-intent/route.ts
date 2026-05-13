@@ -146,6 +146,8 @@ export async function POST(request: Request) {
         coupon: couponId || "",
         discount: discountLabel,
         is_reverse_charge: isReverseCharge === true ? "true" : "false",
+        shipping_cents: String(ship),
+        is_wholesale: isWholesale === true ? "true" : "false",
       },
     });
 

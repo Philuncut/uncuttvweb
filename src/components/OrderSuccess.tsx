@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   clearCheckoutPiSynced,
   consumeCheckoutSyncPayload,
+  readCheckoutSyncPayload,
   wasCheckoutPiSynced,
 } from "@/lib/checkout-order-extras";
 
@@ -16,6 +17,9 @@ interface OrderDetails {
   total: string;
   currency: string;
   items: Array<{ description: string; quantity: number; amount: number }>;
+  /** Versand in Cent (Stripe PI-Metadaten, Checkout-Session total_details, oder SessionStorage-Fallback). */
+  shippingCents?: number;
+  isWholesaleShipping?: boolean;
 }
 
 export default function OrderSuccess() {
@@ -67,8 +71,23 @@ export default function OrderSuccess() {
 
         const res = await fetch(`/api/order-details?${param}`);
         if (res.ok) {
-          const data = await res.json();
-          setOrder(data);
+          const data = (await res.json()) as OrderDetails;
+          let merged = data;
+          if (
+            paymentIntentId &&
+            (!merged.shippingCents || merged.shippingCents <= 0)
+          ) {
+            const stored = readCheckoutSyncPayload(paymentIntentId);
+            const rate = stored?.checkoutShipping?.rate;
+            if (typeof rate === "number" && rate > 0 && !Number.isNaN(rate)) {
+              merged = {
+                ...merged,
+                shippingCents: Math.round(rate * 100),
+                isWholesaleShipping: stored?.isWholesale === true,
+              };
+            }
+          }
+          setOrder(merged);
         }
 
         // Sync order to WooCommerce
@@ -359,6 +378,19 @@ export default function OrderSuccess() {
                 </span>
               </div>
             ))}
+            {typeof order.shippingCents === "number" &&
+              order.shippingCents > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-white/70">
+                    {order.isWholesaleShipping
+                      ? "WHOLESALE-VERSAND"
+                      : "VERSAND"}
+                  </span>
+                  <span className="text-white">
+                    €{(order.shippingCents / 100).toFixed(2)}
+                  </span>
+                </div>
+              )}
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-[#222] pt-4">
             <span className="text-sm font-bold tracking-wider text-white/60">
