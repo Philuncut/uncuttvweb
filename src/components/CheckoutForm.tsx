@@ -175,19 +175,25 @@ function Select({
   value,
   onChange,
   options,
+  required,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
+  required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <select
       value={value}
+      required={required}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-[#c0392b]"
+      className="w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-[#c0392b] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value}>
+        <option key={o.value || "_empty"} value={o.value}>
           {o.label}
         </option>
       ))}
@@ -641,6 +647,11 @@ function CheckoutInner() {
   const [zip, setZip] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("AT");
+  const [state, setState] = useState("");
+  const [provinceOptions, setProvinceOptions] = useState<
+    { code: string; name: string }[]
+  >([]);
+  const [provinceListLoading, setProvinceListLoading] = useState(false);
   const [isWholesale, setIsWholesale] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [company, setCompany] = useState("");
@@ -680,6 +691,7 @@ function CheckoutInner() {
                 postcode?: string;
                 city?: string;
                 country?: string;
+                state?: string;
               };
             };
             if (cancelled) return;
@@ -694,6 +706,7 @@ function CheckoutInner() {
             if (p.billing?.postcode) setZip(p.billing.postcode);
             if (p.billing?.city) setCity(p.billing.city);
             if (p.billing?.country) setCountry(p.billing.country);
+            if (p.billing?.state) setState(String(p.billing.state).trim());
             filledFromProfile = true;
           }
         } catch {
@@ -713,6 +726,7 @@ function CheckoutInner() {
             if (data.billing?.postcode) setZip(data.billing.postcode);
             if (data.billing?.city) setCity(data.billing.city);
             if (data.billing?.country) setCountry(data.billing.country);
+            if (data.billing?.state) setState(String(data.billing.state).trim());
           } catch {
             /* guest */
           }
@@ -728,6 +742,39 @@ function CheckoutInner() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProvinceListLoading(true);
+    setProvinceOptions([]);
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/api/woo-states/${encodeURIComponent(country)}`
+        );
+        const data = (await r.json()) as {
+          states?: { code: string; name: string }[];
+        };
+        if (cancelled) return;
+        setProvinceOptions(Array.isArray(data.states) ? data.states : []);
+      } catch {
+        if (!cancelled) setProvinceOptions([]);
+      } finally {
+        if (!cancelled) setProvinceListLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [country]);
+
+  useEffect(() => {
+    if (provinceListLoading) return;
+    if (provinceOptions.length === 0) return;
+    if (!state.trim()) return;
+    const ok = provinceOptions.some((p) => p.code === state);
+    if (!ok) setState("");
+  }, [provinceListLoading, provinceOptions, state]);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
 
@@ -836,6 +883,27 @@ function CheckoutInner() {
       return;
     }
 
+    if (provinceListLoading) {
+      setShipFetchLoading(true);
+      setShipResolved(false);
+      setStripeShipCents(null);
+      setShipRate(null);
+      return;
+    }
+
+    if (provinceOptions.length > 0 && !state.trim()) {
+      setShipFetchLoading(false);
+      setShipResolved(true);
+      setShipError("Provinz wählen, um Versand zu berechnen.");
+      setShipNoZone(false);
+      setShipRate(null);
+      setShipLabel("");
+      setShipMethodId("");
+      setShipRateId("");
+      setStripeShipCents(null);
+      return;
+    }
+
     let cancelled = false;
     setShipFetchLoading(true);
     setShipError(null);
@@ -855,6 +923,7 @@ function CheckoutInner() {
               quantity: i.quantity,
             })),
             country,
+            state: state.trim() || undefined,
             postcode: zip,
             city,
             address_1: street,
@@ -929,9 +998,12 @@ function CheckoutInner() {
     isWholesale,
     itemsKey,
     country,
+    state,
     zip,
     city,
     street,
+    provinceListLoading,
+    provinceOptions,
     items.length,
   ]);
 
@@ -964,7 +1036,16 @@ function CheckoutInner() {
           isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
           ...(isWholesale
             ? { isWholesale: true, taxCountry: country }
-            : {}),
+            : {
+                shippingForStripe: {
+                  name: `${firstName} ${lastName}`.trim(),
+                  line1: street.trim(),
+                  city: city.trim(),
+                  postal_code: zip.trim(),
+                  country: country.trim().toUpperCase(),
+                  ...(state.trim() ? { state: state.trim() } : {}),
+                },
+              }),
         }),
       });
       const data = await res.json();
@@ -982,6 +1063,12 @@ function CheckoutInner() {
     stripeShipCents,
     wholesaleReverseCharge,
     country,
+    firstName,
+    lastName,
+    street,
+    city,
+    zip,
+    state,
   ]);
 
   const cartMeta = items.map((i) => ({
@@ -999,6 +1086,7 @@ function CheckoutInner() {
     zip,
     city,
     country,
+    ...(state.trim() ? { state: state.trim() } : {}),
   };
 
   const wholesaleCheckoutBlocked = useMemo(
@@ -1092,7 +1180,10 @@ function CheckoutInner() {
   ]);
 
   const uiShippingLoading =
-    items.length > 0 && ((!sessionReady && !isWholesale) || shipFetchLoading);
+    items.length > 0 &&
+    ((!sessionReady && !isWholesale) ||
+      shipFetchLoading ||
+      (!isWholesale && provinceListLoading));
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -1179,6 +1270,7 @@ function CheckoutInner() {
                   line1: street,
                   postal_code: zip,
                   city,
+                  state: state.trim() || undefined,
                   country,
                 },
               },
@@ -1261,6 +1353,7 @@ function CheckoutInner() {
             line1: street,
             postal_code: zip,
             city,
+            state: state.trim() || undefined,
             country,
           },
         };
@@ -1335,6 +1428,7 @@ function CheckoutInner() {
       zip,
       city,
       country,
+      state,
       items,
       cartMeta,
       customerData,
@@ -1510,11 +1604,37 @@ function CheckoutInner() {
                 />
               </div>
             </div>
+            {provinceOptions.length > 0 && (
+              <div className="mt-3">
+                <Label>PROVINZ</Label>
+                <Select
+                  value={state}
+                  onChange={setState}
+                  required
+                  disabled={provinceListLoading}
+                  options={[
+                    {
+                      value: "",
+                      label: provinceListLoading
+                        ? "Provinzen werden geladen …"
+                        : "Bitte wählen …",
+                    },
+                    ...provinceOptions.map((p) => ({
+                      value: p.code,
+                      label: p.name,
+                    })),
+                  ]}
+                />
+              </div>
+            )}
             <div className="mt-3">
               <Label>LAND</Label>
               <Select
                 value={country}
-                onChange={setCountry}
+                onChange={(v) => {
+                  setCountry(v);
+                  setState("");
+                }}
                 options={[
                   { value: "AT", label: "Österreich" },
                   { value: "DE", label: "Deutschland" },

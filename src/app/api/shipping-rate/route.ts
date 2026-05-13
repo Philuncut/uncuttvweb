@@ -5,6 +5,7 @@ const WHOLESALE_FLAT_EUR = 10;
 type RequestBody = {
   items: { id: number; quantity: number }[];
   country: string;
+  state?: string;
   postcode?: string;
   city?: string;
   address_1?: string;
@@ -67,6 +68,7 @@ async function fetchStoreShipping(
   wooBase: string,
   items: { id: number; quantity: number }[],
   country: string,
+  state: string,
   postcode: string,
   city: string,
   address1: string
@@ -113,6 +115,7 @@ async function fetchStoreShipping(
     body: JSON.stringify({
       shipping_address: {
         country: country || "AT",
+        ...(state ? { state } : {}),
         postcode: postcode || "",
         city: city || "—",
         address_1: address1 || "—",
@@ -164,7 +167,8 @@ async function fetchStoreShipping(
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as RequestBody;
-    const { items, country, postcode, city, address_1, isWholesale } = body;
+    const { items, country, state, postcode, city, address_1, isWholesale } =
+      body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
@@ -199,10 +203,16 @@ export async function POST(request: Request) {
     }
 
     try {
+      const stateVal =
+        typeof state === "string" && state.trim()
+          ? state.trim().toUpperCase()
+          : "";
+
       const result = await fetchStoreShipping(
         WOOCOMMERCE_URL,
         items,
         country.trim().toUpperCase(),
+        stateVal,
         (postcode || "").trim(),
         (city || "").trim(),
         (address_1 || "").trim()

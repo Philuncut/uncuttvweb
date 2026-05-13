@@ -14,6 +14,15 @@ interface Body {
   isWholesale?: boolean;
   /** ISO2 shipping/billing country for wholesale net VAT gross-up. */
   taxCountry?: string;
+  /** B2C: shipping address on PaymentIntent (incl. state for US/IT/…). */
+  shippingForStripe?: {
+    name: string;
+    line1: string;
+    city: string;
+    postal_code: string;
+    country: string;
+    state?: string;
+  };
 }
 
 export async function POST(request: Request) {
@@ -25,6 +34,7 @@ export async function POST(request: Request) {
       isReverseCharge,
       isWholesale,
       taxCountry,
+      shippingForStripe,
     } = (await request.json()) as Body;
 
     if (!items || items.length === 0) {
@@ -93,10 +103,34 @@ export async function POST(request: Request) {
       );
     }
 
+    const shipAddr = shippingForStripe;
+    const stripeShipping =
+      shipAddr &&
+      isWholesale !== true &&
+      shipAddr.name?.trim() &&
+      shipAddr.line1?.trim() &&
+      shipAddr.city?.trim() &&
+      shipAddr.postal_code?.trim() &&
+      shipAddr.country?.trim()
+        ? {
+            name: shipAddr.name.trim(),
+            address: {
+              line1: shipAddr.line1.trim(),
+              city: shipAddr.city.trim(),
+              postal_code: shipAddr.postal_code.trim(),
+              country: shipAddr.country.trim().toUpperCase(),
+              ...(shipAddr.state?.trim()
+                ? { state: shipAddr.state.trim() }
+                : {}),
+            },
+          }
+        : undefined;
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalCents,
       currency: "eur",
       automatic_payment_methods: { enabled: true },
+      ...(stripeShipping ? { shipping: stripeShipping } : {}),
       metadata: {
         cart_items: JSON.stringify(
           items.map((i) => ({

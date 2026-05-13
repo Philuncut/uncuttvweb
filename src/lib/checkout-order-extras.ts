@@ -11,6 +11,8 @@ export type CheckoutCustomerPayload = {
   zip: string;
   city: string;
   country: string;
+  /** WooCommerce state / province code (ISO subdivision), required for some countries (IT, ES, FR, …). */
+  state?: string;
 };
 
 export function buildCheckoutOrderExtras(company: string, vat: string) {

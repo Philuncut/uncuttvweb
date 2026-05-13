@@ -18,6 +18,7 @@ interface CustomerInfo {
   zip: string;
   city: string;
   country: string;
+  state?: string;
 }
 
 type OrderMetaEntry = { key: string; value: unknown };
@@ -252,6 +253,7 @@ export async function POST(request: Request) {
       isReverseCharge = body.isReverseCharge === true;
 
       const c = body.customer;
+      const stateVal = asString(c.state);
       billing = {
         first_name: c.firstName,
         last_name: c.lastName,
@@ -260,6 +262,7 @@ export async function POST(request: Request) {
         city: c.city,
         postcode: c.zip,
         country: c.country,
+        ...(stateVal ? { state: stateVal } : {}),
       };
       shipping = { ...billing };
     } else {

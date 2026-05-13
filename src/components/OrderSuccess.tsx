@@ -100,6 +100,9 @@ export default function OrderSuccess() {
                     zip: stored.zip,
                     city: stored.city,
                     country: stored.country,
+                    ...(stored.state?.trim()
+                      ? { state: stored.state.trim() }
+                      : {}),
                   }
                 : {
                     email: piData.customerEmail || "",

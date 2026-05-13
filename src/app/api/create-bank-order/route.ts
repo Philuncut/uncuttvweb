@@ -20,6 +20,7 @@ interface Body {
     zip: string;
     city: string;
     country: string;
+    state?: string;
   };
   items: CartMeta[];
   /** Optional — same shape as /api/sync-order (checkout passes company + VAT). */
@@ -190,6 +191,11 @@ export async function POST(request: Request) {
         ? bodyBilling.company.trim()
         : "";
 
+    const stateVal =
+      typeof customer.state === "string" && customer.state.trim()
+        ? customer.state.trim()
+        : "";
+
     const billing: Record<string, string> = {
       first_name: customer.firstName,
       last_name: customer.lastName,
@@ -199,6 +205,9 @@ export async function POST(request: Request) {
       postcode: customer.zip,
       country: customer.country,
     };
+    if (stateVal) {
+      billing.state = stateVal;
+    }
     if (companyFromBody) {
       billing.company = companyFromBody;
     }
@@ -227,6 +236,7 @@ export async function POST(request: Request) {
         city: customer.city,
         postcode: customer.zip,
         country: customer.country,
+        ...(stateVal ? { state: stateVal } : {}),
       },
       line_items: items.map((item) => {
         if (isReverseCharge) {
