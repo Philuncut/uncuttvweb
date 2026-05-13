@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
-import { splitGrossForWooRest, buildWholesaleNonRcLineItem, addTaxToNet } from "@/lib/woo-vat-split";
+import { shouldSendExplicitEuB2cLineAmounts } from "@/lib/eu-vat-rates";
+import {
+  splitGrossForWooRest,
+  buildWholesaleNonRcLineItem,
+  buildEuB2cNonAtLineItem,
+  addTaxToNet,
+} from "@/lib/woo-vat-split";
 
 interface CartMeta {
   id: number;
@@ -328,8 +334,8 @@ export async function POST(request: Request) {
       payment_method_title: "Stripe",
       set_paid: true,
       /**
-       * B2C: only product_id + qty (catalog + Woo tax). Wholesale non-RC: explicit net/tax
-       * from Händlerpreis (net) + VAT. RC: explicit line total + zero tax.
+       * AT-B2C: product_id + qty (Woo-Steuer AT). EU-B2C außer AT: explizite Netto+MwSt
+       * aus Checkout-Brutto (kein Katalog-Re-Taxing). Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
        */
       prices_include_tax: true,
       billing,
@@ -349,6 +355,9 @@ export async function POST(request: Request) {
         }
         if (isWholesaleCheckout) {
           return buildWholesaleNonRcLineItem(item, taxCountry);
+        }
+        if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+          return buildEuB2cNonAtLineItem(item, taxCountry);
         }
         return {
           product_id: Number(item.id),

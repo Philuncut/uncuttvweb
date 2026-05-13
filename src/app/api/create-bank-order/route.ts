@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { splitGrossForWooRest, buildWholesaleNonRcLineItem, addTaxToNet, standardVatFraction } from "@/lib/woo-vat-split";
+import { shouldSendExplicitEuB2cLineAmounts } from "@/lib/eu-vat-rates";
+import {
+  splitGrossForWooRest,
+  buildWholesaleNonRcLineItem,
+  buildEuB2cNonAtLineItem,
+  addTaxToNet,
+  standardVatFraction,
+} from "@/lib/woo-vat-split";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -225,7 +232,8 @@ export async function POST(request: Request) {
       payment_method_title: "Überweisung",
       set_paid: false,
       /**
-       * B2C: product_id + qty only. Wholesale non-RC: net/tax from Händlerpreis (net) + VAT. RC: line total + zero tax.
+       * AT-B2C: product_id + qty. EU-B2C außer AT: explizites Netto+MwSt aus Checkout-Brutto.
+       * Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
        */
       prices_include_tax: true,
       billing,
@@ -253,6 +261,9 @@ export async function POST(request: Request) {
         }
         if (isWholesaleCheckout) {
           return buildWholesaleNonRcLineItem(item, taxCountry);
+        }
+        if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+          return buildEuB2cNonAtLineItem(item, taxCountry);
         }
         return {
           product_id: Number(item.id),

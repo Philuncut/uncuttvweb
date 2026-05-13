@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
-import { standardVatFraction } from "@/lib/woo-vat-split";
+import { getVatRateForCountry } from "@/lib/eu-vat-rates";
 
 interface Body {
   items: CartItem[];
@@ -49,13 +49,17 @@ export async function POST(request: Request) {
       isReverseCharge !== true &&
       Boolean(taxCountry?.trim());
 
+    const wholesaleVatFraction = (() => {
+      const pct = getVatRateForCountry(taxCountry ?? "") ?? 20;
+      return pct / 100;
+    })();
+
     let totalCents = wholesaleNetPricing
       ? items.reduce((sum, item) => {
           const lineNet =
             Math.max(0, parseFloat(item.product.price) || 0) *
             Math.max(1, item.quantity);
-          const r = standardVatFraction(taxCountry!);
-          return sum + Math.round(lineNet * (1 + r) * 100);
+          return sum + Math.round(lineNet * (1 + wholesaleVatFraction) * 100);
         }, 0)
       : items.reduce((sum, item) => {
           return sum + Math.round(parseFloat(item.product.price) * 100) * item.quantity;
@@ -89,9 +93,8 @@ export async function POST(request: Request) {
         : 0;
 
     if (wholesaleNetPricing) {
-      const r = standardVatFraction(taxCountry!);
       const shipNetEuro = ship / 100;
-      totalCents += Math.round(shipNetEuro * (1 + r) * 100);
+      totalCents += Math.round(shipNetEuro * (1 + wholesaleVatFraction) * 100);
     } else {
       totalCents += ship;
     }
