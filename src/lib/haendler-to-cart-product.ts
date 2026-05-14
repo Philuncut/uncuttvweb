@@ -11,17 +11,7 @@ export function resolveHaendlerLinePrice(
   return fallbackPrice;
 }
 
-/** Volles Woo-Produkt (z. B. Händler-Detail) → Cart-Zeile mit Händlerpreis in `price`. */
-export function toHaendlerCartProduct(
-  product: WooProduct & { haendler_preis?: string }
-): WooProduct {
-  return {
-    ...product,
-    price: resolveHaendlerLinePrice(product.haendler_preis, product.price),
-  };
-}
-
-/** Dashboard-Karten-Payload (Subset) → WooProduct für CartContext. */
+/** Dashboard-Karten-Payload (Subset) — gleiche Felder wie API für Händler-Grid. */
 export type HaendlerDashboardProductRow = {
   id: number;
   name: string;
@@ -35,7 +25,7 @@ export type HaendlerDashboardProductRow = {
   haendler_preis: string;
 };
 
-function normalizeImages(
+function normalizeDashboardImages(
   images: HaendlerDashboardProductRow["images"]
 ): WooImage[] {
   return images.map((img, idx) => ({
@@ -46,23 +36,46 @@ function normalizeImages(
   }));
 }
 
-export function haendlerDashboardRowToCartProduct(
-  product: HaendlerDashboardProductRow
-): WooProduct {
+function isFullWooWithHaendler(
+  product: (WooProduct & { haendler_preis?: string }) | HaendlerDashboardProductRow
+): product is WooProduct & { haendler_preis?: string } {
+  return (
+    "related_ids" in product &&
+    Array.isArray((product as WooProduct).related_ids)
+  );
+}
+
+function dashboardRowToCartProduct(row: HaendlerDashboardProductRow): WooProduct {
   return {
-    id: product.id,
-    name: product.name,
-    slug: product.slug,
-    price: resolveHaendlerLinePrice(product.haendler_preis, product.price),
-    regular_price: product.regular_price,
-    sale_price: product.sale_price,
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    price: resolveHaendlerLinePrice(row.haendler_preis, row.price),
+    regular_price: row.regular_price,
+    sale_price: row.sale_price,
     on_sale: false,
-    stock_status: product.stock_status as WooProduct["stock_status"],
+    stock_status: row.stock_status as WooProduct["stock_status"],
     sku: "",
-    images: normalizeImages(product.images),
-    categories: product.categories,
+    images: normalizeDashboardImages(row.images),
+    categories: row.categories,
     short_description: "",
     description: "",
     related_ids: [],
   };
+}
+
+/**
+ * Ein Einstieg für alle Händler-Cart-Zeilen: volles Woo-Produkt (Detail-API)
+ * oder Dashboard-Zeile → `WooProduct` mit `price` = Händlerpreis falls gesetzt.
+ */
+export function toHaendlerCartProduct(
+  product: (WooProduct & { haendler_preis?: string }) | HaendlerDashboardProductRow
+): WooProduct {
+  if (isFullWooWithHaendler(product)) {
+    return {
+      ...product,
+      price: resolveHaendlerLinePrice(product.haendler_preis, product.price),
+    };
+  }
+  return dashboardRowToCartProduct(product);
 }

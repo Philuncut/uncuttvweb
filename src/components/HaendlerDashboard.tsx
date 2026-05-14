@@ -17,7 +17,7 @@ import { createT } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
 import {
-  haendlerDashboardRowToCartProduct,
+  toHaendlerCartProduct,
   type HaendlerDashboardProductRow,
 } from "@/lib/haendler-to-cart-product";
 
@@ -88,10 +88,7 @@ function ProductCard({ product }: { product: HaendlerProduct }) {
   const hasHaendlerPreis = !!product.haendler_preis?.trim();
   const [cardFlash, setCardFlash] = useState(false);
 
-  const productForCart = useMemo(
-    () => haendlerDashboardRowToCartProduct(product),
-    [product]
-  );
+  const productForCart = useMemo(() => toHaendlerCartProduct(product), [product]);
 
   const triggerCardFlash = useCallback(() => {
     setCardFlash(true);
