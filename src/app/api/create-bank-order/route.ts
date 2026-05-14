@@ -358,6 +358,8 @@ export async function POST(request: Request) {
         ];
       }
     }
+
+    const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
         Authorization:
