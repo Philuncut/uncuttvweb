@@ -3,6 +3,7 @@
 import { useState, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { PasswordToggleInput } from "@/components/PasswordToggleInput";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -18,12 +19,14 @@ function Input({
   placeholder,
   type = "text",
   required,
+  autoComplete,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
   required?: boolean;
+  autoComplete?: string;
 }) {
   return (
     <input
@@ -32,6 +35,7 @@ function Input({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       required={required}
+      autoComplete={autoComplete}
       className="w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white placeholder:text-[#555] outline-none focus:border-[#c0392b]"
     />
   );
@@ -44,6 +48,7 @@ export default function HaendlerAuth() {
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPw, setLoginPw] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = useCallback(
     async (e: FormEvent) => {
@@ -89,17 +94,18 @@ export default function HaendlerAuth() {
             value={loginEmail}
             onChange={setLoginEmail}
             placeholder="haendler@firma.at"
+            autoComplete="username"
             required
           />
         </div>
         <div>
           <Label>PASSWORT</Label>
-          <Input
-            type="password"
+          <PasswordToggleInput
             value={loginPw}
             onChange={setLoginPw}
-            placeholder="••••••••"
-            required
+            visible={showPassword}
+            onToggle={() => setShowPassword((v) => !v)}
+            autoComplete="current-password"
           />
         </div>
         <button
