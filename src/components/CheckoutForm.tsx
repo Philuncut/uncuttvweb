@@ -35,6 +35,7 @@ import {
 } from "@/lib/checkout-order-extras";
 import { standardVatFraction } from "@/lib/woo-vat-split";
 import { getShippingLogo } from "@/components/ShippingLogos";
+import { filterDeAtShippingRatesForDisplay } from "@/lib/filter-de-at-shipping-rates";
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { getWorldCountriesForDropdown } from "@/lib/world-countries";
@@ -1051,7 +1052,7 @@ function CheckoutInner() {
           setStripeShipCents(null);
           return;
         }
-        const rows: ClientShipRate[] = Array.isArray(data.rates)
+        const rowsRaw: ClientShipRate[] = Array.isArray(data.rates)
           ? data.rates.filter(
               (r) =>
                 r &&
@@ -1061,6 +1062,7 @@ function CheckoutInner() {
                 typeof r.price === "number"
             )
           : [];
+        const rows = filterDeAtShippingRatesForDisplay(rowsRaw, country);
         const multi =
           data.multiple === true &&
           rows.length > 1 &&
