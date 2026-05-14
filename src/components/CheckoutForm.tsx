@@ -5,6 +5,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useRef,
   type FormEvent,
 } from "react";
 import { loadStripe } from "@stripe/stripe-js";
@@ -844,6 +845,8 @@ function CheckoutInner() {
   const [shipOptions, setShipOptions] = useState<ClientShipRate[]>([]);
   const [shipMultiChoice, setShipMultiChoice] = useState(false);
   const [selectedShipRateId, setSelectedShipRateId] = useState("");
+  const selectedShipRateIdRef = useRef(selectedShipRateId);
+  selectedShipRateIdRef.current = selectedShipRateId;
   const [shipError, setShipError] = useState<string | null>(null);
   const [shipNoZone, setShipNoZone] = useState(false);
   const [stripeShipCents, setStripeShipCents] = useState<number | null>(null);
@@ -1070,8 +1073,13 @@ function CheckoutInner() {
 
         setShipOptions(rows);
 
+        /** Priorität: gültige Nutzerwahl (z. B. Post) → API-ID falls noch in rows → günstigste Rate (nach Filter i. d. R. kostenlose GLS). */
+        const prevSel = selectedShipRateIdRef.current;
         const selId = (() => {
           if (rows.length === 0) return "";
+          if (prevSel && rows.some((r) => r.rate_id === prevSel)) {
+            return prevSel;
+          }
           if (
             multi &&
             data.selectedRateId &&
