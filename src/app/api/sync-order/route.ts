@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
-import { shouldSendExplicitEuB2cLineAmounts } from "@/lib/eu-vat-rates";
+import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import {
   splitGrossForWooRest,
   buildWholesaleNonRcLineItem,
   buildEuB2cNonAtLineItem,
+  buildNonEuB2cLineItem,
+  splitGrossForNonEu,
   addTaxToNet,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
@@ -86,6 +88,8 @@ function vatFromOrderMeta(meta: OrderMetaEntry[] | undefined): string {
  */
 const UNCUTTV_ORDER_META_KEYS = [
   "_uncuttv_reverse_charge",
+  "_uncuttv_third_country",
+  "_uncuttv_tax_free_export",
   /** Legacy VIES audit keys — stripped from incoming meta, no longer written. */
   "_uncuttv_vies_consultation",
   "_uncuttv_vies_request_date",
@@ -124,6 +128,17 @@ function appendReverseChargeMeta(
   const base = [...(meta ?? [])];
   base.push({ key: "_uncuttv_reverse_charge", value: "yes" });
   base.push({ key: "_eu_vat_guard_order_vat_exempt", value: "yes" });
+  return base;
+}
+
+function appendThirdCountryExportMeta(
+  meta: OrderMetaEntry[] | undefined,
+  isThirdCountryB2c: boolean
+): OrderMetaEntry[] | undefined {
+  if (!isThirdCountryB2c) return meta;
+  const base = [...(meta ?? [])];
+  base.push({ key: "_uncuttv_third_country", value: "yes" });
+  base.push({ key: "_uncuttv_tax_free_export", value: "yes" });
   return base;
 }
 
@@ -336,7 +351,7 @@ export async function POST(request: Request) {
       set_paid: true,
       /**
        * AT-B2C: product_id + qty (Woo-Steuer AT). EU-B2C außer AT: explizite Netto+MwSt
-       * aus Checkout-Brutto (kein Katalog-Re-Taxing). Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
+       * aus Checkout-Brutto. Drittland B2C: Brutto explizit, 0 % USt. Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
        */
       prices_include_tax: true,
       billing,
@@ -360,6 +375,9 @@ export async function POST(request: Request) {
         if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
           return buildEuB2cNonAtLineItem(item, taxCountry);
         }
+        if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+          return buildNonEuB2cLineItem(item);
+        }
         return {
           product_id: Number(item.id),
           quantity: item.qty,
@@ -369,6 +387,11 @@ export async function POST(request: Request) {
     };
 
     if (isReverseCharge) {
+      orderData.tax_lines = [];
+    } else if (
+      shouldSendExplicitNonEuLineAmounts(taxCountry) &&
+      !isWholesaleCheckout
+    ) {
       orderData.tax_lines = [];
     }
 
@@ -396,6 +419,11 @@ export async function POST(request: Request) {
           const p = addTaxToNet(rate, taxCountry);
           shipTotal = p.net;
           shipTax = p.tax;
+        } else if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+          const p = splitGrossForNonEu(rate);
+          shipTotal = p.net;
+          shipTax = p.tax;
+          shipTaxes = [];
         } else {
           const p = splitGrossForWooRest(rate, taxCountry);
           shipTotal = p.net;
@@ -407,11 +435,18 @@ export async function POST(request: Request) {
             method_title: s.label || "Versand",
             total: shipTotal,
             total_tax: shipTax,
-            ...(isReverseCharge ? { taxes: shipTaxes } : {}),
+            ...(isReverseCharge || shipTaxes !== undefined
+              ? { taxes: shipTaxes ?? [] }
+              : {}),
           },
         ];
       }
     }
+
+    const isThirdCountryB2c =
+      !isReverseCharge &&
+      !isWholesaleCheckout &&
+      shouldSendExplicitNonEuLineAmounts(taxCountry);
 
     let mergedMeta = mergeOrderMetaData(
       body.meta_data,
@@ -419,6 +454,7 @@ export async function POST(request: Request) {
       profileVat
     );
     mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
+    mergedMeta = appendThirdCountryExportMeta(mergedMeta, isThirdCountryB2c);
     if (mergedMeta && mergedMeta.length > 0) {
       orderData.meta_data = mergedMeta;
     }

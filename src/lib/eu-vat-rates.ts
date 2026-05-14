@@ -47,3 +47,14 @@ export function shouldSendExplicitEuB2cLineAmounts(countryIso2: string): boolean
   if (c === "AT") return false;
   return getVatRateForCountry(c) !== undefined;
 }
+
+/**
+ * B2C Drittland (nicht AT, nicht EU-USt-Katalog): Checkout-Brutto (= AT-Katalog)
+ * explizit an Woo senden, damit kein AT-MwSt.-Abzug auf „Netto Ausfuhr“ erfolgt.
+ */
+export function shouldSendExplicitNonEuLineAmounts(countryIso2: string): boolean {
+  const c = (countryIso2 || "").trim().toUpperCase();
+  if (!c) return false;
+  if (c === "AT") return false;
+  return getVatRateForCountry(c) === undefined;
+}

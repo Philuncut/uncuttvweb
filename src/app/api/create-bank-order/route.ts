@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { shouldSendExplicitEuB2cLineAmounts } from "@/lib/eu-vat-rates";
+import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import {
   splitGrossForWooRest,
   buildWholesaleNonRcLineItem,
   buildEuB2cNonAtLineItem,
+  buildNonEuB2cLineItem,
+  splitGrossForNonEu,
   addTaxToNet,
   standardVatFraction,
 } from "@/lib/woo-vat-split";
@@ -235,7 +237,7 @@ export async function POST(request: Request) {
       set_paid: false,
       /**
        * AT-B2C: product_id + qty. EU-B2C außer AT: explizites Netto+MwSt aus Checkout-Brutto.
-       * Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
+       * Drittland B2C: Brutto explizit, 0 % USt. Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
        */
       prices_include_tax: true,
       billing,
@@ -267,6 +269,9 @@ export async function POST(request: Request) {
         if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
           return buildEuB2cNonAtLineItem(item, taxCountry);
         }
+        if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+          return buildNonEuB2cLineItem(item);
+        }
         return {
           product_id: Number(item.id),
           quantity: item.qty,
@@ -275,6 +280,11 @@ export async function POST(request: Request) {
     };
 
     if (isReverseCharge) {
+      orderData.tax_lines = [];
+    } else if (
+      shouldSendExplicitNonEuLineAmounts(taxCountry) &&
+      !isWholesaleCheckout
+    ) {
       orderData.tax_lines = [];
     }
 
@@ -294,6 +304,16 @@ export async function POST(request: Request) {
         { key: "_uncuttv_reverse_charge", value: "yes" },
         { key: "_eu_vat_guard_order_vat_exempt", value: "yes" },
       ];
+    } else if (
+      shouldSendExplicitNonEuLineAmounts(taxCountry) &&
+      !isWholesaleCheckout
+    ) {
+      if (!orderData.meta_data) {
+        orderData.meta_data = [];
+      }
+      const m = orderData.meta_data as Array<{ key: string; value: unknown }>;
+      m.push({ key: "_uncuttv_third_country", value: "yes" });
+      m.push({ key: "_uncuttv_tax_free_export", value: "yes" });
     }
 
     if (
@@ -315,6 +335,11 @@ export async function POST(request: Request) {
           const p = addTaxToNet(rate, taxCountry);
           shipTotal = p.net;
           shipTax = p.tax;
+        } else if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+          const p = splitGrossForNonEu(rate);
+          shipTotal = p.net;
+          shipTax = p.tax;
+          shipTaxes = [];
         } else {
           const p = splitGrossForWooRest(rate, taxCountry);
           shipTotal = p.net;
@@ -326,13 +351,13 @@ export async function POST(request: Request) {
             method_title: s.label || "Versand",
             total: shipTotal,
             total_tax: shipTax,
-            ...(isReverseCharge ? { taxes: shipTaxes } : {}),
+            ...(isReverseCharge || shipTaxes !== undefined
+              ? { taxes: shipTaxes ?? [] }
+              : {}),
           },
         ];
       }
     }
-
-    const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
         Authorization:

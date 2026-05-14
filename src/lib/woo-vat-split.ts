@@ -6,6 +6,7 @@
  * EU-Sätze: `src/lib/eu-vat-rates.ts` (getVatRateForCountry). Unbekanntes Land → 20 %.
  */
 import { getVatRateForCountry } from "./eu-vat-rates";
+import { parsePrice } from "./parse-price";
 
 export function standardVatFraction(countryIso2: string): number {
   const p = getVatRateForCountry(countryIso2);
@@ -74,5 +75,31 @@ export function buildEuB2cNonAtLineItem(
     subtotal_tax: tax,
     total: net,
     total_tax: tax,
+  };
+}
+
+/** Drittland B2C: Brutto = Endkundenpreis, keine ausgewiesene USt. (Versand analog). */
+export function splitGrossForNonEu(grossEur: number): { net: string; tax: string } {
+  const g = Math.max(0, grossEur);
+  return { net: g.toFixed(2), tax: "0.00" };
+}
+
+export function buildNonEuB2cLineItem(item: {
+  id: number;
+  price: string;
+  qty: number;
+}) {
+  const qty = Math.max(1, Number(item.qty) || 1);
+  const unitGross = Math.max(0, parsePrice(item.price));
+  const lineGross = unitGross * qty;
+  const { net, tax } = splitGrossForNonEu(lineGross);
+  return {
+    product_id: Number(item.id),
+    quantity: item.qty,
+    subtotal: net,
+    subtotal_tax: tax,
+    total: net,
+    total_tax: tax,
+    taxes: [] as unknown[],
   };
 }

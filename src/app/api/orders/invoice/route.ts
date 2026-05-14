@@ -77,6 +77,12 @@ export async function GET(request: Request) {
     const isReverseCharge =
       String(reverseChargeRaw ?? "").trim().toLowerCase() === "yes";
 
+    const thirdCountryRaw = order.meta_data?.find(
+      (m) => m.key === "_uncuttv_third_country"
+    )?.value;
+    const isThirdCountryExport =
+      String(thirdCountryRaw ?? "").trim().toLowerCase() === "yes";
+
     // Generate PDF
     const pdf = await PDFDocument.create();
     const page = pdf.addPage([595, 842]);
@@ -197,7 +203,7 @@ export async function GET(request: Request) {
     const vatAmount = subtotal - netAmount;
     const total = parseFloat(order.total);
 
-    if (!isReverseCharge) {
+    if (!isReverseCharge && !isThirdCountryExport) {
       page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
       page.drawText(formatPrice(netAmount), { x: colX.total, y, size: 9, font, color: TEXT });
       y -= 16;
@@ -208,6 +214,25 @@ export async function GET(request: Request) {
     page.drawLine({ start: { x: 380, y: y + 6 }, end: { x: 545, y: y + 6 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     page.drawText("Gesamtbetrag:", { x: 380, y, size: 11, font: fontBold, color: TEXT });
     page.drawText(formatPrice(total), { x: colX.total, y, size: 11, font: fontBold, color: RED });
+
+    if (isThirdCountryExport) {
+      y -= 20;
+      page.drawText("Steuerfreie Ausfuhrlieferung.", {
+        x: 50,
+        y,
+        size: 8,
+        font,
+        color: GREY,
+      });
+      y -= 12;
+      page.drawText("Keine Umsatzsteuer ausgewiesen.", {
+        x: 50,
+        y,
+        size: 8,
+        font,
+        color: GREY,
+      });
+    }
 
     // Footer
     const footerY = 80;
