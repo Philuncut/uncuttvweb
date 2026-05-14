@@ -1785,7 +1785,7 @@ function CheckoutInner() {
                           }}
                           className="h-4 w-4 accent-[#c0392b]"
                         />
-                        {getShippingLogo(opt.name, country)}
+                        {getShippingLogo(opt.name)}
                         <span className="flex-1 text-sm text-white/90">
                           {opt.name}
                         </span>

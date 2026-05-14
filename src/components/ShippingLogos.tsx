@@ -1,73 +1,66 @@
 import type { ReactNode } from "react";
 
-const box =
-  "inline-flex h-9 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/10";
+const svgFrame =
+  "shrink-0 overflow-hidden rounded-md border border-black/15";
 
+/** ~56×36 — Marineblau, weißes „GLS“, gelber Punkt (#FFD200) als Markenakzent. */
 export function GlsLogo({ className }: { className?: string }) {
   return (
-    <span
-      className={`${box} bg-[#FFD420] ${className ?? ""}`}
+    <svg
+      width={56}
+      height={36}
+      viewBox="0 0 56 36"
+      className={`${svgFrame} ${className ?? ""}`}
       aria-hidden
     >
-      <span className="text-[11px] font-black tracking-tight text-[#8B0000]">
+      <rect width="56" height="36" rx="5" fill="#0028A0" />
+      <text
+        x="7"
+        y="23.5"
+        fill="#FFFFFF"
+        fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        fontSize="15"
+        fontWeight="900"
+        letterSpacing="-0.04em"
+      >
         GLS
-      </span>
-    </span>
+      </text>
+      {/* Gelber Punkt auf Text-Baseline (Perioden-Position) */}
+      <circle cx="41.25" cy="20.75" r="2.85" fill="#FFD200" />
+    </svg>
   );
 }
 
-export function PostAtLogo({ className }: { className?: string }) {
+/** ~56×36 — Einheitliches Post-Gelb, „POST“ schwarz, DE/AT identisch. */
+export function PostLogo({ className }: { className?: string }) {
   return (
-    <span
-      className={`${box} bg-[#FFCC00] ${className ?? ""}`}
+    <svg
+      width={56}
+      height={36}
+      viewBox="0 0 56 36"
+      className={`${svgFrame} ${className ?? ""}`}
       aria-hidden
     >
-      <span className="flex items-center gap-0.5 pr-0.5">
-        <svg width="14" height="10" viewBox="0 0 14 10" className="text-black">
-          <path
-            fill="currentColor"
-            d="M2 5c0-1.5 1-2.5 2.5-2.5S7 3.5 7 5 6 7.5 4.5 7.5 2 6.5 2 5zm4.5-1C5.7 4 5 4.7 5 5.5S5.7 7 6.5 7 8 6.3 8 5.5 7.3 4 6.5 4z"
-          />
-          <path
-            fill="currentColor"
-            d="M8 1h4v1.5H9.2L8 3.2V1zm2 4.5h3V9H8.5L7 7.5h1.5L9 6H10l1 1.5h1V5.5z"
-          />
-        </svg>
-        <span className="text-[10px] font-black tracking-tight text-black">
-          POST
-        </span>
-      </span>
-    </span>
+      <rect width="56" height="36" rx="5" fill="#FFCC00" />
+      <text
+        x="28"
+        y="23"
+        textAnchor="middle"
+        fill="#000000"
+        fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        fontSize="14"
+        fontWeight="800"
+        letterSpacing="0.02em"
+      >
+        POST
+      </text>
+    </svg>
   );
 }
 
-export function DeutschePostLogo({ className }: { className?: string }) {
-  return (
-    <span
-      className={`${box} bg-[#FFCC00] ${className ?? ""}`}
-      aria-hidden
-    >
-      <span className="flex flex-col items-center leading-none">
-        <span className="text-[7px] font-bold uppercase tracking-[0.2em] text-black">
-          DE
-        </span>
-        <span className="text-[10px] font-black tracking-tight text-black">
-          POST
-        </span>
-      </span>
-    </span>
-  );
-}
-
-export function getShippingLogo(
-  methodName: string,
-  country: string
-): ReactNode {
+export function getShippingLogo(methodName: string): ReactNode {
   const lower = methodName.toLowerCase();
   if (lower.includes("gls")) return <GlsLogo />;
-  if (lower.includes("post")) {
-    if (country === "AT") return <PostAtLogo />;
-    if (country === "DE") return <DeutschePostLogo />;
-  }
+  if (lower.includes("post")) return <PostLogo />;
   return null;
 }

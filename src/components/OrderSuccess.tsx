@@ -412,8 +412,7 @@ export default function OrderSuccess() {
                     ) : (
                       <>
                         {getShippingLogo(
-                          order.shippingMethodTitle || "VERSAND",
-                          order.shippingCountry || ""
+                          order.shippingMethodTitle || "VERSAND"
                         )}
                         <span>
                           {order.shippingMethodTitle?.trim() || "VERSAND"}
