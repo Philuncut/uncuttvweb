@@ -40,6 +40,7 @@ import { filterDeAtShippingRatesForDisplay } from "@/lib/filter-de-at-shipping-r
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { getWorldCountriesForDropdown } from "@/lib/world-countries";
+import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -1822,6 +1823,14 @@ function CheckoutInner() {
                   Wholesale-Bestellungen sind nur innerhalb der EU möglich.
                 </p>
               )}
+            {!isWholesale && items.length > 0 && (
+              <FreeShippingTrigger
+                variant="checkout"
+                shippingCountry={country.trim().toUpperCase()}
+                isWholesale={isWholesale}
+                observeActive
+              />
+            )}
             {!isWholesale &&
               shipMultiChoice &&
               (country === "AT" || country === "DE") &&

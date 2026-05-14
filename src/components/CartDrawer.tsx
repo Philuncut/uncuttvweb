@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
+import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 
 interface CouponState {
   code: string;
@@ -169,7 +170,8 @@ export default function CartDrawer() {
               {t("WARENKORB_LEER")}
             </p>
           ) : (
-            <div className="space-y-4">
+            <>
+              <div className="space-y-4">
               {items.map(({ product, quantity }) => {
                 const image = product.images[0]?.src;
                 const price = parsePrice(product.price || "0");
@@ -256,6 +258,15 @@ export default function CartDrawer() {
                 );
               })}
             </div>
+            {!isB2B && (
+              <FreeShippingTrigger
+                variant="drawer"
+                shippingCountry="AT"
+                isWholesale={false}
+                observeActive={drawerOpen}
+              />
+            )}
+            </>
           )}
         </div>
 

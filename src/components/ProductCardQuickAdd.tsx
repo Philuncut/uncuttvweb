@@ -52,9 +52,12 @@ function CheckIcon() {
 export function ProductCardQuickAdd({
   productForCart,
   onCardFlash,
+  variant = "card",
 }: {
   productForCart: WooProduct;
   onCardFlash?: () => void;
+  /** `card`: absolute corner on product image. `inline`: filler row / compact strip. */
+  variant?: "card" | "inline";
 }) {
   const { language } = useLanguage();
   const { items, addToCart } = useCart();
@@ -85,15 +88,25 @@ export function ProductCardQuickAdd({
     [addToCart, busy, onCardFlash, productForCart]
   );
 
+  const wrapClass =
+    variant === "card"
+      ? "pointer-events-auto absolute bottom-2 right-2 z-20"
+      : "pointer-events-auto relative z-10 flex shrink-0 justify-end";
+
+  const btnMin =
+    variant === "card" ? "min-w-[148px]" : "min-w-[108px] max-w-full";
+
   return (
-    <div className="pointer-events-auto absolute bottom-2 right-2 z-20">
+    <div className={wrapClass}>
       <button
         type="button"
         onClick={handleClick}
         disabled={busy}
         aria-label={inCart ? ariaMore : ariaAdd}
         className={[
-          "flex h-8 min-w-[148px] cursor-pointer items-center justify-center gap-1.5 px-3.5 text-[11px] font-bold tracking-[0.15em] text-white transition-all duration-200",
+          "flex h-8 cursor-pointer items-center justify-center gap-1.5 text-[11px] font-bold tracking-[0.15em] text-white transition-all duration-200",
+          btnMin,
+          variant === "inline" ? "px-2" : "px-3.5",
           "rounded-none",
           inCart
             ? "border-[1.5px] border-solid border-[#c0392b] bg-black/85 hover:scale-[1.02] hover:bg-[#c0392b]"
