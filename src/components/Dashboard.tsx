@@ -6,6 +6,8 @@ import CinematicLoader from "@/components/CinematicLoader";
 import AccountProfileForm from "@/components/AccountProfileForm";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 
 interface OrderLineItem {
   name: string;
@@ -287,7 +289,7 @@ export default function Dashboard() {
                               .join(", ")}
                           </td>
                           <td className="py-3 pr-4 font-bold text-[#c0392b]">
-                            €{order.total}
+                            {formatPrice(parsePrice(order.total))}
                           </td>
                           <td className="py-3">
                             <StatusBadge status={order.status} />
@@ -298,7 +300,7 @@ export default function Dashboard() {
                             <td colSpan={5} className="border-b border-[#1a1a1a] bg-[#111] p-4">
                               <div className="space-y-2">
                                 {order.line_items.map((item, i) => {
-                                  const itemTotal = parseFloat(item.total || "0");
+                                  const itemTotal = parsePrice(item.total || "0");
                                   const unitPrice = item.quantity > 0 ? itemTotal / item.quantity : 0;
                                   return (
                                     <div
@@ -309,7 +311,7 @@ export default function Dashboard() {
                                         {item.quantity}× {item.name}
                                       </span>
                                       <span className="text-white/50">
-                                        €{unitPrice.toFixed(2)} → €{itemTotal.toFixed(2)}
+                                        {formatPrice(unitPrice)} → {formatPrice(itemTotal)}
                                       </span>
                                     </div>
                                   );
@@ -319,7 +321,7 @@ export default function Dashboard() {
                                     {t("GESAMT")}
                                   </span>
                                   <span className="text-lg font-black text-white">
-                                    €{order.total}
+                                    {formatPrice(parsePrice(order.total))}
                                   </span>
                                 </div>
                               </div>

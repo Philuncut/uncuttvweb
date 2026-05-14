@@ -1,4 +1,5 @@
 import type { WooCategory } from "@/lib/types";
+import { parsePrice } from "@/lib/parse-price";
 
 /**
  * WooCommerce-Kategorie-Slugs für Händler-"Main-Titel".
@@ -58,8 +59,8 @@ export function enrichHaendlerProductFromWoo<
 }
 
 export function hasPositiveHaendlerPreis(haendlerPreis: string): boolean {
-  const n = parseFloat(String(haendlerPreis).replace(",", ".").trim());
-  return !Number.isNaN(n) && n > 0;
+  const n = parsePrice(haendlerPreis);
+  return n > 0;
 }
 
 export function productHasHaendlerCategory(

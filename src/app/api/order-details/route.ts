@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
+import { parsePrice } from "@/lib/parse-price";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
       const items = cartItems.map((item) => ({
         description: item.name,
         quantity: item.qty,
-        amount: Math.round(parseFloat(item.price) * 100) * item.qty,
+        amount: Math.round(parsePrice(item.price) * 100) * item.qty,
       }));
 
       const shippingMeta = parseInt(pi.metadata?.shipping_cents ?? "", 10);

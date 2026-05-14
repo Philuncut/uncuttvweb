@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
+import { parsePrice } from "@/lib/parse-price";
 
 interface CheckoutBody {
   items: CartItem[];
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
             ? [item.product.images[0].src]
             : [],
         },
-        unit_amount: Math.round(parseFloat(item.product.price) * 100),
+        unit_amount: Math.round(parsePrice(item.product.price) * 100),
       },
       quantity: item.quantity,
     }));

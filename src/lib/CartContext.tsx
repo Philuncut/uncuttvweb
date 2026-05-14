@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { WooProduct } from "@/lib/types";
+import { parsePrice } from "@/lib/parse-price";
 
 export interface CartItem {
   product: WooProduct;
@@ -108,7 +109,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = items.reduce(
-    (sum, i) => sum + parseFloat(i.product.price || "0") * i.quantity,
+    (sum, i) => sum + parsePrice(i.product.price || "0") * i.quantity,
     0
   );
 

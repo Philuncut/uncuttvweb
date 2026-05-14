@@ -7,6 +7,8 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateDetailLabel } from "@/lib/translations";
 import ProductGallery from "@/components/ProductGallery";
 import type { WooProduct } from "@/lib/types";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 
 export interface HaendlerProductData extends WooProduct {
   haendler_preis: string;
@@ -156,10 +158,10 @@ export default function HaendlerProduct({
             {hasHaendlerPreis ? (
               <div className="flex items-baseline gap-3">
                 <span className="text-3xl font-black text-[#c0392b]">
-                  €{product.haendler_preis}
+                  {formatPrice(parsePrice(product.haendler_preis))}
                 </span>
                 <span className="text-lg text-white/30 line-through">
-                  €{product.price}
+                  {formatPrice(parsePrice(product.price))}
                 </span>
               </div>
             ) : (

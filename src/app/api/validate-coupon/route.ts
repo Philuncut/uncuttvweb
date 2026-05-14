@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
+import { formatPrice } from "@/lib/format-price";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
         name: coupon.name || code.toUpperCase(),
         percent_off: coupon.percent_off,
         amount_off: coupon.amount_off
-          ? (coupon.amount_off / 100).toFixed(2)
+          ? formatPrice(coupon.amount_off / 100)
           : null,
         currency: coupon.currency,
       });
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
         name: coupon.name || code.toUpperCase(),
         percent_off: coupon.percent_off,
         amount_off: coupon.amount_off
-          ? (coupon.amount_off / 100).toFixed(2)
+          ? formatPrice(coupon.amount_off / 100)
           : null,
         currency: coupon.currency,
       });

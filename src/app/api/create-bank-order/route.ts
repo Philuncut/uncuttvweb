@@ -8,6 +8,8 @@ import {
   addTaxToNet,
   standardVatFraction,
 } from "@/lib/woo-vat-split";
+import { parsePrice } from "@/lib/parse-price";
+import { formatPrice } from "@/lib/format-price";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -58,11 +60,11 @@ async function sendBankTransferEmail(
 
   const itemRows = items
     .map((item) => {
-      const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+      const lineTotal = formatPrice(parsePrice(item.price) * item.qty);
       return `
         <tr>
           <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;">${item.qty}× ${item.name}</td>
-          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;">€${lineTotal}</td>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;">${lineTotal}</td>
         </tr>`;
     })
     .join("");
@@ -112,7 +114,7 @@ async function sendBankTransferEmail(
         ${itemRows}
         <tr>
           <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">Gesamt</td>
-          <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">€${total}</td>
+          <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">${formatPrice(parsePrice(total))}</td>
         </tr>
       </table>
 
@@ -248,7 +250,7 @@ export async function POST(request: Request) {
       },
       line_items: items.map((item) => {
         if (isReverseCharge) {
-          const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+          const lineTotal = (parsePrice(item.price) * item.qty).toFixed(2);
           return {
             product_id: Number(item.id),
             quantity: item.qty,
@@ -354,7 +356,7 @@ export async function POST(request: Request) {
     const itemsNetSum = items.reduce(
       (sum, item) =>
         sum +
-        Math.max(0, parseFloat(item.price) || 0) * Math.max(1, Number(item.qty) || 1),
+        Math.max(0, parsePrice(item.price)) * Math.max(1, Number(item.qty) || 1),
       0
     );
     const shipNetAmt =
@@ -370,7 +372,7 @@ export async function POST(request: Request) {
             const r = standardVatFraction(taxCountry);
             const grossCents = items.reduce((sum, item) => {
               const lineNet =
-                Math.max(0, parseFloat(item.price) || 0) *
+                Math.max(0, parsePrice(item.price)) *
                 Math.max(1, Number(item.qty) || 1);
               return sum + Math.round(lineNet * (1 + r) * 100);
             }, 0) + Math.round(shipNetAmt * (1 + r) * 100);

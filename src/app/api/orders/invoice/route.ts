@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { formatPrice } from "@/lib/format-price";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -181,8 +182,8 @@ export async function GET(request: Request) {
       page.drawText(String(i + 1), { x: colX.pos, y, size: 9, font, color: TEXT });
       page.drawText(name, { x: colX.name, y, size: 9, font, color: TEXT });
       page.drawText(String(item.quantity), { x: colX.qty, y, size: 9, font, color: TEXT });
-      page.drawText(`€${unitPrice.toFixed(2)}`, { x: colX.unit, y, size: 9, font, color: TEXT });
-      page.drawText(`€${itemTotal.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
+      page.drawText(formatPrice(unitPrice), { x: colX.unit, y, size: 9, font, color: TEXT });
+      page.drawText(formatPrice(itemTotal), { x: colX.total, y, size: 9, font, color: TEXT });
       y -= 18;
     });
 
@@ -198,15 +199,15 @@ export async function GET(request: Request) {
 
     if (!isReverseCharge) {
       page.drawText("Nettobetrag:", { x: 380, y, size: 9, font, color: GREY });
-      page.drawText(`€${netAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
+      page.drawText(formatPrice(netAmount), { x: colX.total, y, size: 9, font, color: TEXT });
       y -= 16;
       page.drawText("USt. 20%:", { x: 380, y, size: 9, font, color: GREY });
-      page.drawText(`€${vatAmount.toFixed(2)}`, { x: colX.total, y, size: 9, font, color: TEXT });
+      page.drawText(formatPrice(vatAmount), { x: colX.total, y, size: 9, font, color: TEXT });
       y -= 16;
     }
     page.drawLine({ start: { x: 380, y: y + 6 }, end: { x: 545, y: y + 6 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
     page.drawText("Gesamtbetrag:", { x: 380, y, size: 11, font: fontBold, color: TEXT });
-    page.drawText(`€${total.toFixed(2)}`, { x: colX.total, y, size: 11, font: fontBold, color: RED });
+    page.drawText(formatPrice(total), { x: colX.total, y, size: 11, font: fontBold, color: RED });
 
     // Footer
     const footerY = 80;

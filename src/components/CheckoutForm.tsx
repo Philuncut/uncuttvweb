@@ -23,6 +23,8 @@ import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
 import { validateEuVatFormat } from "@/lib/vat-format";
 import { isReverseChargeEligible } from "@/lib/reverse-charge";
+import { parsePrice, parseFixedDiscountEuros } from "@/lib/parse-price";
+import { formatPrice } from "@/lib/format-price";
 import {
   buildCheckoutOrderExtras,
   buildCheckoutShippingBody,
@@ -302,12 +304,12 @@ function OrderSummary({
   let discountAmount = 0;
   if (effectiveCouponDiscount) {
     const percentMatch = effectiveCouponDiscount.match(/(\d+)%/);
-    const fixedMatch = effectiveCouponDiscount.match(/€([\d.]+)/);
+    const fixedEuros = parseFixedDiscountEuros(effectiveCouponDiscount);
     if (percentMatch) {
       discountAmount = subtotal * (parseFloat(percentMatch[1]) / 100);
       discountedSubtotal = subtotal - discountAmount;
-    } else if (fixedMatch) {
-      discountAmount = parseFloat(fixedMatch[1]);
+    } else if (fixedEuros != null) {
+      discountAmount = fixedEuros;
       discountedSubtotal = Math.max(0, subtotal - discountAmount);
     }
   }
@@ -333,7 +335,7 @@ function OrderSummary({
         const display = data.percent_off
           ? `−${data.percent_off}%`
           : data.amount_off
-            ? `−€${data.amount_off}`
+            ? `−${data.amount_off}`
             : "";
         onCouponApplied(data.couponId, data.name, display);
         setCode("");
@@ -356,7 +358,7 @@ function OrderSummary({
       <div className="mt-4 space-y-3">
         {items.map(({ product, quantity }) => {
           const image = product.images[0]?.src;
-          const price = parseFloat(product.price || "0");
+          const price = parsePrice(product.price || "0");
           return (
             <div key={product.id} className="flex items-center gap-3">
               <div className="h-[48px] w-[48px] shrink-0 overflow-hidden bg-[#1a1a1a]">
@@ -379,7 +381,7 @@ function OrderSummary({
                 <p className="text-[10px] text-white/40">Menge: {quantity}</p>
               </div>
               <span className="shrink-0 text-sm font-bold text-white">
-                €{(price * quantity).toFixed(2)}
+                {formatPrice(price * quantity)}
               </span>
             </div>
           );
@@ -436,7 +438,7 @@ function OrderSummary({
           <>
             <div className="flex justify-between text-xs text-white/50">
               <span>Zwischensumme (netto)</span>
-              <span>€{wholesaleNonRcTotals.itemsNet.toFixed(2)}</span>
+              <span>{formatPrice(wholesaleNonRcTotals.itemsNet)}</span>
             </div>
             <div className="flex justify-between text-xs text-white/50">
               <span className="flex flex-col gap-0.5">
@@ -459,25 +461,25 @@ function OrderSummary({
                 ) : wholesaleNonRcTotals.shipNet === 0 ? (
                   <span className="text-green-400/90">Kostenlos</span>
                 ) : (
-                  `€${wholesaleNonRcTotals.shipNet.toFixed(2)}`
+                  formatPrice(wholesaleNonRcTotals.shipNet)
                 )}
               </span>
             </div>
             <div className="flex justify-between text-xs text-white/50">
               <span>USt.</span>
-              <span>€{wholesaleNonRcTotals.vatTotal.toFixed(2)}</span>
+              <span>{formatPrice(wholesaleNonRcTotals.vatTotal)}</span>
             </div>
           </>
         ) : (
           <>
             <div className="flex justify-between text-xs text-white/50">
               <span>Zwischensumme</span>
-              <span>€{subtotal.toFixed(2)}</span>
+              <span>{formatPrice(subtotal)}</span>
             </div>
             {effectiveCouponDiscount && discountAmount > 0 && (
               <div className="flex justify-between text-xs text-green-400">
                 <span>Rabatt ({effectiveCouponDiscount})</span>
-                <span>−€{discountAmount.toFixed(2)}</span>
+                <span>−{formatPrice(discountAmount)}</span>
               </div>
             )}
             <div className="flex justify-between text-xs text-white/50">
@@ -501,7 +503,7 @@ function OrderSummary({
                 ) : shippingAmount === 0 ? (
                   <span className="text-green-400/90">Kostenlos</span>
                 ) : (
-                  `€${shippingAmount.toFixed(2)}`
+                  formatPrice(shippingAmount)
                 )}
               </span>
             </div>
@@ -512,7 +514,7 @@ function OrderSummary({
             {wholesaleNonRcTotals ? "GESAMT (brutto)" : "GESAMT"}
           </span>
           <span className="text-xl font-black text-white">
-            €{grandTotal.toFixed(2)}
+            {formatPrice(grandTotal)}
           </span>
         </div>
       </div>
@@ -589,11 +591,11 @@ function PayPalButtonWrapper({
         paypalTotal = totalPrice;
         if (couponDiscount) {
           const pctMatch = couponDiscount.match(/(\d+)%/);
-          const fixMatch = couponDiscount.match(/€([\d.]+)/);
+          const fixEuros = parseFixedDiscountEuros(couponDiscount);
           if (pctMatch)
             paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
-          else if (fixMatch)
-            paypalTotal = Math.max(0, totalPrice - parseFloat(fixMatch[1]));
+          else if (fixEuros != null)
+            paypalTotal = Math.max(0, totalPrice - fixEuros);
         }
         paypalTotal += shippingAmount;
       }
@@ -834,7 +836,7 @@ function CheckoutInner() {
           const display = data.percent_off
             ? `−${data.percent_off}%`
             : data.amount_off
-              ? `−€${data.amount_off}`
+              ? `−${data.amount_off}`
               : "−10%";
           setCouponId(data.couponId);
           setCouponName(data.name || urlCoupon);
@@ -1157,15 +1159,14 @@ function CheckoutInner() {
     const itemsNet = items.reduce(
       (s, i) =>
         s +
-        Math.max(0, parseFloat(i.product.price) || 0) * Math.max(1, i.quantity),
+        Math.max(0, parsePrice(i.product.price)) * Math.max(1, i.quantity),
       0
     );
     const shipNet = orderSummaryShippingAmount;
     const netSum = itemsNet + shipNet;
     const grossCents = items.reduce((sum, i) => {
       const lineNet =
-        Math.max(0, parseFloat(i.product.price) || 0) *
-        Math.max(1, i.quantity);
+        Math.max(0, parsePrice(i.product.price)) * Math.max(1, i.quantity);
       return sum + Math.round(lineNet * (1 + r) * 100);
     }, 0) + Math.round(shipNet * (1 + r) * 100);
     const grossTotal = grossCents / 100;

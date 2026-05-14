@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
 import { getVatRateForCountry } from "@/lib/eu-vat-rates";
+import { parsePrice } from "@/lib/parse-price";
+import { formatPrice } from "@/lib/format-price";
 
 interface Body {
   items: CartItem[];
@@ -57,12 +59,12 @@ export async function POST(request: Request) {
     let totalCents = wholesaleNetPricing
       ? items.reduce((sum, item) => {
           const lineNet =
-            Math.max(0, parseFloat(item.product.price) || 0) *
+            Math.max(0, parsePrice(item.product.price)) *
             Math.max(1, item.quantity);
           return sum + Math.round(lineNet * (1 + wholesaleVatFraction) * 100);
         }, 0)
       : items.reduce((sum, item) => {
-          return sum + Math.round(parseFloat(item.product.price) * 100) * item.quantity;
+          return sum + Math.round(parsePrice(item.product.price) * 100) * item.quantity;
         }, 0);
 
     // Apply coupon discount if provided
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
             discountLabel = `-${coupon.percent_off}%`;
           } else if (coupon.amount_off) {
             totalCents = Math.max(0, totalCents - coupon.amount_off);
-            discountLabel = `-€${(coupon.amount_off / 100).toFixed(2)}`;
+            discountLabel = `−${formatPrice(coupon.amount_off / 100)}`;
           }
         }
       } catch {

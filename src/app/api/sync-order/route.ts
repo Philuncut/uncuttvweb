@@ -8,6 +8,7 @@ import {
   buildEuB2cNonAtLineItem,
   addTaxToNet,
 } from "@/lib/woo-vat-split";
+import { parsePrice } from "@/lib/parse-price";
 
 interface CartMeta {
   id: number;
@@ -342,7 +343,7 @@ export async function POST(request: Request) {
       shipping,
       line_items: cartItems.map((item) => {
         if (isReverseCharge) {
-          const lineTotal = (parseFloat(item.price) * item.qty).toFixed(2);
+          const lineTotal = (parsePrice(item.price) * item.qty).toFixed(2);
           return {
             product_id: Number(item.id),
             quantity: item.qty,

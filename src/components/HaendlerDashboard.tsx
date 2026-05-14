@@ -11,6 +11,8 @@ import {
   productHasExactCategorySlug,
   productHasOutOfPrintCategory,
 } from "@/lib/haendler-filter";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 import { createT } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
 
@@ -122,10 +124,10 @@ function ProductCard({ product }: { product: HaendlerProduct }) {
         {hasHaendlerPreis ? (
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-sm font-bold text-[#c0392b]">
-              €{product.haendler_preis}
+              {formatPrice(parsePrice(product.haendler_preis))}
             </span>
             <span className="text-xs text-white/30 line-through">
-              €{product.price}
+              {formatPrice(parsePrice(product.price))}
             </span>
           </div>
         ) : (

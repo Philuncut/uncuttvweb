@@ -10,6 +10,8 @@ import {
   readCheckoutSyncPayload,
   wasCheckoutPiSynced,
 } from "@/lib/checkout-order-extras";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 
 interface OrderDetails {
   customerName: string;
@@ -374,7 +376,7 @@ export default function OrderSuccess() {
                   {item.quantity}× {item.description}
                 </span>
                 <span className="text-white">
-                  €{(item.amount / 100).toFixed(2)}
+                  {formatPrice(item.amount / 100)}
                 </span>
               </div>
             ))}
@@ -387,7 +389,7 @@ export default function OrderSuccess() {
                       : "VERSAND"}
                   </span>
                   <span className="text-white">
-                    €{(order.shippingCents / 100).toFixed(2)}
+                    {formatPrice(order.shippingCents / 100)}
                   </span>
                 </div>
               )}
@@ -397,7 +399,7 @@ export default function OrderSuccess() {
               GESAMT
             </span>
             <span className="text-xl font-black text-white">
-              €{order.total}
+              {formatPrice(parsePrice(order.total))}
             </span>
           </div>
         </div>

@@ -7,6 +7,8 @@ import SearchInput from "@/components/SearchInput";
 import MobileBanner from "@/components/MobileBanner";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateCategoryName } from "@/lib/translations";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 
 /* ── FilterPill ── */
 const pillGlow =
@@ -135,12 +137,12 @@ function ProductCard({
           {product.sale_price ? (
             <>
               <span className="mr-2 text-white/30 line-through">
-                €{product.regular_price}
+                {formatPrice(parsePrice(product.regular_price))}
               </span>
-              €{product.sale_price}
+              {formatPrice(parsePrice(product.sale_price))}
             </>
           ) : (
-            <>€{product.price}</>
+            <>{formatPrice(parsePrice(product.price))}</>
           )}
         </p>
       </div>

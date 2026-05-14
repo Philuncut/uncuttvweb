@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
+import { parsePrice } from "@/lib/parse-price";
+import { formatPrice } from "@/lib/format-price";
 
 interface CouponState {
   code: string;
@@ -115,7 +117,7 @@ export default function CartDrawer() {
     ? coupon.percent_off
       ? `−${coupon.percent_off}%`
       : coupon.amount_off
-        ? `−€${coupon.amount_off}`
+        ? `−${coupon.amount_off}`
         : ""
     : "";
 
@@ -170,8 +172,8 @@ export default function CartDrawer() {
             <div className="space-y-4">
               {items.map(({ product, quantity }) => {
                 const image = product.images[0]?.src;
-                const price = parseFloat(product.price || "0");
-                const subtotal = (price * quantity).toFixed(2);
+                const price = parsePrice(product.price || "0");
+                const subtotal = formatPrice(price * quantity);
 
                 return (
                   <div
@@ -246,7 +248,7 @@ export default function CartDrawer() {
                           </button>
                         </div>
                         <span className="text-sm font-bold text-[#c0392b]">
-                          €{subtotal}
+                          {subtotal}
                         </span>
                       </div>
                     </div>
@@ -314,7 +316,7 @@ export default function CartDrawer() {
                 {t("GESAMT")}
               </span>
               <span className="text-2xl font-black text-white">
-                €{totalPrice.toFixed(2)}
+                {formatPrice(totalPrice)}
               </span>
             </div>
 

@@ -7,6 +7,8 @@ import { createT, translateDetailLabel } from "@/lib/translations";
 import type { WooProduct } from "@/lib/types";
 import ProductGallery from "@/components/ProductGallery";
 import AddToCartButton from "@/components/AddToCartButton";
+import { formatPrice } from "@/lib/format-price";
+import { parsePrice } from "@/lib/parse-price";
 
 interface DetailEntry {
   label: string;
@@ -177,15 +179,15 @@ export default function ProductDetail({
             {product.on_sale && product.sale_price ? (
               <div className="flex items-baseline gap-3">
                 <span className="text-2xl font-bold text-white/30 line-through">
-                  €{product.regular_price}
+                  {formatPrice(parsePrice(product.regular_price))}
                 </span>
                 <span className="text-3xl font-black text-[#c0392b]">
-                  €{product.sale_price}
+                  {formatPrice(parsePrice(product.sale_price))}
                 </span>
               </div>
             ) : (
               <span className="text-3xl font-black text-[#c0392b]">
-                €{product.price}
+                {formatPrice(parsePrice(product.price))}
               </span>
             )}
           </div>
@@ -314,12 +316,12 @@ export default function ProductDetail({
                       {rp.on_sale && rp.sale_price ? (
                         <>
                           <span className="mr-2 text-white/30 line-through">
-                            €{rp.regular_price}
+                            {formatPrice(parsePrice(rp.regular_price))}
                           </span>
-                          €{rp.sale_price}
+                          {formatPrice(parsePrice(rp.sale_price))}
                         </>
                       ) : (
-                        <>€{rp.price}</>
+                        <>{formatPrice(parsePrice(rp.price))}</>
                       )}
                     </p>
                   </div>
