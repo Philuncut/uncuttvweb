@@ -60,6 +60,14 @@ export async function GET(request: Request) {
       const shippingCents =
         Number.isFinite(shippingMeta) && shippingMeta > 0 ? shippingMeta : 0;
       const isWholesaleShipping = pi.metadata?.is_wholesale === "true";
+      const shippingMethodTitle =
+        typeof pi.metadata?.shipping_method_title === "string"
+          ? pi.metadata.shipping_method_title.trim()
+          : "";
+      const shippingCountry =
+        typeof pi.metadata?.shipping_country === "string"
+          ? pi.metadata.shipping_country.trim().toUpperCase()
+          : "";
 
       // Try to get customer email from the payment method's billing details
       let customerEmail = "";
@@ -84,6 +92,8 @@ export async function GET(request: Request) {
         items,
         shippingCents,
         isWholesaleShipping,
+        shippingMethodTitle: shippingMethodTitle || undefined,
+        shippingCountry: shippingCountry || undefined,
       });
     }
 

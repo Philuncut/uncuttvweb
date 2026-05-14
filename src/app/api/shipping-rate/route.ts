@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 const WHOLESALE_FLAT_EUR = 10;
 
+const B2C_MULTI_SHIP_COUNTRIES = new Set(["AT", "DE"]);
+
 type RequestBody = {
   items: { id: number; quantity: number }[];
   country: string;
@@ -25,43 +27,54 @@ type StorePackage = {
   shipping_rates?: StoreShippingOption[];
 };
 
+export type PublicShippingRate = {
+  rate_id: string;
+  method_id: string;
+  name: string;
+  /** Brutto in EUR (Store API liefert Minor Units; hier als Euro-Zahl) */
+  price: number;
+  instance_id?: number;
+};
+
 function normalizeWooBase(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-function pickRate(packages: StorePackage[]): {
-  rateEur: number;
-  label: string;
-  method_id: string;
-  rate_id: string;
-  instance_id?: number;
-} | null {
+function collectRatesSorted(packages: StorePackage[]): StoreShippingOption[] {
   const options: StoreShippingOption[] = [];
   for (const pkg of packages) {
     if (pkg?.shipping_rates?.length) {
       options.push(...pkg.shipping_rates);
     }
   }
-  if (options.length === 0) return null;
-  const selected = options.find((o) => o.selected);
-  const chosen =
-    selected ||
-    options.reduce((best, o) => {
-      const a = parseInt(o.price, 10);
-      const b = parseInt(best.price, 10);
-      if (Number.isNaN(a)) return best;
-      if (Number.isNaN(b)) return o;
-      return a < b ? o : best;
-    });
-  const minor = parseInt(chosen.price, 10);
-  if (Number.isNaN(minor)) return null;
-  return {
-    rateEur: minor / 100,
-    label: chosen.name,
-    method_id: chosen.method_id,
-    rate_id: chosen.rate_id,
-    instance_id: chosen.instance_id,
-  };
+  const byId = new Map<string, StoreShippingOption>();
+  for (const o of options) {
+    if (!o?.rate_id) continue;
+    if (!byId.has(o.rate_id)) byId.set(o.rate_id, o);
+  }
+  const unique = [...byId.values()];
+  unique.sort((a, b) => {
+    const pa = parseInt(a.price, 10);
+    const pb = parseInt(b.price, 10);
+    if (Number.isNaN(pa)) return 1;
+    if (Number.isNaN(pb)) return -1;
+    return pa - pb;
+  });
+  return unique;
+}
+
+function toPublicRates(options: StoreShippingOption[]): PublicShippingRate[] {
+  return options.map((o) => {
+    const minor = parseInt(o.price, 10);
+    const price = Number.isNaN(minor) ? 0 : minor / 100;
+    return {
+      rate_id: o.rate_id,
+      method_id: o.method_id,
+      name: o.name,
+      price,
+      ...(typeof o.instance_id === "number" ? { instance_id: o.instance_id } : {}),
+    };
+  });
 }
 
 async function fetchStoreShipping(
@@ -73,7 +86,21 @@ async function fetchStoreShipping(
   city: string,
   address1: string
 ): Promise<
-  | { ok: true; rate: number; label: string; method_id: string; rate_id: string; instance_id?: number }
+  | {
+      ok: true;
+      mode: "multi";
+      rates: PublicShippingRate[];
+      selectedRateId: string;
+    }
+  | {
+      ok: true;
+      mode: "single";
+      rate: number;
+      label: string;
+      method_id: string;
+      rate_id: string;
+      instance_id?: number;
+    }
   | { ok: false; reason: "no_zone" | "upstream" }
 > {
   const base = `${normalizeWooBase(wooBase)}/wp-json/wc/store/v1`;
@@ -142,6 +169,7 @@ async function fetchStoreShipping(
   if (!cart.needs_shipping) {
     return {
       ok: true,
+      mode: "single",
       rate: 0,
       label: "Kein Versand",
       method_id: "none",
@@ -149,18 +177,38 @@ async function fetchStoreShipping(
     };
   }
 
-  const picked = pickRate(cart.shipping_rates || []);
-  if (!picked) {
+  const rawOptions = collectRatesSorted(cart.shipping_rates || []);
+  if (rawOptions.length === 0) {
     return { ok: false, reason: "no_zone" };
   }
 
+  const cc = country.trim().toUpperCase();
+  const publicRates = toPublicRates(rawOptions);
+
+  if (B2C_MULTI_SHIP_COUNTRIES.has(cc) && publicRates.length > 1) {
+    const selectedRateId = publicRates[0].rate_id;
+    return {
+      ok: true,
+      mode: "multi",
+      rates: publicRates,
+      selectedRateId,
+    };
+  }
+
+  const selected = rawOptions.find((o) => o.selected) ?? rawOptions[0];
+  const minor = parseInt(selected.price, 10);
+  if (Number.isNaN(minor)) return { ok: false, reason: "no_zone" };
+
   return {
     ok: true,
-    rate: picked.rateEur,
-    label: picked.label,
-    method_id: picked.method_id,
-    rate_id: picked.rate_id,
-    instance_id: picked.instance_id,
+    mode: "single",
+    rate: minor / 100,
+    label: selected.name,
+    method_id: selected.method_id,
+    rate_id: selected.rate_id,
+    ...(typeof selected.instance_id === "number"
+      ? { instance_id: selected.instance_id }
+      : {}),
   };
 }
 
@@ -185,6 +233,16 @@ export async function POST(request: Request) {
 
     if (isWholesale === true) {
       return NextResponse.json({
+        rates: [
+          {
+            rate_id: "wholesale_flat",
+            method_id: "flat_rate",
+            name: "Wholesale-Versand",
+            price: WHOLESALE_FLAT_EUR,
+          },
+        ],
+        selectedRateId: "wholesale_flat",
+        multiple: false,
         rate: WHOLESALE_FLAT_EUR,
         label: "Wholesale-Versand",
         method_id: "flat_rate",
@@ -221,6 +279,9 @@ export async function POST(request: Request) {
       if (!result.ok) {
         if (result.reason === "no_zone") {
           return NextResponse.json({
+            rates: [],
+            selectedRateId: "",
+            multiple: false,
             rate: null,
             label: "Versand nicht verfügbar",
             source: "no-zone",
@@ -232,12 +293,42 @@ export async function POST(request: Request) {
         );
       }
 
+      if (result.mode === "multi") {
+        const first = result.rates[0];
+        return NextResponse.json({
+          rates: result.rates,
+          selectedRateId: result.selectedRateId,
+          multiple: true,
+          rate: first.price,
+          label: first.name,
+          method_id: first.method_id,
+          rate_id: first.rate_id,
+          ...(first.instance_id != null ? { instance_id: first.instance_id } : {}),
+          source: "woo-store-api-multi",
+        });
+      }
+
       return NextResponse.json({
+        rates: [
+          {
+            rate_id: result.rate_id,
+            method_id: result.method_id,
+            name: result.label,
+            price: result.rate,
+            ...(result.instance_id != null
+              ? { instance_id: result.instance_id }
+              : {}),
+          },
+        ],
+        selectedRateId: result.rate_id,
+        multiple: false,
         rate: result.rate,
         label: result.label,
         method_id: result.method_id,
         rate_id: result.rate_id,
-        instance_id: result.instance_id,
+        ...(result.instance_id != null
+          ? { instance_id: result.instance_id }
+          : {}),
         source: "woo-store-api",
       });
     } catch {

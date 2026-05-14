@@ -34,12 +34,21 @@ import {
   type CheckoutShippingForWoo,
 } from "@/lib/checkout-order-extras";
 import { standardVatFraction } from "@/lib/woo-vat-split";
+import { getShippingLogo } from "@/components/ShippingLogos";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
 type PaymentMethod = "card" | "bank" | "paypal" | "klarna" | "eps";
+
+type ClientShipRate = {
+  rate_id: string;
+  method_id: string;
+  name: string;
+  price: number;
+  instance_id?: number;
+};
 
 /* ── Custom Checkbox ── */
 
@@ -795,6 +804,12 @@ function CheckoutInner() {
   const [shipLabel, setShipLabel] = useState("");
   const [shipMethodId, setShipMethodId] = useState("");
   const [shipRateId, setShipRateId] = useState("");
+  const [shipInstanceId, setShipInstanceId] = useState<number | undefined>(
+    undefined
+  );
+  const [shipOptions, setShipOptions] = useState<ClientShipRate[]>([]);
+  const [shipMultiChoice, setShipMultiChoice] = useState(false);
+  const [selectedShipRateId, setSelectedShipRateId] = useState("");
   const [shipError, setShipError] = useState<string | null>(null);
   const [shipNoZone, setShipNoZone] = useState(false);
   const [stripeShipCents, setStripeShipCents] = useState<number | null>(null);
@@ -866,6 +881,10 @@ function CheckoutInner() {
       setShipLabel("");
       setShipMethodId("none");
       setShipRateId("");
+      setShipInstanceId(undefined);
+      setShipOptions([]);
+      setShipMultiChoice(false);
+      setSelectedShipRateId("");
       setShipError(null);
       setShipNoZone(false);
       setStripeShipCents(0);
@@ -879,6 +898,10 @@ function CheckoutInner() {
       setShipLabel("Wholesale-Versand");
       setShipMethodId("flat_rate");
       setShipRateId("wholesale_flat");
+      setShipInstanceId(undefined);
+      setShipOptions([]);
+      setShipMultiChoice(false);
+      setSelectedShipRateId("wholesale_flat");
       setShipError(null);
       setShipNoZone(false);
       setStripeShipCents(1000);
@@ -902,6 +925,10 @@ function CheckoutInner() {
       setShipLabel("");
       setShipMethodId("");
       setShipRateId("");
+      setShipInstanceId(undefined);
+      setShipOptions([]);
+      setShipMultiChoice(false);
+      setSelectedShipRateId("");
       setStripeShipCents(null);
       return;
     }
@@ -913,6 +940,10 @@ function CheckoutInner() {
     setShipResolved(false);
     setStripeShipCents(null);
     setShipRate(null);
+    setShipOptions([]);
+    setShipMultiChoice(false);
+    setSelectedShipRateId("");
+    setShipInstanceId(undefined);
 
     const timer = setTimeout(async () => {
       try {
@@ -937,8 +968,12 @@ function CheckoutInner() {
           label?: string;
           method_id?: string;
           rate_id?: string;
+          instance_id?: number;
           source?: string;
           error?: string;
+          rates?: ClientShipRate[];
+          multiple?: boolean;
+          selectedRateId?: string;
         };
         if (cancelled) return;
         if (!res.ok) {
@@ -949,6 +984,10 @@ function CheckoutInner() {
             setShipResolved(true);
             setStripeShipCents(null);
             setShipRate(null);
+            setShipOptions([]);
+            setShipMultiChoice(false);
+            setSelectedShipRateId("");
+            setShipInstanceId(undefined);
           } else {
             setShipError(
               "Versand konnte nicht berechnet werden — bitte Land prüfen"
@@ -956,6 +995,10 @@ function CheckoutInner() {
             setShipResolved(true);
             setStripeShipCents(null);
             setShipRate(null);
+            setShipOptions([]);
+            setShipMultiChoice(false);
+            setSelectedShipRateId("");
+            setShipInstanceId(undefined);
           }
           return;
         }
@@ -964,19 +1007,69 @@ function CheckoutInner() {
           setShipLabel(data.label || "Versand nicht verfügbar");
           setShipMethodId("");
           setShipRateId("");
+          setShipInstanceId(undefined);
+          setShipOptions([]);
+          setShipMultiChoice(false);
+          setSelectedShipRateId("");
           setShipNoZone(true);
           setShipResolved(true);
           setStripeShipCents(null);
           return;
         }
-        const r = typeof data.rate === "number" ? data.rate : 0;
-        setShipRate(r);
-        setShipLabel(data.label || "Versand");
-        setShipMethodId(data.method_id || "flat_rate");
-        setShipRateId(data.rate_id || "");
+        const rows: ClientShipRate[] = Array.isArray(data.rates)
+          ? data.rates.filter(
+              (r) =>
+                r &&
+                typeof r.rate_id === "string" &&
+                typeof r.method_id === "string" &&
+                typeof r.name === "string" &&
+                typeof r.price === "number"
+            )
+          : [];
+        const multi =
+          data.multiple === true &&
+          rows.length > 1 &&
+          (country === "AT" || country === "DE");
+
+        setShipOptions(rows);
+
+        const selId = (() => {
+          if (rows.length === 0) return "";
+          if (
+            multi &&
+            data.selectedRateId &&
+            rows.some((r) => r.rate_id === data.selectedRateId)
+          ) {
+            return data.selectedRateId;
+          }
+          return rows[0].rate_id;
+        })();
+        setShipMultiChoice(multi);
+        setSelectedShipRateId(selId);
+
+        const row = rows.find((r) => r.rate_id === selId) ?? rows[0];
+        if (!row) {
+          setShipRate(null);
+          setShipLabel("");
+          setShipMethodId("");
+          setShipRateId("");
+          setShipInstanceId(undefined);
+          setShipNoZone(true);
+          setShipResolved(true);
+          setStripeShipCents(null);
+          return;
+        }
+
+        setShipRate(row.price);
+        setShipLabel(row.name);
+        setShipMethodId(row.method_id || "flat_rate");
+        setShipRateId(row.rate_id);
+        setShipInstanceId(
+          typeof row.instance_id === "number" ? row.instance_id : undefined
+        );
         setShipNoZone(false);
         setShipResolved(true);
-        setStripeShipCents(Math.round(r * 100));
+        setStripeShipCents(Math.round(row.price * 100));
       } catch {
         if (!cancelled) {
           setShipError(
@@ -985,6 +1078,10 @@ function CheckoutInner() {
           setShipResolved(true);
           setStripeShipCents(null);
           setShipRate(null);
+          setShipOptions([]);
+          setShipMultiChoice(false);
+          setSelectedShipRateId("");
+          setShipInstanceId(undefined);
         }
       } finally {
         if (!cancelled) setShipFetchLoading(false);
@@ -1047,6 +1144,7 @@ function CheckoutInner() {
                   country: country.trim().toUpperCase(),
                   ...(state.trim() ? { state: state.trim() } : {}),
                 },
+                shippingMethodTitle: shipLabel.trim() || undefined,
               }),
         }),
       });
@@ -1071,6 +1169,7 @@ function CheckoutInner() {
     city,
     zip,
     state,
+    shipLabel,
   ]);
 
   const cartMeta = items.map((i) => ({
@@ -1114,6 +1213,9 @@ function CheckoutInner() {
       label: shipLabel || "Versand",
       method_id: shipMethodId || "flat_rate",
       ...(shipRateId ? { rate_id: shipRateId } : {}),
+      ...(typeof shipInstanceId === "number"
+        ? { instance_id: shipInstanceId }
+        : {}),
     };
   }, [
     shipResolved,
@@ -1123,6 +1225,7 @@ function CheckoutInner() {
     shipMethodId,
     shipLabel,
     shipRateId,
+    shipInstanceId,
   ]);
 
   const shippingBlocksCheckout = useMemo(() => {
@@ -1648,6 +1751,52 @@ function CheckoutInner() {
                 ]}
               />
             </div>
+            {!isWholesale &&
+              shipMultiChoice &&
+              (country === "AT" || country === "DE") &&
+              shipOptions.length > 1 &&
+              shipResolved &&
+              !shipError &&
+              !shipNoZone && (
+                <div className="mt-6 border border-[#222] bg-[#111] p-4">
+                  <Label>VERSANDART</Label>
+                  <div className="mt-3 space-y-3">
+                    {shipOptions.map((opt) => (
+                      <label
+                        key={opt.rate_id}
+                        className="flex cursor-pointer items-center gap-3"
+                      >
+                        <input
+                          type="radio"
+                          name="shipMethod"
+                          checked={selectedShipRateId === opt.rate_id}
+                          onChange={() => {
+                            setSelectedShipRateId(opt.rate_id);
+                            setShipRate(opt.price);
+                            setShipLabel(opt.name);
+                            setShipMethodId(opt.method_id);
+                            setShipRateId(opt.rate_id);
+                            setShipInstanceId(
+                              typeof opt.instance_id === "number"
+                                ? opt.instance_id
+                                : undefined
+                            );
+                            setStripeShipCents(Math.round(opt.price * 100));
+                          }}
+                          className="h-4 w-4 accent-[#c0392b]"
+                        />
+                        {getShippingLogo(opt.name, country)}
+                        <span className="flex-1 text-sm text-white/90">
+                          {opt.name}
+                        </span>
+                        <span className="text-sm font-bold text-[#c0392b]">
+                          {formatPrice(opt.price)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             <div className="mt-3">
               <Label>FIRMA {isWholesale ? "" : "(optional)"}</Label>
               <Input

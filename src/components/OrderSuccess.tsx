@@ -12,6 +12,7 @@ import {
 } from "@/lib/checkout-order-extras";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
+import { getShippingLogo } from "@/components/ShippingLogos";
 
 interface OrderDetails {
   customerName: string;
@@ -22,6 +23,9 @@ interface OrderDetails {
   /** Versand in Cent (Stripe PI-Metadaten, Checkout-Session total_details, oder SessionStorage-Fallback). */
   shippingCents?: number;
   isWholesaleShipping?: boolean;
+  shippingMethodTitle?: string;
+  /** ISO2 aus PI-Metadaten / SessionStorage für Versand-Logo-Mapping. */
+  shippingCountry?: string;
 }
 
 export default function OrderSuccess() {
@@ -75,17 +79,36 @@ export default function OrderSuccess() {
         if (res.ok) {
           const data = (await res.json()) as OrderDetails;
           let merged = data;
+          const stored = paymentIntentId
+            ? readCheckoutSyncPayload(paymentIntentId)
+            : null;
           if (
             paymentIntentId &&
             (!merged.shippingCents || merged.shippingCents <= 0)
           ) {
-            const stored = readCheckoutSyncPayload(paymentIntentId);
             const rate = stored?.checkoutShipping?.rate;
             if (typeof rate === "number" && rate > 0 && !Number.isNaN(rate)) {
               merged = {
                 ...merged,
                 shippingCents: Math.round(rate * 100),
                 isWholesaleShipping: stored?.isWholesale === true,
+              };
+            }
+          }
+          if (paymentIntentId && stored) {
+            if (
+              !merged.shippingMethodTitle?.trim() &&
+              stored.checkoutShipping?.label
+            ) {
+              merged = {
+                ...merged,
+                shippingMethodTitle: stored.checkoutShipping.label,
+              };
+            }
+            if (!merged.shippingCountry?.trim() && stored.country?.trim()) {
+              merged = {
+                ...merged,
+                shippingCountry: stored.country.trim().toUpperCase(),
               };
             }
           }
@@ -383,10 +406,20 @@ export default function OrderSuccess() {
             {typeof order.shippingCents === "number" &&
               order.shippingCents > 0 && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-white/70">
-                    {order.isWholesaleShipping
-                      ? "WHOLESALE-VERSAND"
-                      : "VERSAND"}
+                  <span className="flex items-center gap-2 text-white/70">
+                    {order.isWholesaleShipping ? (
+                      "WHOLESALE-VERSAND"
+                    ) : (
+                      <>
+                        {getShippingLogo(
+                          order.shippingMethodTitle || "VERSAND",
+                          order.shippingCountry || ""
+                        )}
+                        <span>
+                          {order.shippingMethodTitle?.trim() || "VERSAND"}
+                        </span>
+                      </>
+                    )}
                   </span>
                   <span className="text-white">
                     {formatPrice(order.shippingCents / 100)}

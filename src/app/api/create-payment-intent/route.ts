@@ -25,6 +25,8 @@ interface Body {
     country: string;
     state?: string;
   };
+  /** Echoed in PI metadata for success page / receipts (e.g. GLS, Post.at). */
+  shippingMethodTitle?: string;
 }
 
 export async function POST(request: Request) {
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
       isWholesale,
       taxCountry,
       shippingForStripe,
+      shippingMethodTitle,
     } = (await request.json()) as Body;
 
     if (!items || items.length === 0) {
@@ -109,6 +112,19 @@ export async function POST(request: Request) {
     }
 
     const shipAddr = shippingForStripe;
+    const metaShipTitle =
+      typeof shippingMethodTitle === "string" && shippingMethodTitle.trim()
+        ? shippingMethodTitle.trim()
+        : isWholesale === true
+          ? "Wholesale-Versand"
+          : "";
+    const metaShipCountry =
+      isWholesale === true && taxCountry?.trim()
+        ? taxCountry.trim().toUpperCase()
+        : shipAddr?.country?.trim()
+          ? shipAddr.country.trim().toUpperCase()
+          : "";
+
     const stripeShipping =
       shipAddr &&
       isWholesale !== true &&
@@ -150,6 +166,8 @@ export async function POST(request: Request) {
         is_reverse_charge: isReverseCharge === true ? "true" : "false",
         shipping_cents: String(ship),
         is_wholesale: isWholesale === true ? "true" : "false",
+        shipping_method_title: metaShipTitle,
+        shipping_country: metaShipCountry,
       },
     });
 
