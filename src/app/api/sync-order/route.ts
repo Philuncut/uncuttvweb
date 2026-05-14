@@ -459,6 +459,14 @@ export async function POST(request: Request) {
       orderData.meta_data = mergedMeta;
     }
 
+    console.log("[sync-order] Woo order meta_data (pre-POST)", {
+      taxCountry,
+      isReverseCharge,
+      isWholesaleCheckout,
+      isThirdCountryB2c,
+      meta_data: orderData.meta_data,
+    });
+
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
@@ -474,6 +482,12 @@ export async function POST(request: Request) {
     }
 
     const order = await res.json();
+
+    console.log("[sync-order] Woo POST response (meta as returned)", {
+      orderId: order.id,
+      orderNumber: order.number,
+      meta_data: (order as { meta_data?: unknown }).meta_data,
+    });
 
     return NextResponse.json({
       success: true,

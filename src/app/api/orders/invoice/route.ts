@@ -77,11 +77,33 @@ export async function GET(request: Request) {
     const isReverseCharge =
       String(reverseChargeRaw ?? "").trim().toLowerCase() === "yes";
 
-    const thirdCountryRaw = order.meta_data?.find(
+    const thirdCountryEntry = order.meta_data?.find(
       (m) => m.key === "_uncuttv_third_country"
-    )?.value;
-    const isThirdCountryExport =
-      String(thirdCountryRaw ?? "").trim().toLowerCase() === "yes";
+    );
+    const thirdCountryRaw = thirdCountryEntry?.value;
+    const isThirdCountryExport = (() => {
+      const s = String(thirdCountryRaw ?? "").trim().toLowerCase();
+      return s === "yes" || s === "true" || s === "1";
+    })();
+
+    const thirdCountryDebugKeys =
+      order.meta_data
+        ?.filter(
+          (m) =>
+            String(m.key).includes("uncuttv") ||
+            String(m.key).includes("third") ||
+            String(m.key).includes("tax_free")
+        )
+        .map((m) => ({ key: m.key, value: m.value })) ?? [];
+
+    console.log("[orders/invoice] third-country PDF branch", {
+      orderId: order.id,
+      orderNumber: order.number,
+      thirdCountryRaw,
+      isThirdCountryExport,
+      isReverseCharge,
+      uncuttvRelatedMeta: thirdCountryDebugKeys,
+    });
 
     // Generate PDF
     const pdf = await PDFDocument.create();
@@ -216,6 +238,10 @@ export async function GET(request: Request) {
     page.drawText(formatPrice(total), { x: colX.total, y, size: 11, font: fontBold, color: RED });
 
     if (isThirdCountryExport) {
+      console.log(
+        "[orders/invoice] drawing steuerfreie Ausfuhr note (2 lines) at y=",
+        y - 20
+      );
       y -= 20;
       page.drawText("Steuerfreie Ausfuhrlieferung.", {
         x: 50,
