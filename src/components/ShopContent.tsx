@@ -9,6 +9,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateCategoryName } from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
+import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
 
 /* ── FilterPill ── */
 const pillGlow =
@@ -94,15 +95,24 @@ function ProductCard({
   product: WooProduct;
   muted?: boolean;
 }) {
+  const [cardFlash, setCardFlash] = useState(false);
   const badge = muted ? "AUSVERKAUFT" : getBadge(product);
   const image = product.images[0]?.src;
+  const showQuickAdd = product.stock_status !== "outofstock";
+
+  const triggerCardFlash = useCallback(() => {
+    setCardFlash(true);
+    window.setTimeout(() => setCardFlash(false), 300);
+  }, []);
 
   return (
     <Link href={`/shop/${product.slug}`} className="group block">
       <div
-        className={`relative aspect-square overflow-hidden bg-[#111] transition-shadow duration-300 group-hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] ${
-          muted ? "grayscale opacity-60" : ""
-        }`}
+        className={`relative aspect-square overflow-hidden bg-[#111] transition-shadow duration-300 ${
+          cardFlash
+            ? "shadow-[0_0_20px_rgba(192,57,43,0.6)]"
+            : "group-hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
+        } ${muted ? "grayscale opacity-60" : ""}`}
       >
         {image ? (
           <img
@@ -127,6 +137,12 @@ function ProductCard({
           >
             {badge}
           </span>
+        )}
+        {showQuickAdd && (
+          <ProductCardQuickAdd
+            productForCart={product}
+            onCardFlash={triggerCardFlash}
+          />
         )}
       </div>
       <div className="mt-3">

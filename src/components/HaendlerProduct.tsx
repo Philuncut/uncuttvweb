@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT, translateDetailLabel } from "@/lib/translations";
 import ProductGallery from "@/components/ProductGallery";
 import type { WooProduct } from "@/lib/types";
+import { toHaendlerCartProduct } from "@/lib/haendler-to-cart-product";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 
@@ -106,11 +107,7 @@ export default function HaendlerProduct({
   }, [product]);
 
   const handleAddToCart = useCallback(() => {
-    const cartProduct = {
-      ...product,
-      price: product.haendler_preis || product.price,
-    };
-    addToCart(cartProduct);
+    addToCart(toHaendlerCartProduct(product));
     openDrawer();
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);

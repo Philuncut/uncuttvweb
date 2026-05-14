@@ -15,19 +15,13 @@ import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { createT } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
+import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
+import {
+  haendlerDashboardRowToCartProduct,
+  type HaendlerDashboardProductRow,
+} from "@/lib/haendler-to-cart-product";
 
-interface HaendlerProduct {
-  id: number;
-  name: string;
-  slug: string;
-  price: string;
-  regular_price: string;
-  sale_price: string;
-  stock_status: string;
-  images: Array<{ src: string; alt: string }>;
-  categories: WooCategory[];
-  haendler_preis: string;
-}
+interface HaendlerProduct extends HaendlerDashboardProductRow {}
 
 interface Order {
   id: number;
@@ -91,14 +85,29 @@ function ProductCard({ product }: { product: HaendlerProduct }) {
   const t = createT(language);
   const image = product.images[0]?.src;
   const isOutOfStock = product.stock_status === "outofstock";
-  const hasHaendlerPreis = !!product.haendler_preis;
+  const hasHaendlerPreis = !!product.haendler_preis?.trim();
+  const [cardFlash, setCardFlash] = useState(false);
+
+  const productForCart = useMemo(
+    () => haendlerDashboardRowToCartProduct(product),
+    [product]
+  );
+
+  const triggerCardFlash = useCallback(() => {
+    setCardFlash(true);
+    window.setTimeout(() => setCardFlash(false), 300);
+  }, []);
+
+  const showQuickAdd = !isOutOfStock && hasHaendlerPreis;
 
   return (
     <Link href={`/haendler/produkt/${product.slug}`} className="group block">
       <div
-        className={`relative aspect-square overflow-hidden bg-[#111] transition-shadow duration-300 group-hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] ${
-          isOutOfStock ? "opacity-60 grayscale" : ""
-        }`}
+        className={`relative aspect-square overflow-hidden bg-[#111] transition-shadow duration-300 ${
+          cardFlash
+            ? "shadow-[0_0_20px_rgba(192,57,43,0.6)]"
+            : "group-hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
+        } ${isOutOfStock ? "opacity-60 grayscale" : ""}`}
       >
         {image ? (
           <img
@@ -115,6 +124,12 @@ function ProductCard({ product }: { product: HaendlerProduct }) {
           <span className="absolute top-3 left-3 bg-white/10 px-3 py-1 text-[10px] font-bold tracking-wider text-white/50">
             AUSVERKAUFT
           </span>
+        )}
+        {showQuickAdd && (
+          <ProductCardQuickAdd
+            productForCart={productForCart}
+            onCardFlash={triggerCardFlash}
+          />
         )}
       </div>
       <div className="mt-3">

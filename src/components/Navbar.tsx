@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AuthSessionPayload } from "@/app/api/auth/session/route";
@@ -302,7 +302,18 @@ export default function Navbar() {
   const [logoHovered, setLogoHovered] = useState(false);
   const [cartHovered, setCartHovered] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { totalItems, openDrawer } = useCart();
+  const { totalItems, openDrawer, cartChangeKey } = useCart();
+  const [badgePulse, setBadgePulse] = useState(false);
+  const lastCartKey = useRef(0);
+
+  useEffect(() => {
+    if (cartChangeKey === 0) return;
+    if (cartChangeKey === lastCartKey.current) return;
+    lastCartKey.current = cartChangeKey;
+    setBadgePulse(true);
+    const id = window.setTimeout(() => setBadgePulse(false), 240);
+    return () => window.clearTimeout(id);
+  }, [cartChangeKey]);
   const { language, toggleLanguage } = useLanguage();
   const t = createT(language);
 
@@ -622,7 +633,11 @@ export default function Navbar() {
             </svg>
 
             {totalItems > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center bg-[#c0392b] px-1 text-[10px] font-bold text-white">
+              <span
+                className={`absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center bg-[#c0392b] px-1 text-[10px] font-bold text-white ${
+                  badgePulse ? "animate-cart-badge-pulse" : ""
+                }`}
+              >
                 {totalItems}
               </span>
             )}

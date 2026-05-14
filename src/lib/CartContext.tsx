@@ -18,6 +18,8 @@ export interface CartItem {
 
 interface CartContextValue {
   items: CartItem[];
+  /** Increments on every `addToCart` — Navbar badge pulse, etc. */
+  cartChangeKey: number;
   addToCart: (product: WooProduct) => void;
   removeFromCart: (productId: number) => void;
   updateQuantity: (productId: number, quantity: number) => void;
@@ -56,6 +58,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [cartChangeKey, setCartChangeKey] = useState(0);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -88,6 +91,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       return [...prev, { product, quantity: 1 }];
     });
+    setCartChangeKey((k) => k + 1);
   }, []);
 
   const removeFromCart = useCallback((productId: number) => {
@@ -120,6 +124,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     <CartContext.Provider
       value={{
         items,
+        cartChangeKey,
         addToCart,
         removeFromCart,
         updateQuantity,
