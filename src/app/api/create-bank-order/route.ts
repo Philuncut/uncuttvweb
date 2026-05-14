@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isCountryBlocked } from "@/lib/blocked-countries";
+import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { cookies } from "next/headers";
 import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import {
@@ -175,6 +177,37 @@ export async function POST(request: Request) {
 
     const isReverseCharge = bodyIsRC === true;
     const isWholesaleCheckout = body.isWholesale === true;
+
+    if (!customer || typeof customer.country !== "string") {
+      return NextResponse.json(
+        { error: "Ungültige Kundendaten." },
+        { status: 400 }
+      );
+    }
+
+    const bankCountryNorm = customer.country.trim().toUpperCase();
+    if (bankCountryNorm && isCountryBlocked(bankCountryNorm)) {
+      return NextResponse.json(
+        {
+          error: "country_blocked",
+          message: "Versand in dieses Land ist nicht möglich",
+        },
+        { status: 403 }
+      );
+    }
+    if (
+      isWholesaleCheckout &&
+      bankCountryNorm &&
+      !isWholesaleCountryAllowed(bankCountryNorm)
+    ) {
+      return NextResponse.json(
+        {
+          error: "wholesale_eu_only",
+          message: "Wholesale ist nur innerhalb der EU verfügbar",
+        },
+        { status: 403 }
+      );
+    }
 
     if (!items || items.length === 0) {
       return NextResponse.json(

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isCountryBlocked } from "@/lib/blocked-countries";
 
 const WHOLESALE_FLAT_EUR = 10;
 
@@ -231,6 +232,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const countryNorm = country.trim().toUpperCase();
+    if (isCountryBlocked(countryNorm)) {
+      return NextResponse.json(
+        {
+          error: "country_blocked",
+          message: "Versand in dieses Land ist nicht möglich",
+        },
+        { status: 403 }
+      );
+    }
+
     if (isWholesale === true) {
       return NextResponse.json({
         rates: [
@@ -269,7 +281,7 @@ export async function POST(request: Request) {
       const result = await fetchStoreShipping(
         WOOCOMMERCE_URL,
         items,
-        country.trim().toUpperCase(),
+        countryNorm,
         stateVal,
         (postcode || "").trim(),
         (city || "").trim(),

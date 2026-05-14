@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isCountryBlocked } from "@/lib/blocked-countries";
+import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
 import { getVatRateForCountry } from "@/lib/eu-vat-rates";
@@ -41,6 +43,32 @@ export async function POST(request: Request) {
       shippingForStripe,
       shippingMethodTitle,
     } = (await request.json()) as Body;
+
+    const resolvedCountry =
+      isWholesale === true
+        ? (taxCountry ?? "").trim().toUpperCase()
+        : (shippingForStripe?.country ?? "").trim().toUpperCase();
+
+    if (resolvedCountry) {
+      if (isCountryBlocked(resolvedCountry)) {
+        return NextResponse.json(
+          {
+            error: "country_blocked",
+            message: "Versand in dieses Land ist nicht möglich",
+          },
+          { status: 403 }
+        );
+      }
+      if (isWholesale === true && !isWholesaleCountryAllowed(resolvedCountry)) {
+        return NextResponse.json(
+          {
+            error: "wholesale_eu_only",
+            message: "Wholesale ist nur innerhalb der EU verfügbar",
+          },
+          { status: 403 }
+        );
+      }
+    }
 
     if (!items || items.length === 0) {
       return NextResponse.json(

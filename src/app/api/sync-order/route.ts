@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isCountryBlocked } from "@/lib/blocked-countries";
+import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
 import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
@@ -343,6 +345,36 @@ export async function POST(request: Request) {
     const vatFromFrontendMeta = vatFromOrderMeta(body.meta_data);
 
     const taxCountry = billing.country || shipping.country || "";
+
+    const shipCountryNorm = (
+      shipping.country ||
+      billing.country ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+    if (shipCountryNorm && isCountryBlocked(shipCountryNorm)) {
+      return NextResponse.json(
+        {
+          error: "country_blocked",
+          message: "Versand in dieses Land ist nicht möglich",
+        },
+        { status: 403 }
+      );
+    }
+    if (
+      isWholesaleCheckout &&
+      shipCountryNorm &&
+      !isWholesaleCountryAllowed(shipCountryNorm)
+    ) {
+      return NextResponse.json(
+        {
+          error: "wholesale_eu_only",
+          message: "Wholesale ist nur innerhalb der EU verfügbar",
+        },
+        { status: 403 }
+      );
+    }
 
     const orderData: Record<string, unknown> = {
       status: "processing",

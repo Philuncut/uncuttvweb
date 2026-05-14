@@ -35,6 +35,9 @@ import {
 } from "@/lib/checkout-order-extras";
 import { standardVatFraction } from "@/lib/woo-vat-split";
 import { getShippingLogo } from "@/components/ShippingLogos";
+import { isCountryBlocked } from "@/lib/blocked-countries";
+import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
+import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -754,6 +757,35 @@ function CheckoutInner() {
     };
   }, []);
 
+  const countrySelectOptions = useMemo(
+    () =>
+      getWorldCountriesForDropdown().map((c) => ({
+        value: c.code,
+        label: c.name,
+      })),
+    []
+  );
+
+  const validCountryCodes = useMemo(
+    () => new Set(countrySelectOptions.map((o) => o.value)),
+    [countrySelectOptions]
+  );
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    if (!validCountryCodes.has(country)) {
+      setCountry("AT");
+    }
+  }, [sessionReady, country, validCountryCodes]);
+
+  const countryBlocksCheckout = useMemo(
+    () =>
+      isCountryBlocked(country) ||
+      (isWholesale &&
+        !isWholesaleCountryAllowed(country.trim().toUpperCase())),
+    [country, isWholesale]
+  );
+
   useEffect(() => {
     let cancelled = false;
     setProvinceListLoading(true);
@@ -794,6 +826,7 @@ function CheckoutInner() {
   const [couponDiscount, setCouponDiscount] = useState<string | null>(null);
 
   const [clientSecret, setClientSecret] = useState("");
+  const [paymentIntentError, setPaymentIntentError] = useState("");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
@@ -971,35 +1004,37 @@ function CheckoutInner() {
           instance_id?: number;
           source?: string;
           error?: string;
+          message?: string;
           rates?: ClientShipRate[];
           multiple?: boolean;
           selectedRateId?: string;
         };
         if (cancelled) return;
         if (!res.ok) {
-          if (res.status === 503 || data.error === "shipping_unavailable") {
+          if (res.status === 403 && data.error === "country_blocked") {
+            setShipError(
+              "Versand in dieses Land ist derzeit nicht möglich."
+            );
+          } else if (res.status === 403 && data.error === "wholesale_eu_only") {
+            setShipError(
+              "Wholesale-Bestellungen sind nur innerhalb der EU möglich."
+            );
+          } else if (res.status === 503 || data.error === "shipping_unavailable") {
             setShipError(
               "Versand konnte nicht berechnet werden — bitte Land prüfen"
             );
-            setShipResolved(true);
-            setStripeShipCents(null);
-            setShipRate(null);
-            setShipOptions([]);
-            setShipMultiChoice(false);
-            setSelectedShipRateId("");
-            setShipInstanceId(undefined);
           } else {
             setShipError(
               "Versand konnte nicht berechnet werden — bitte Land prüfen"
             );
-            setShipResolved(true);
-            setStripeShipCents(null);
-            setShipRate(null);
-            setShipOptions([]);
-            setShipMultiChoice(false);
-            setSelectedShipRateId("");
-            setShipInstanceId(undefined);
           }
+          setShipResolved(true);
+          setStripeShipCents(null);
+          setShipRate(null);
+          setShipOptions([]);
+          setShipMultiChoice(false);
+          setSelectedShipRateId("");
+          setShipInstanceId(undefined);
           return;
         }
         if (data.source === "no-zone" || data.rate === null) {
@@ -1123,6 +1158,7 @@ function CheckoutInner() {
     if (!isWholesale && stripeShipCents === null) return;
 
     async function createPI() {
+      setPaymentIntentError("");
       const shipCents = isWholesale ? 1000 : (stripeShipCents ?? 0);
       const res = await fetch("/api/create-payment-intent", {
         method: "POST",
@@ -1148,7 +1184,28 @@ function CheckoutInner() {
               }),
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as {
+        clientSecret?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setClientSecret("");
+        if (res.status === 403 && data.error === "country_blocked") {
+          setPaymentIntentError(
+            "Versand in dieses Land ist derzeit nicht möglich."
+          );
+        } else if (res.status === 403 && data.error === "wholesale_eu_only") {
+          setPaymentIntentError(
+            "Wholesale-Bestellungen sind nur innerhalb der EU möglich."
+          );
+        } else if (typeof data.error === "string" && data.error) {
+          setPaymentIntentError(data.error);
+        } else {
+          setPaymentIntentError("Zahlungsaufbau fehlgeschlagen.");
+        }
+        return;
+      }
+      setPaymentIntentError("");
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
       }
@@ -1229,6 +1286,7 @@ function CheckoutInner() {
   ]);
 
   const shippingBlocksCheckout = useMemo(() => {
+    if (countryBlocksCheckout) return true;
     if (isWholesale) return false;
     if (items.length === 0) return false;
     if (!sessionReady) return true;
@@ -1247,6 +1305,7 @@ function CheckoutInner() {
     shipNoZone,
     shipRate,
     stripeShipCents,
+    countryBlocksCheckout,
   ]);
 
   const orderSummaryShippingAmount = useMemo(() => {
@@ -1590,7 +1649,9 @@ function CheckoutInner() {
   }
 
   const needsStripe = paymentMethod === "card" || paymentMethod === "klarna" || paymentMethod === "eps";
-  const isStripeDisabled = needsStripe && (!stripe || !clientSecret);
+  const isStripeDisabled =
+    needsStripe &&
+    (!stripe || !clientSecret || Boolean(paymentIntentError.trim()));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
@@ -1738,19 +1799,19 @@ function CheckoutInner() {
                 onChange={(v) => {
                   setCountry(v);
                   setState("");
+                  setPaymentIntentError("");
+                  setError("");
                 }}
-                options={[
-                  { value: "AT", label: "Österreich" },
-                  { value: "DE", label: "Deutschland" },
-                  { value: "CH", label: "Schweiz" },
-                  { value: "IT", label: "Italien" },
-                  { value: "FR", label: "Frankreich" },
-                  { value: "NL", label: "Niederlande" },
-                  { value: "BE", label: "Belgien" },
-                  { value: "ES", label: "Spanien" },
-                ]}
+                options={countrySelectOptions}
               />
             </div>
+            {isWholesale &&
+              country.trim() &&
+              !isWholesaleCountryAllowed(country.trim().toUpperCase()) && (
+                <p className="mt-1 rounded border border-amber-600/45 bg-amber-950/35 px-2 py-1.5 text-[10px] text-amber-200/95">
+                  Wholesale-Bestellungen sind nur innerhalb der EU möglich.
+                </p>
+              )}
             {!isWholesale &&
               shipMultiChoice &&
               (country === "AT" || country === "DE") &&
@@ -2016,6 +2077,9 @@ function CheckoutInner() {
           </section>
 
           {/* Error */}
+          {paymentIntentError && (
+            <p className="mt-4 text-sm text-[#c0392b]">{paymentIntentError}</p>
+          )}
           {error && (
             <p className="mt-4 text-sm text-[#c0392b]">{error}</p>
           )}
