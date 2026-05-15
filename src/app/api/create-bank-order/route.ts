@@ -14,6 +14,10 @@ import {
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
+import {
+  billingVatFromOrderMeta,
+  enqueueWholesaleOfficeNotification,
+} from "@/lib/notify-wholesale-order";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -411,6 +415,34 @@ export async function POST(request: Request) {
     }
 
     const order = await res.json();
+
+    enqueueWholesaleOfficeNotification({
+      orderId: Number(order.id),
+      orderNumber: String((order as { number?: string | number }).number ?? order.id),
+      billing,
+      shipping: {
+        first_name: customer.firstName,
+        last_name: customer.lastName,
+        address_1: customer.street,
+        city: customer.city,
+        postcode: customer.zip,
+        country: customer.country,
+        ...(stateVal ? { state: stateVal } : {}),
+      },
+      items,
+      checkoutShipping,
+      taxCountry,
+      isWholesaleCheckout,
+      isReverseCharge,
+      orderMeta: (order as { meta_data?: Array<{ key?: string; value?: unknown }> })
+        .meta_data,
+      paymentMethodTitle: "Banküberweisung",
+      vatNumber: billingVatFromOrderMeta(
+        (order as { meta_data?: Array<{ key?: string; value?: unknown }> })
+          .meta_data
+      ),
+      wooCommerceBaseUrl: WOOCOMMERCE_URL,
+    });
 
     // Send bank transfer confirmation email
     const itemsNetSum = items.reduce(

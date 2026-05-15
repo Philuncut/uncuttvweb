@@ -13,6 +13,7 @@ import {
   addTaxToNet,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
+import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
 
 interface CartMeta {
   id: number;
@@ -519,6 +520,33 @@ export async function POST(request: Request) {
       orderId: order.id,
       orderNumber: order.number,
       meta_data: (order as { meta_data?: unknown }).meta_data,
+    });
+
+    const mergedVatForNotify =
+      asString(vatFromFrontendMeta) || asString(profileVat);
+    const pmTitleRaw = asString(
+      (order as { payment_method_title?: string }).payment_method_title
+    );
+    const paymentLabelForNotify =
+      !pmTitleRaw || pmTitleRaw.toLowerCase().includes("stripe")
+        ? "Stripe Kreditkarte"
+        : pmTitleRaw;
+
+    enqueueWholesaleOfficeNotification({
+      orderId: Number(order.id),
+      orderNumber: String((order as { number?: string | number }).number ?? order.id),
+      billing,
+      shipping,
+      items: cartItems,
+      checkoutShipping: body.checkoutShipping,
+      taxCountry,
+      isWholesaleCheckout,
+      isReverseCharge,
+      orderMeta: (order as { meta_data?: Array<{ key?: string; value?: unknown }> })
+        .meta_data,
+      paymentMethodTitle: paymentLabelForNotify,
+      vatNumber: mergedVatForNotify || undefined,
+      wooCommerceBaseUrl: WOOCOMMERCE_URL,
     });
 
     return NextResponse.json({
