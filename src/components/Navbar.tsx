@@ -605,6 +605,7 @@ export default function Navbar() {
           {/* Cart icon */}
           <button
             type="button"
+            data-cart-target
             onClick={openDrawer}
             onMouseEnter={() => setCartHovered(true)}
             onMouseLeave={() => setCartHovered(false)}

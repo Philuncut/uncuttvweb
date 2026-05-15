@@ -108,6 +108,7 @@ function ProductCard({
   return (
     <Link href={`/shop/${product.slug}`} className="group block">
       <div
+        data-quick-add-root
         className={`relative aspect-square overflow-hidden bg-[#111] transition-shadow duration-300 ${
           cardFlash
             ? "shadow-[0_0_20px_rgba(192,57,43,0.6)]"
@@ -116,6 +117,7 @@ function ProductCard({
       >
         {image ? (
           <img
+            data-product-image
             src={image}
             alt={product.name}
             className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${

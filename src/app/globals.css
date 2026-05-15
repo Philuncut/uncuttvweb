@@ -56,6 +56,37 @@ body {
   animation: cart-badge-pulse 0.22s ease-out;
 }
 
+@keyframes fly-to-cart {
+  from {
+    left: var(--start-x);
+    top: var(--start-y);
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    left: var(--end-x);
+    top: var(--end-y);
+    transform: scale(0.2) rotate(-8deg);
+    opacity: 0.3;
+  }
+}
+
+.fly-to-cart-clone {
+  position: fixed;
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  z-index: 9999;
+  pointer-events: none;
+  border-radius: 0;
+  left: var(--start-x);
+  top: var(--start-y);
+}
+
+.fly-to-cart-clone--active {
+  animation: fly-to-cart 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
 /* Custom red scrollbar — Webkit (Chrome, Edge, Safari, Android Chrome) */
 ::-webkit-scrollbar,
 html::-webkit-scrollbar,

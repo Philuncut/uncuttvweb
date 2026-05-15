@@ -58,6 +58,7 @@ function FillerRow({
       } ${compact ? "w-[108px]" : "w-[132px]"}`}
     >
       <div
+        data-quick-add-root
         className={`relative w-full overflow-hidden bg-[#151515] ${
           compact ? "aspect-square max-h-[72px]" : "aspect-square max-h-[88px]"
         }`}
@@ -65,6 +66,7 @@ function FillerRow({
         {img ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            data-product-image
             src={img}
             alt=""
             className="h-full w-full object-cover"
