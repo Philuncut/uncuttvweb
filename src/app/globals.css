@@ -87,6 +87,33 @@ body {
   animation: fly-to-cart 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
+/* Quick-add: mobile round pill (default) */
+.quick-add-pill {
+  display: flex;
+}
+
+.quick-add-hover-bar {
+  display: none;
+  transition:
+    transform 250ms ease-out,
+    background-color 200ms ease;
+}
+
+.quick-add-hover-bar--in-cart {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (min-width: 768px) {
+  .quick-add-pill {
+    display: none;
+  }
+
+  .quick-add-hover-bar {
+    display: flex;
+  }
+}
+
 /* Custom red scrollbar — Webkit (Chrome, Edge, Safari, Android Chrome) */
 ::-webkit-scrollbar,
 html::-webkit-scrollbar,
