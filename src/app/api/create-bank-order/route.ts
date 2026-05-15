@@ -396,6 +396,18 @@ export async function POST(request: Request) {
       }
     }
 
+    {
+      const md = Array.isArray(orderData.meta_data)
+        ? ([...(orderData.meta_data as Array<{ key: string; value: unknown }>)])
+        : [];
+      if (
+        !md.some((row) => row.key === "_uncuttv_payment_method")
+      ) {
+        md.push({ key: "_uncuttv_payment_method", value: "bank" });
+      }
+      orderData.meta_data = md;
+    }
+
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
       method: "POST",
       headers: {
