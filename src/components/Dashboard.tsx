@@ -7,6 +7,7 @@ import AccountProfileForm from "@/components/AccountProfileForm";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
+import { invoiceErrorMessage } from "@/lib/invoice-download-errors";
 import { parsePrice } from "@/lib/parse-price";
 
 interface OrderLineItem {
@@ -133,6 +134,10 @@ export default function Dashboard() {
   const [ordersShown, setOrdersShown] = useState(ORDERS_PER_PAGE);
   const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
   const [invoiceLoading, setInvoiceLoading] = useState<number | null>(null);
+  const [invoiceError, setInvoiceError] = useState<{
+    orderId: number;
+    message: string;
+  } | null>(null);
   const { language } = useLanguage();
   const t = createT(language);
 
@@ -204,9 +209,17 @@ export default function Dashboard() {
 
   const downloadInvoice = useCallback(async (orderId: number, orderNumber: string) => {
     setInvoiceLoading(orderId);
+    setInvoiceError(null);
     try {
       const res = await fetch(`/api/orders/invoice?order_id=${orderId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setInvoiceError({
+          orderId,
+          message: data.error ?? invoiceErrorMessage(res.status),
+        });
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -217,7 +230,10 @@ export default function Dashboard() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      // silent fail
+      setInvoiceError({
+        orderId,
+        message: "Verbindungsfehler. Bitte später erneut versuchen.",
+      });
     } finally {
       setInvoiceLoading(null);
     }
@@ -335,9 +351,17 @@ export default function Dashboard() {
                                 className="mt-4 cursor-pointer border border-[#c0392b] bg-transparent px-5 py-2 text-xs font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
                               >
                                 {invoiceLoading === order.id
-                                  ? "..."
+                                  ? "WIRD GELADEN…"
                                   : "RECHNUNG ALS PDF HERUNTERLADEN"}
                               </button>
+                              {invoiceError?.orderId === order.id && (
+                                <p
+                                  className="mt-2 text-xs text-[#c0392b]"
+                                  role="alert"
+                                >
+                                  {invoiceError.message}
+                                </p>
+                              )}
                             </td>
                           </tr>
                         )}

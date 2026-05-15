@@ -12,6 +12,7 @@ import {
   productHasOutOfPrintCategory,
 } from "@/lib/haendler-filter";
 import { formatPrice } from "@/lib/format-price";
+import { invoiceErrorMessage } from "@/lib/invoice-download-errors";
 import { parsePrice } from "@/lib/parse-price";
 import { createT } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
@@ -239,40 +240,47 @@ function DashboardLoadSkeleton() {
 
 function InvoiceButton({ orderId, orderNumber }: { orderId: number; orderNumber: string }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const download = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/haendler/invoice?order_id=${orderId}`);
       if (!res.ok) {
-        console.error("Invoice download failed");
-        setLoading(false);
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? invoiceErrorMessage(res.status));
         return;
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Rechnung-RE-${orderNumber}-2026.pdf`;
+      a.download = `Rechnung-RE-${orderNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      console.error("Invoice download error");
+      setError("Verbindungsfehler. Bitte später erneut versuchen.");
     } finally {
       setLoading(false);
     }
   }, [orderId, orderNumber]);
 
   return (
+    <div className="flex flex-col items-end gap-1">
     <button
       type="button"
       onClick={download}
       disabled={loading}
       className="cursor-pointer border border-[#c0392b] bg-transparent p-1.5 text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
-      aria-label={`Rechnung für Bestellung #${orderNumber} herunterladen`}
-      title="Rechnung herunterladen"
+      aria-label={
+        loading
+          ? `Rechnung für Bestellung #${orderNumber} wird geladen`
+          : `Rechnung für Bestellung #${orderNumber} herunterladen`
+      }
+      title={loading ? "Wird geladen…" : "Rechnung herunterladen"}
     >
       {loading ? (
         <div className="h-4 w-4 animate-spin border-2 border-[#c0392b] border-t-transparent" />
@@ -288,6 +296,12 @@ function InvoiceButton({ orderId, orderNumber }: { orderId: number; orderNumber:
         </svg>
       )}
     </button>
+    {error && (
+      <p className="max-w-[200px] text-right text-[10px] text-[#c0392b]" role="alert">
+        {error}
+      </p>
+    )}
+    </div>
   );
 }
 
