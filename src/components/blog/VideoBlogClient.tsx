@@ -142,6 +142,19 @@ export default function VideoBlogClient({
         >
           {t("BLOG_SUBSCRIBE_BUTTON")}
         </a>
+
+        <div className="mx-auto mt-12 max-w-xl border-t border-white/10 pt-10">
+          <h2
+            className="mb-3 text-lg font-bold text-white"
+            style={{ fontFamily: FONT_BODY }}
+          >
+            {t("BLOG_SUBSCRIBE_HOOK_TITLE")}
+          </h2>
+          <p className="mb-6 text-sm text-white/60" style={{ fontFamily: FONT_BODY }}>
+            {t("BLOG_SUBSCRIBE_HOOK_DESC")}
+          </p>
+          <YouTubeCouponForm language={language} t={t} />
+        </div>
       </section>
 
       {activeVideo && (
@@ -285,5 +298,90 @@ function VideoCard({
         {views} · {minutes}
       </p>
     </article>
+  );
+}
+
+type CouponFormStatus = "idle" | "loading" | "success" | "alreadyClaimed" | "error";
+
+function YouTubeCouponForm({
+  language,
+  t,
+}: {
+  language: "de" | "en";
+  t: (k: string) => string;
+}) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<CouponFormStatus>("idle");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (status === "loading" || status === "success") return;
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed.includes("@") || !trimmed.includes(".")) return;
+
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/youtube-subscribe-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed, locale: language }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        alreadyClaimed?: boolean;
+        error?: string;
+      };
+      if (data.ok) {
+        setStatus("success");
+      } else if (data.alreadyClaimed) {
+        setStatus("alreadyClaimed");
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={t("BLOG_SUBSCRIBE_HOOK_PLACEHOLDER")}
+          disabled={status === "loading" || status === "success"}
+          className="w-full rounded border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b] focus:ring-1 focus:ring-[#c0392b] disabled:opacity-50 sm:w-72"
+          style={{ fontFamily: FONT_BODY }}
+        />
+        <button
+          type="submit"
+          disabled={status === "loading" || status === "success"}
+          className="shrink-0 rounded bg-[#c0392b] px-6 py-3 text-xs font-bold tracking-widest text-white transition hover:bg-[#a93226] disabled:cursor-not-allowed disabled:opacity-60"
+          style={{ fontFamily: FONT_BODY }}
+        >
+          {status === "loading"
+            ? t("BLOG_SUBSCRIBE_HOOK_LOADING")
+            : t("BLOG_SUBSCRIBE_HOOK_SUBMIT")}
+        </button>
+      </div>
+      {status === "success" && (
+        <p className="mt-4 text-sm text-green-400" style={{ fontFamily: FONT_BODY }}>
+          {t("BLOG_SUBSCRIBE_HOOK_SUCCESS")}
+        </p>
+      )}
+      {status === "alreadyClaimed" && (
+        <p className="mt-4 text-sm text-yellow-400" style={{ fontFamily: FONT_BODY }}>
+          {t("BLOG_SUBSCRIBE_HOOK_ALREADY")}
+        </p>
+      )}
+      {status === "error" && (
+        <p className="mt-4 text-sm text-red-400" style={{ fontFamily: FONT_BODY }}>
+          {t("BLOG_SUBSCRIBE_HOOK_ERROR")}
+        </p>
+      )}
+    </form>
   );
 }

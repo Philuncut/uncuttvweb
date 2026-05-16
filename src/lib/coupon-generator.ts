@@ -1,6 +1,8 @@
 import crypto from "crypto";
 
 const RECOVERY_CODE_PREFIX = "RECOVERY-";
+const YOUTUBE_CODE_PREFIX = "YOUTUBE-";
+const YOUTUBE_EXPIRY_DAYS = 14;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 export type RecoveryCouponResult = {
@@ -77,6 +79,68 @@ export async function generateRecoveryCoupon(
   const created = (await res.json()) as { id?: number; code?: string };
   if (!created?.id) {
     throw new Error("WooCommerce coupon creation returned no id");
+  }
+
+  return {
+    code: created.code ?? code,
+    expiry_date: formatExpiryLabel(expiresAt),
+    woo_id: created.id,
+  };
+}
+
+export type YouTubeCouponResult = {
+  code: string;
+  expiry_date: string;
+  woo_id: number;
+};
+
+/**
+ * Creates a single-use 10% YouTube-subscriber coupon tied to `email`,
+ * valid 30 days, no minimum spend.
+ */
+export async function generateYouTubeCoupon(
+  email: string
+): Promise<YouTubeCouponResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail.includes("@")) {
+    throw new Error("Invalid email for YouTube coupon");
+  }
+
+  const wooUrl = process.env.WOOCOMMERCE_URL!.replace(/\/$/, "");
+  const expiresAt = new Date(
+    Date.now() + YOUTUBE_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+  );
+  const code = `${YOUTUBE_CODE_PREFIX}${randomRecoverySuffix(8)}`;
+
+  const res = await fetch(`${wooUrl}/wp-json/wc/v3/coupons`, {
+    method: "POST",
+    headers: {
+      Authorization: wooAuthHeader(),
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify({
+      code,
+      discount_type: "percent",
+      amount: "15",
+      individual_use: true,
+      usage_limit: 1,
+      email_restrictions: [normalizedEmail],
+      minimum_amount: "30.00",
+      date_expires: expiresAt.toISOString(),
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `WooCommerce YouTube coupon create failed: ${res.status} ${text.slice(0, 200)}`
+    );
+  }
+
+  const created = (await res.json()) as { id?: number; code?: string };
+  if (!created?.id) {
+    throw new Error("WooCommerce YouTube coupon creation returned no id");
   }
 
   return {

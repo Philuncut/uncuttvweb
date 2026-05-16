@@ -33,6 +33,32 @@ const translations: Record<string, Record<string, string>> = {
   BLOG_SHOW_LESS: { de: "Weniger anzeigen", en: "Show less" },
   BLOG_CLOSE: { de: "Schließen", en: "Close" },
   BLOG_FEATURED_PRODUCTS: { de: "Aus unserem Shop", en: "From our shop" },
+  BLOG_SUBSCRIBE_HOOK_TITLE: {
+    de: "Bereits abonniert? Hol dir 10% Rabatt!",
+    en: "Already subscribed? Get 10% off!",
+  },
+  BLOG_SUBSCRIBE_HOOK_DESC: {
+    de: "Trag deine Email-Adresse ein und wir schicken dir einen einmaligen 10% Rabattcode für deine nächste Bestellung.",
+    en: "Enter your email address and we'll send you a one-time 10% discount code for your next order.",
+  },
+  BLOG_SUBSCRIBE_HOOK_PLACEHOLDER: { de: "deine@email.com", en: "your@email.com" },
+  BLOG_SUBSCRIBE_HOOK_SUBMIT: {
+    de: "10% RABATT-CODE ANFORDERN",
+    en: "GET 10% DISCOUNT CODE",
+  },
+  BLOG_SUBSCRIBE_HOOK_LOADING: { de: "Wird gesendet...", en: "Sending..." },
+  BLOG_SUBSCRIBE_HOOK_SUCCESS: {
+    de: "Check deine Mailbox – Code unterwegs! 💌",
+    en: "Check your inbox – code on its way! 💌",
+  },
+  BLOG_SUBSCRIBE_HOOK_ALREADY: {
+    de: "Du hast bereits einen Code erhalten. Schau in deinem Posteingang.",
+    en: "You already received a code. Check your inbox.",
+  },
+  BLOG_SUBSCRIBE_HOOK_ERROR: {
+    de: "Etwas ist schiefgelaufen. Bitte erneut versuchen.",
+    en: "Something went wrong. Please try again.",
+  },
 
   // Shop sections
   JETZT_VORBESTELLEN: { de: "JETZT VORBESTELLEN", en: "PRE-ORDER NOW" },
