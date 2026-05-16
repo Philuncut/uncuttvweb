@@ -451,6 +451,8 @@ export default function Navbar() {
     };
   }, []);
 
+  const logoHref = session?.isWholesale ? "/haendler" : "/shop";
+
   return (
     <>
       <nav
@@ -471,7 +473,7 @@ export default function Navbar() {
         }}
       >
         <Link
-          href="/shop"
+          href={logoHref}
           className="text-3xl font-black tracking-wider"
           onMouseEnter={() => setLogoHovered(true)}
           onMouseLeave={() => setLogoHovered(false)}
@@ -491,8 +493,12 @@ export default function Navbar() {
         <div className="flex items-center">
           {/* Desktop nav links — hidden on mobile */}
           <div className="hidden items-center md:flex">
-            <NavLink href="/shop">{t("SHOP")}</NavLink>
-            <Divider />
+            {!session?.isWholesale && (
+              <>
+                <NavLink href="/shop">{t("SHOP")}</NavLink>
+                <Divider />
+              </>
+            )}
             {!sessionReady ? (
               <span
                 className="inline-block h-5 w-28 rounded bg-white/10 align-middle animate-pulse"
@@ -765,7 +771,7 @@ export default function Navbar() {
           }}
         >
           <a
-            href="/shop"
+            href={logoHref}
             style={{
               fontSize: "1.5rem",
               fontWeight: 900,
@@ -822,91 +828,94 @@ export default function Navbar() {
             paddingBottom: "1rem",
           }}
         >
-          {/* SHOP */}
-          <a
-            href="/shop"
-            className="menu-link menu-main-link"
-            style={{
-              color: "white",
-              fontSize: "2.2rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              padding: "12px 32px",
-              animationDelay: "0.1s",
-            }}
-          >
-            {t("SHOP")}
-          </a>
-          <a
-            href="/shop?kategorie=vorverkauf"
-            className="menu-link menu-sub-link"
-            style={{
-              color: "#666",
-              fontSize: "1rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "4px 48px",
-              animationDelay: "0.15s",
-            }}
-          >
-            <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
-            VORVERKAUF
-          </a>
-          <a
-            href="/shop?kategorie=brandneu"
-            className="menu-link menu-sub-link"
-            style={{
-              color: "#666",
-              fontSize: "1rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "4px 48px",
-              animationDelay: "0.2s",
-            }}
-          >
-            <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
-            BRANDNEU
-          </a>
-          <a
-            href="/shop?kategorie=jetzt-erhaeltlich"
-            className="menu-link menu-sub-link"
-            style={{
-              color: "#666",
-              fontSize: "1rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "4px 48px",
-              animationDelay: "0.25s",
-            }}
-          >
-            <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
-            JETZT ERHÄLTLICH
-          </a>
-          <a
-            href="/shop?kategorie=outofprint"
-            className="menu-link menu-sub-link"
-            style={{
-              color: "#666",
-              fontSize: "1rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              padding: "4px 48px",
-              animationDelay: "0.3s",
-            }}
-          >
-            <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
-            OUT OF PRINT
-          </a>
+          {!session?.isWholesale && (
+            <>
+              <a
+                href="/shop"
+                className="menu-link menu-main-link"
+                style={{
+                  color: "white",
+                  fontSize: "2.2rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  padding: "12px 32px",
+                  animationDelay: "0.1s",
+                }}
+              >
+                {t("SHOP")}
+              </a>
+              <a
+                href="/shop?kategorie=vorverkauf"
+                className="menu-link menu-sub-link"
+                style={{
+                  color: "#666",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  padding: "4px 48px",
+                  animationDelay: "0.15s",
+                }}
+              >
+                <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
+                VORVERKAUF
+              </a>
+              <a
+                href="/shop?kategorie=brandneu"
+                className="menu-link menu-sub-link"
+                style={{
+                  color: "#666",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  padding: "4px 48px",
+                  animationDelay: "0.2s",
+                }}
+              >
+                <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
+                BRANDNEU
+              </a>
+              <a
+                href="/shop?kategorie=jetzt-erhaeltlich"
+                className="menu-link menu-sub-link"
+                style={{
+                  color: "#666",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  padding: "4px 48px",
+                  animationDelay: "0.25s",
+                }}
+              >
+                <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
+                JETZT ERHÄLTLICH
+              </a>
+              <a
+                href="/shop?kategorie=outofprint"
+                className="menu-link menu-sub-link"
+                style={{
+                  color: "#666",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  padding: "4px 48px",
+                  animationDelay: "0.3s",
+                }}
+              >
+                <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
+                OUT OF PRINT
+              </a>
+            </>
+          )}
 
           {/* MEIN KONTO / ANMELDEN */}
           {!sessionReady ? (
