@@ -7,6 +7,10 @@ import {
   verifyVideoSyncCronAuth,
 } from "@/lib/video-sync-helpers";
 import type { ShopVideoRow } from "@/lib/video-blog-types";
+import {
+  forceRematchAllShopVideos,
+  upsertVideoWithAutoMatch,
+} from "@/lib/video-sync-upsert";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -46,6 +50,9 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
+  const forceRematch =
+    new URL(request.url).searchParams.get("force_rematch") === "1";
+
   const token = process.env.VIMEO_API_TOKEN?.trim();
   const userId = process.env.VIMEO_USER_ID?.trim();
   const supabase = getSupabaseAdmin();
@@ -61,6 +68,7 @@ export async function GET(request: Request): Promise<Response> {
   let updated = 0;
   let created = 0;
   let errors = 0;
+  let forceRematched = 0;
   const errorNotes: string[] = [];
 
   if (!supabase) {
@@ -114,8 +122,8 @@ export async function GET(request: Request): Promise<Response> {
             .eq("video_id", videoId)
             .maybeSingle();
 
-          const auto_matched_products = await autoMatchProductIds(title);
-          const row: Omit<ShopVideoRow, "featured_products"> & {
+          const autoMatched = await autoMatchProductIds(title);
+          const row: Omit<ShopVideoRow, "featured_products" | "auto_matched_products"> & {
             featured_products?: number[] | null;
             updated_at?: string;
           } = {
@@ -128,15 +136,15 @@ export async function GET(request: Request): Promise<Response> {
             duration_seconds:
               typeof video.duration === "number" ? video.duration : 0,
             published_at: video.release_time ?? null,
-            auto_matched_products,
             updated_at: new Date().toISOString(),
           };
 
-          const { error: upsertError } = await supabase
-            .from("shop_vimeo_videos")
-            .upsert(row, { onConflict: "video_id" });
-
-          if (upsertError) throw new Error(upsertError.message);
+          await upsertVideoWithAutoMatch(
+            supabase,
+            "shop_vimeo_videos",
+            row,
+            autoMatched
+          );
 
           return existing?.video_id
             ? ({ outcome: "updated" as const })
@@ -157,6 +165,16 @@ export async function GET(request: Request): Promise<Response> {
         errorNotes.push(result.message);
       }
     }
+
+    if (forceRematch) {
+      const rematch = await forceRematchAllShopVideos(
+        supabase,
+        "shop_vimeo_videos"
+      );
+      forceRematched = rematch.rematched;
+      errors += rematch.errors;
+      errorNotes.push(...rematch.errorNotes);
+    }
   } catch (err) {
     errors += 1;
     const note = err instanceof Error ? err.message : String(err);
@@ -165,7 +183,10 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const duration = formatSyncDurationMs(startedAt);
-  const summary = `[Vimeo-Sync] ${checked} videos checked, ${updated} updated, ${created} new, ${errors} errors, duration ${duration}`;
+  const forceNote = forceRematch
+    ? `, force_rematch ${forceRematched} rematched`
+    : "";
+  const summary = `[Vimeo-Sync] ${checked} videos checked, ${updated} updated, ${created} new, ${errors} errors${forceNote}, duration ${duration}`;
   console.log(summary, errorNotes.length ? errorNotes : "");
   await sendVideoSyncSummaryEmail("[Vimeo-Sync] daily summary", summary);
 
@@ -175,6 +196,8 @@ export async function GET(request: Request): Promise<Response> {
     updated,
     created,
     errors,
+    forceRematch,
+    forceRematched,
     durationMs: Date.now() - startedAt,
   });
 }

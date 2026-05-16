@@ -20,6 +20,17 @@ const STOPWORDS = new Set([
   "uncuttv",
 ]);
 
+type WooProductForMatch = WooProduct & {
+  total_sales?: number;
+  date_modified?: string;
+};
+
+type ProductMatchMeta = {
+  score: number;
+  total_sales: number;
+  date_modified: string;
+};
+
 export function extractTitleKeywords(title: string): string[] {
   const normalized = title
     .toLowerCase()
@@ -30,9 +41,29 @@ export function extractTitleKeywords(title: string): string[] {
   return [...new Set(normalized)];
 }
 
-async function searchProductsByKeyword(
-  keyword: string
-): Promise<WooProduct[]> {
+function parseTotalSales(product: WooProductForMatch): number {
+  const raw = product.total_sales;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+function parseDateModified(product: WooProductForMatch): string {
+  return typeof product.date_modified === "string"
+    ? product.date_modified
+    : "";
+}
+
+function compareMatchMeta(a: ProductMatchMeta, b: ProductMatchMeta): number {
+  if (b.score !== a.score) return b.score - a.score;
+  if (b.total_sales !== a.total_sales) return b.total_sales - a.total_sales;
+  return b.date_modified.localeCompare(a.date_modified);
+}
+
+async function searchProductsByKeyword(keyword: string): Promise<WooProduct[]> {
   const products = await wooFetch<WooProduct[]>(
     "/products",
     { search: keyword, per_page: "10" },
@@ -46,7 +77,7 @@ export async function autoMatchProductIds(title: string): Promise<number[]> {
   const keywords = extractTitleKeywords(title);
   if (keywords.length === 0) return [];
 
-  const scores = new Map<number, number>();
+  const metaById = new Map<number, ProductMatchMeta>();
 
   for (let i = 0; i < keywords.length; i += WOO_SEARCH_CONCURRENCY) {
     const chunk = keywords.slice(i, i + WOO_SEARCH_CONCURRENCY);
@@ -69,17 +100,23 @@ export async function autoMatchProductIds(title: string): Promise<number[]> {
       }
       const { products } = result.value;
       for (const product of products) {
+        const p = product as WooProductForMatch;
         const nameLower = product.name.toLowerCase();
         const matchedCount = keywords.filter((k) => nameLower.includes(k)).length;
-        if (matchedCount > 0) {
-          scores.set(product.id, (scores.get(product.id) ?? 0) + matchedCount);
-        }
+        if (matchedCount <= 0) continue;
+
+        const existing = metaById.get(product.id);
+        metaById.set(product.id, {
+          score: Math.max(existing?.score ?? 0, matchedCount),
+          total_sales: parseTotalSales(p),
+          date_modified: parseDateModified(p),
+        });
       }
     }
   }
 
-  return [...scores.entries()]
-    .sort((a, b) => b[1] - a[1])
+  return [...metaById.entries()]
+    .sort((a, b) => compareMatchMeta(a[1], b[1]))
     .slice(0, 3)
     .map(([id]) => id);
 }
