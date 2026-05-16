@@ -138,6 +138,151 @@ const translations: Record<string, Record<string, string>> = {
   ZWISCHENSUMME: { de: "Zwischensumme", en: "Subtotal" },
   RABATT: { de: "Rabatt", en: "Discount" },
   SSL_HINWEIS: { de: "Sichere SSL-Verschlüsselung", en: "Secure SSL encryption" },
+  CHECKOUT_PROVINZ: { de: "PROVINZ", en: "STATE / PROVINCE" },
+  CHECKOUT_FIRMA_OPTIONAL: { de: "(optional)", en: "(optional)" },
+  CHECKOUT_UID_LABEL: { de: "UID-NR.", en: "VAT ID" },
+  CHECKOUT_PLACEHOLDER_EMAIL: { de: "deine@email.com", en: "your@email.com" },
+  CHECKOUT_PLACEHOLDER_FIRST: { de: "Max", en: "Alex" },
+  CHECKOUT_PLACEHOLDER_LAST: { de: "Mustermann", en: "Smith" },
+  CHECKOUT_PLACEHOLDER_STREET: { de: "Musterstraße 1", en: "123 Main St" },
+  CHECKOUT_PLACEHOLDER_ZIP: { de: "6020", en: "Postal code" },
+  CHECKOUT_PLACEHOLDER_CITY: { de: "Innsbruck", en: "City" },
+  CHECKOUT_PLACEHOLDER_COMPANY: { de: "z. B. Muster GmbH", en: "e.g. Example Ltd" },
+  CHECKOUT_PLACEHOLDER_UID: { de: "ATU12345678", en: "ATU12345678" },
+  CHECKOUT_PROVINCE_LOADING: {
+    de: "Provinzen werden geladen …",
+    en: "Loading provinces…",
+  },
+  CHECKOUT_SELECT_PLACEHOLDER: { de: "Bitte wählen …", en: "Please select…" },
+  CHECKOUT_VERSANDART: { de: "VERSANDART", en: "SHIPPING METHOD" },
+  CHECKOUT_EPS_TRANSFER: { de: "EPS-ÜBERWEISUNG", en: "EPS BANK TRANSFER" },
+  CHECKOUT_KLARNA_REDIRECT: {
+    de: "Du wirst nach dem Absenden zur Klarna-Zahlung weitergeleitet.",
+    en: "You will be redirected to Klarna to complete payment after submitting.",
+  },
+  CHECKOUT_EPS_REDIRECT: {
+    de: "Du wirst nach dem Absenden zur EPS-Zahlung weitergeleitet.",
+    en: "You will be redirected to EPS to complete payment after submitting.",
+  },
+  CHECKOUT_PAYPAL_UNAVAILABLE: {
+    de: "PayPal ist derzeit nicht verfügbar.",
+    en: "PayPal is currently unavailable.",
+  },
+  CHECKOUT_PAYPAL_FAILED: {
+    de: "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut.",
+    en: "PayPal payment failed. Please try again.",
+  },
+  CHECKOUT_PAYPAL_WHOLESALE_BLOCKED: {
+    de: "Bitte Firmenname und gültige UID eingeben.",
+    en: "Please enter company name and a valid VAT ID.",
+  },
+  CHECKOUT_COUPON_ACTIVE_TITLE: {
+    de: "10% Rabattcode {{code}} aktiv",
+    en: "10% discount code {{code}} active",
+  },
+  CHECKOUT_COUPON_ACTIVE_SUB: {
+    de: "Dein Rabatt wird beim Bezahlen abgezogen",
+    en: "Your discount is applied at checkout",
+  },
+  CHECKOUT_NEWSLETTER_SPAREN: { de: "10% SPAREN", en: "SAVE 10%" },
+  CHECKOUT_NEWSLETTER_OPTIN: {
+    de: "— Newsletter abonnieren & persönlichen Rabattcode sofort erhalten",
+    en: "— Subscribe to the newsletter & get your personal discount code instantly",
+  },
+  CHECKOUT_NEWSLETTER_ALREADY: {
+    de: "Du bist bereits für den Newsletter angemeldet.",
+    en: "You are already subscribed to the newsletter.",
+  },
+  CHECKOUT_QUANTITY: { de: "Menge: {{qty}}", en: "Qty: {{qty}}" },
+  CHECKOUT_INVALID_COUPON: { de: "Ungültiger Code.", en: "Invalid code." },
+  CHECKOUT_COUPON_VALIDATE_ERROR: {
+    de: "Fehler bei der Überprüfung.",
+    en: "Could not validate code.",
+  },
+  CHECKOUT_SUBTOTAL_NET: { de: "Zwischensumme (netto)", en: "Subtotal (net)" },
+  CHECKOUT_SHIPPING_NET: { de: "Versand (netto)", en: "Shipping (net)" },
+  CHECKOUT_VAT: { de: "USt.", en: "VAT" },
+  CHECKOUT_SHIPPING_LINE: { de: "Versand", en: "Shipping" },
+  CHECKOUT_DISCOUNT_LABEL: { de: "Rabatt ({{discount}})", en: "Discount ({{discount}})" },
+  CHECKOUT_TOTAL_GROSS: { de: "GESAMT (brutto)", en: "TOTAL (incl. VAT)" },
+  CHECKOUT_SHIPPING_CALCULATING: { de: "wird berechnet…", en: "calculating…" },
+  CHECKOUT_SHIPPING_UNAVAILABLE: {
+    de: "Versand nicht verfügbar",
+    en: "Shipping not available",
+  },
+  CHECKOUT_FREE_SHIPPING: { de: "Kostenlos", en: "Free" },
+  CHECKOUT_SHIPPING_FOOTER: {
+    de: "Versand per WooCommerce-Store-API (bzw. pauschal für Wholesale).",
+    en: "Shipping via WooCommerce Store API (or flat rate for wholesale).",
+  },
+  CHECKOUT_ERROR_COUNTRY_BLOCKED: {
+    de: "Versand in dieses Land ist derzeit nicht möglich.",
+    en: "Shipping to this country is not available.",
+  },
+  CHECKOUT_ERROR_WHOLESALE_EU_ONLY: {
+    de: "Wholesale-Bestellungen sind nur innerhalb der EU möglich.",
+    en: "Wholesale orders are only available within the EU.",
+  },
+  CHECKOUT_ERROR_SHIPPING_UNAVAILABLE: {
+    de: "Versand konnte nicht berechnet werden — bitte Land prüfen",
+    en: "Could not calculate shipping — please check your country",
+  },
+  CHECKOUT_ERROR_SHIPPING_PROVINCE: {
+    de: "Provinz wählen, um Versand zu berechnen.",
+    en: "Select a state/province to calculate shipping.",
+  },
+  CHECKOUT_ERROR_PAYMENT_INTENT: {
+    de: "Zahlungsaufbau fehlgeschlagen.",
+    en: "Could not set up payment.",
+  },
+  CHECKOUT_ERROR_COMPANY_REQUIRED: {
+    de: "Bitte Firmennamen angeben.",
+    en: "Please enter your company name.",
+  },
+  CHECKOUT_ERROR_UID_REQUIRED: {
+    de: "Bitte gültige UID-Nr. eingeben.",
+    en: "Please enter a valid VAT ID.",
+  },
+  CHECKOUT_VALIDATION_UID_FORMAT: {
+    de: "UID-Format ungültig — Beispiel: ATU12345678",
+    en: "Invalid VAT ID format — example: ATU12345678",
+  },
+  CHECKOUT_VALIDATION_UID_REQUIRED: {
+    de: "UID ist erforderlich.",
+    en: "VAT ID is required.",
+  },
+  CHECKOUT_ERROR_SHIPPING_BLOCKED: {
+    de: "Versand: Bitte warten oder Lieferland prüfen — Bestellung noch nicht möglich.",
+    en: "Shipping: please wait or check delivery country — order not possible yet.",
+  },
+  CHECKOUT_ERROR_CARD_ELEMENT: {
+    de: "Kartenelement nicht gefunden.",
+    en: "Card field not found.",
+  },
+  CHECKOUT_ERROR_PAYMENT_PREP_FAILED: {
+    de: "Vorbereitung der Zahlung fehlgeschlagen — bitte erneut versuchen.",
+    en: "Payment setup failed — please try again.",
+  },
+  CHECKOUT_ERROR_PAYMENT_SETUP: {
+    de: "Zahlungsaufbau fehlerhaft — bitte Seite neu laden.",
+    en: "Payment setup error — please reload the page.",
+  },
+  CHECKOUT_ERROR_PAYMENT_FAILED: {
+    de: "Zahlung fehlgeschlagen.",
+    en: "Payment failed.",
+  },
+  CHECKOUT_ERROR_ORDER_FAILED: {
+    de: "Bestellung fehlgeschlagen.",
+    en: "Order failed.",
+  },
+  CHECKOUT_ERROR_CONNECTION: {
+    de: "Verbindungsfehler. Bitte versuche es erneut.",
+    en: "Connection error. Please try again.",
+  },
+  CHECKOUT_PAYPAL_ORDER_DESCRIPTION: {
+    de: "UNCUTTV Shop Bestellung",
+    en: "UNCUTTV shop order",
+  },
 
   // Account
   MEINE_BESTELLUNGEN: { de: "MEINE BESTELLUNGEN", en: "MY ORDERS" },

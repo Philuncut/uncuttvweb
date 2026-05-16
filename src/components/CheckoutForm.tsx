@@ -42,13 +42,32 @@ import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import { useLanguage } from "@/lib/LanguageContext";
-import { createT } from "@/lib/translations";
+import { createT, formatTranslation } from "@/lib/translations";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
 type PaymentMethod = "card" | "bank" | "paypal" | "klarna" | "eps";
+
+/** Map machine-readable API error codes; leave German message strings as-is. */
+function resolveCheckoutApiError(
+  error: string | undefined,
+  t: (key: string) => string,
+  fallbackKey: string
+): string {
+  if (!error) return t(fallbackKey);
+  switch (error) {
+    case "country_blocked":
+      return t("CHECKOUT_ERROR_COUNTRY_BLOCKED");
+    case "wholesale_eu_only":
+      return t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY");
+    case "shipping_unavailable":
+      return t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE");
+    default:
+      return error;
+  }
+}
 
 type ClientShipRate = {
   rate_id: string;
@@ -314,6 +333,8 @@ function OrderSummary({
     grossTotal: number;
   } | null;
 }) {
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
   const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
 
   // Calculate discounted subtotal (wholesale: never subtract coupon in math)
@@ -357,19 +378,19 @@ function OrderSummary({
         onCouponApplied(data.couponId, data.name, display);
         setCode("");
       } else {
-        setError(data.error || "Ungültiger Code.");
+        setError(data.error || t("CHECKOUT_INVALID_COUPON"));
       }
     } catch {
-      setError("Fehler bei der Überprüfung.");
+      setError(t("CHECKOUT_COUPON_VALIDATE_ERROR"));
     } finally {
       setLoading(false);
     }
-  }, [code, onCouponApplied]);
+  }, [code, onCouponApplied, t]);
 
   return (
     <div className="border border-[#222] bg-[#111] p-6">
       <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
-        BESTELLUNG
+        {t("BESTELLUNG")}
       </h2>
 
       <div className="mt-4 space-y-3">
@@ -395,7 +416,11 @@ function OrderSummary({
                 <p className="line-clamp-1 text-xs font-bold text-white/80">
                   {product.name}
                 </p>
-                <p className="text-[10px] text-white/40">Menge: {quantity}</p>
+                <p className="text-[10px] text-white/40">
+                  {formatTranslation("CHECKOUT_QUANTITY", language, {
+                    qty: String(quantity),
+                  })}
+                </p>
               </div>
               <span className="shrink-0 text-sm font-bold text-white">
                 {formatPrice(price * quantity)}
@@ -432,7 +457,7 @@ function OrderSummary({
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && validate()}
-                placeholder="Gutschein-Code eingeben"
+                placeholder={t("GUTSCHEIN_PLACEHOLDER")}
                 className="flex-1 border border-[#333] bg-[#0a0a0a] px-3 py-2 text-xs text-white placeholder:text-white/30 outline-none focus:border-[#c0392b]"
               />
               <button
@@ -441,7 +466,7 @@ function OrderSummary({
                 disabled={loading}
                 className="shrink-0 cursor-pointer border border-[#c0392b] bg-transparent px-4 py-2 text-[10px] font-bold tracking-wider text-[#c0392b] transition-colors hover:bg-[#c0392b] hover:text-white disabled:opacity-50"
               >
-                {loading ? "..." : "EINLÖSEN"}
+                {loading ? "..." : t("EINLOESEN")}
               </button>
             </div>
             {error && (
@@ -454,12 +479,12 @@ function OrderSummary({
         {wholesaleNonRcTotals ? (
           <>
             <div className="flex justify-between text-xs text-white/50">
-              <span>Zwischensumme (netto)</span>
+              <span>{t("CHECKOUT_SUBTOTAL_NET")}</span>
               <span>{formatPrice(wholesaleNonRcTotals.itemsNet)}</span>
             </div>
             <div className="flex justify-between text-xs text-white/50">
               <span className="flex flex-col gap-0.5">
-                <span>Versand (netto)</span>
+                <span>{t("CHECKOUT_SHIPPING_NET")}</span>
                 {shippingLabel && !shippingLoading && !shippingError && (
                   <span className="text-[9px] font-normal text-white/35">
                     {shippingLabel}
@@ -468,40 +493,44 @@ function OrderSummary({
               </span>
               <span className="text-right">
                 {shippingLoading ? (
-                  <span className="text-white/40">wird berechnet…</span>
+                  <span className="text-white/40">{t("CHECKOUT_SHIPPING_CALCULATING")}</span>
                 ) : shippingError ? (
                   <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
                 ) : shippingNoZone ? (
                   <span className="text-[10px] text-[#c0392b]">
-                    Versand nicht verfügbar
+                    {t("CHECKOUT_SHIPPING_UNAVAILABLE")}
                   </span>
                 ) : wholesaleNonRcTotals.shipNet === 0 ? (
-                  <span className="text-green-400/90">Kostenlos</span>
+                  <span className="text-green-400/90">{t("CHECKOUT_FREE_SHIPPING")}</span>
                 ) : (
                   formatPrice(wholesaleNonRcTotals.shipNet)
                 )}
               </span>
             </div>
             <div className="flex justify-between text-xs text-white/50">
-              <span>USt.</span>
+              <span>{t("CHECKOUT_VAT")}</span>
               <span>{formatPrice(wholesaleNonRcTotals.vatTotal)}</span>
             </div>
           </>
         ) : (
           <>
             <div className="flex justify-between text-xs text-white/50">
-              <span>Zwischensumme</span>
+              <span>{t("ZWISCHENSUMME")}</span>
               <span>{formatPrice(subtotal)}</span>
             </div>
             {effectiveCouponDiscount && discountAmount > 0 && (
               <div className="flex justify-between text-xs text-green-400">
-                <span>Rabatt ({effectiveCouponDiscount})</span>
+                <span>
+                  {formatTranslation("CHECKOUT_DISCOUNT_LABEL", language, {
+                    discount: effectiveCouponDiscount,
+                  })}
+                </span>
                 <span>−{formatPrice(discountAmount)}</span>
               </div>
             )}
             <div className="flex justify-between text-xs text-white/50">
               <span className="flex flex-col gap-0.5">
-                <span>Versand</span>
+                <span>{t("CHECKOUT_SHIPPING_LINE")}</span>
                 {shippingLabel && !shippingLoading && !shippingError && (
                   <span className="text-[9px] font-normal text-white/35">
                     {shippingLabel}
@@ -510,15 +539,15 @@ function OrderSummary({
               </span>
               <span className="text-right">
                 {shippingLoading ? (
-                  <span className="text-white/40">wird berechnet…</span>
+                  <span className="text-white/40">{t("CHECKOUT_SHIPPING_CALCULATING")}</span>
                 ) : shippingError ? (
                   <span className="text-[10px] text-[#c0392b]">{shippingError}</span>
                 ) : shippingNoZone ? (
                   <span className="text-[10px] text-[#c0392b]">
-                    Versand nicht verfügbar
+                    {t("CHECKOUT_SHIPPING_UNAVAILABLE")}
                   </span>
                 ) : shippingAmount === 0 ? (
-                  <span className="text-green-400/90">Kostenlos</span>
+                  <span className="text-green-400/90">{t("CHECKOUT_FREE_SHIPPING")}</span>
                 ) : (
                   formatPrice(shippingAmount)
                 )}
@@ -528,7 +557,7 @@ function OrderSummary({
         )}
         <div className="flex justify-between border-t border-[#222] pt-2">
           <span className="text-sm font-bold tracking-wider text-white/60">
-            {wholesaleNonRcTotals ? "GESAMT (brutto)" : "GESAMT"}
+            {wholesaleNonRcTotals ? t("CHECKOUT_TOTAL_GROSS") : t("GESAMT")}
           </span>
           <span className="text-xl font-black text-white">
             {formatPrice(grandTotal)}
@@ -537,7 +566,7 @@ function OrderSummary({
       </div>
 
       <p className="mt-4 text-[10px] text-white/30">
-        Versand per WooCommerce-Store-API (bzw. pauschal für Wholesale).
+        {t("CHECKOUT_SHIPPING_FOOTER")}
       </p>
 
       <div className="mt-4 flex items-center gap-2 text-white/30">
@@ -553,7 +582,7 @@ function OrderSummary({
             d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
           />
         </svg>
-        <span className="text-[10px]">Sichere SSL-Verschlüsselung</span>
+        <span className="text-[10px]">{t("SSL_HINWEIS")}</span>
       </div>
     </div>
   );
@@ -591,6 +620,9 @@ function PayPalButtonWrapper({
   /** Wholesale: block PayPal order creation until company + UID format are valid. */
   onBeforePayPalCreateOrder?: () => Promise<void>;
 }) {
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
+
   // Memoize createOrder so PayPal doesn't reinitialize
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createOrder = useCallback(
@@ -624,12 +656,19 @@ function PayPalButtonWrapper({
               currency_code: "EUR",
               value: paypalTotal.toFixed(2),
             },
-            description: "UNCUTTV Shop Bestellung",
+            description: t("CHECKOUT_PAYPAL_ORDER_DESCRIPTION"),
           },
         ],
       });
     },
-    [totalPrice, couponDiscount, shippingAmount, resolvedOrderTotalEuro, onBeforePayPalCreateOrder]
+    [
+      totalPrice,
+      couponDiscount,
+      shippingAmount,
+      resolvedOrderTotalEuro,
+      onBeforePayPalCreateOrder,
+      t,
+    ]
   );
 
   return (
@@ -937,7 +976,7 @@ function CheckoutInner() {
       setShipFetchLoading(false);
       setShipResolved(true);
       setShipRate(10);
-      setShipLabel("Wholesale-Versand");
+      setShipLabel(t("ORDER_SUCCESS_WHOLESALE_SHIPPING"));
       setShipMethodId("flat_rate");
       setShipRateId("wholesale_flat");
       setShipInstanceId(undefined);
@@ -961,7 +1000,7 @@ function CheckoutInner() {
     if (provinceOptions.length > 0 && !state.trim()) {
       setShipFetchLoading(false);
       setShipResolved(true);
-      setShipError("Provinz wählen, um Versand zu berechnen.");
+      setShipError(t("CHECKOUT_ERROR_SHIPPING_PROVINCE"));
       setShipNoZone(false);
       setShipRate(null);
       setShipLabel("");
@@ -1021,21 +1060,13 @@ function CheckoutInner() {
         if (cancelled) return;
         if (!res.ok) {
           if (res.status === 403 && data.error === "country_blocked") {
-            setShipError(
-              "Versand in dieses Land ist derzeit nicht möglich."
-            );
+            setShipError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
           } else if (res.status === 403 && data.error === "wholesale_eu_only") {
-            setShipError(
-              "Wholesale-Bestellungen sind nur innerhalb der EU möglich."
-            );
+            setShipError(t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY"));
           } else if (res.status === 503 || data.error === "shipping_unavailable") {
-            setShipError(
-              "Versand konnte nicht berechnet werden — bitte Land prüfen"
-            );
+            setShipError(t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE"));
           } else {
-            setShipError(
-              "Versand konnte nicht berechnet werden — bitte Land prüfen"
-            );
+            setShipError(t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE"));
           }
           setShipResolved(true);
           setStripeShipCents(null);
@@ -1048,7 +1079,7 @@ function CheckoutInner() {
         }
         if (data.source === "no-zone" || data.rate === null) {
           setShipRate(null);
-          setShipLabel(data.label || "Versand nicht verfügbar");
+          setShipLabel(data.label || t("CHECKOUT_SHIPPING_UNAVAILABLE"));
           setShipMethodId("");
           setShipRateId("");
           setShipInstanceId(undefined);
@@ -1122,9 +1153,7 @@ function CheckoutInner() {
         setStripeShipCents(Math.round(row.price * 100));
       } catch {
         if (!cancelled) {
-          setShipError(
-            "Versand konnte nicht berechnet werden — bitte Land prüfen"
-          );
+          setShipError(t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE"));
           setShipResolved(true);
           setStripeShipCents(null);
           setShipRate(null);
@@ -1154,6 +1183,7 @@ function CheckoutInner() {
     provinceListLoading,
     provinceOptions,
     items.length,
+    t,
   ]);
 
   const wholesaleReverseCharge = useMemo(
@@ -1206,17 +1236,19 @@ function CheckoutInner() {
       if (!res.ok) {
         setClientSecret("");
         if (res.status === 403 && data.error === "country_blocked") {
-          setPaymentIntentError(
-            "Versand in dieses Land ist derzeit nicht möglich."
-          );
+          setPaymentIntentError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
         } else if (res.status === 403 && data.error === "wholesale_eu_only") {
-          setPaymentIntentError(
-            "Wholesale-Bestellungen sind nur innerhalb der EU möglich."
-          );
+          setPaymentIntentError(t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY"));
         } else if (typeof data.error === "string" && data.error) {
-          setPaymentIntentError(data.error);
+          setPaymentIntentError(
+            resolveCheckoutApiError(
+              data.error,
+              t,
+              "CHECKOUT_ERROR_PAYMENT_INTENT"
+            )
+          );
         } else {
-          setPaymentIntentError("Zahlungsaufbau fehlgeschlagen.");
+          setPaymentIntentError(t("CHECKOUT_ERROR_PAYMENT_INTENT"));
         }
         return;
       }
@@ -1242,6 +1274,7 @@ function CheckoutInner() {
     zip,
     state,
     shipLabel,
+    t,
   ]);
 
   const cartMeta = items.map((i) => ({
@@ -1286,7 +1319,7 @@ function CheckoutInner() {
     if (shipMethodId === "none" && shipRate === 0) return null;
     return {
       rate: shipRate,
-      label: shipLabel || "Versand",
+      label: shipLabel || t("ORDER_SUCCESS_SHIPPING_DEFAULT"),
       method_id: shipMethodId || "flat_rate",
       ...(shipRateId ? { rate_id: shipRateId } : {}),
       ...(typeof shipInstanceId === "number"
@@ -1302,6 +1335,7 @@ function CheckoutInner() {
     shipLabel,
     shipRateId,
     shipInstanceId,
+    t,
   ]);
 
   const shippingBlocksCheckout = useMemo(() => {
@@ -1375,24 +1409,20 @@ function CheckoutInner() {
 
       if (isWholesale) {
         if (!company.trim()) {
-          setError("Bitte Firmennamen angeben.");
+          setError(t("CHECKOUT_ERROR_COMPANY_REQUIRED"));
           setProcessing(false);
           return;
         }
         if (!vat.trim() || !validateEuVatFormat(vat)) {
-          setError("Bitte gültige UID-Nr. eingeben.");
-          setVatFieldError(
-            "UID-Format ungültig — Beispiel: ATU12345678"
-          );
+          setError(t("CHECKOUT_ERROR_UID_REQUIRED"));
+          setVatFieldError(t("CHECKOUT_VALIDATION_UID_FORMAT"));
           setProcessing(false);
           return;
         }
       }
 
       if (shippingBlocksCheckout) {
-        setError(
-          "Versand: Bitte warten oder Lieferland prüfen — Bestellung noch nicht möglich."
-        );
+        setError(t("CHECKOUT_ERROR_SHIPPING_BLOCKED"));
         setProcessing(false);
         return;
       }
@@ -1405,7 +1435,7 @@ function CheckoutInner() {
 
         const cardElement = elements.getElement(CardElement);
         if (!cardElement) {
-          setError("Kartenelement nicht gefunden.");
+          setError(t("CHECKOUT_ERROR_CARD_ELEMENT"));
           setProcessing(false);
           return;
         }
@@ -1423,20 +1453,20 @@ function CheckoutInner() {
             });
             if (!piRes.ok) {
               setError(
-                "Vorbereitung der Zahlung fehlgeschlagen — bitte erneut versuchen."
+                t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
               );
               setProcessing(false);
               return;
             }
           } catch {
             setError(
-              "Vorbereitung der Zahlung fehlgeschlagen — bitte erneut versuchen."
+              t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
             );
             setProcessing(false);
             return;
           }
         } else if (isWholesale && !piId) {
-          setError("Zahlungsaufbau fehlerhaft — bitte Seite neu laden.");
+          setError(t("CHECKOUT_ERROR_PAYMENT_SETUP"));
           setProcessing(false);
           return;
         }
@@ -1460,7 +1490,7 @@ function CheckoutInner() {
           });
 
         if (stripeError) {
-          setError(stripeError.message || "Zahlung fehlgeschlagen.");
+          setError(stripeError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED"));
           setProcessing(false);
           return;
         }
@@ -1515,11 +1545,17 @@ function CheckoutInner() {
                 (isWholesale ? "&wholesale=1" : "")
             );
           } else {
-            setError(data.error || "Bestellung fehlgeschlagen.");
+            setError(
+              resolveCheckoutApiError(
+                data.error,
+                t,
+                "CHECKOUT_ERROR_ORDER_FAILED"
+              )
+            );
             setProcessing(false);
           }
         } catch {
-          setError("Verbindungsfehler. Bitte versuche es erneut.");
+          setError(t("CHECKOUT_ERROR_CONNECTION"));
           setProcessing(false);
         }
       } else if (paymentMethod === "klarna" || paymentMethod === "eps") {
@@ -1556,14 +1592,14 @@ function CheckoutInner() {
             });
             if (!piRes.ok) {
               setError(
-                "Vorbereitung der Zahlung fehlgeschlagen — bitte erneut versuchen."
+                t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
               );
               setProcessing(false);
               return;
             }
           } catch {
             setError(
-              "Vorbereitung der Zahlung fehlgeschlagen — bitte erneut versuchen."
+              t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
             );
             setProcessing(false);
             return;
@@ -1595,7 +1631,7 @@ function CheckoutInner() {
         });
 
         if (confirmError) {
-          setError(confirmError.message || "Zahlung fehlgeschlagen.");
+          setError(confirmError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED"));
           setProcessing(false);
         }
         // If successful, Stripe redirects — no code runs after this
@@ -1625,6 +1661,8 @@ function CheckoutInner() {
       shippingBlocksCheckout,
       checkoutShippingForWoo,
       wholesaleReverseCharge,
+      t,
+      language,
     ]
   );
 
@@ -1659,12 +1697,12 @@ function CheckoutInner() {
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-20 text-center sm:px-6">
-        <p className="text-white/50">Dein Warenkorb ist leer.</p>
+        <p className="text-white/50">{t("WARENKORB_LEER")}</p>
         <a
           href="/shop"
           className="mt-4 inline-block text-sm text-[#c0392b] hover:underline"
         >
-          Zurück zum Shop
+          {t("ZURUECK_ZUM_SHOP")}
         </a>
       </div>
     );
@@ -1711,10 +1749,12 @@ function CheckoutInner() {
               </span>
               <div>
                 <p style={{ color: "#27ae60", fontSize: 13, fontWeight: "bold", margin: 0 }}>
-                  10% Rabattcode {couponName || "WELCOME10"} aktiv
+                  {formatTranslation("CHECKOUT_COUPON_ACTIVE_TITLE", language, {
+                    code: couponName || "WELCOME10",
+                  })}
                 </p>
                 <p style={{ color: "rgba(39,174,96,0.7)", fontSize: 11, margin: "2px 0 0" }}>
-                  Dein Rabatt wird beim Bezahlen abgezogen
+                  {t("CHECKOUT_COUPON_ACTIVE_SUB")}
                 </p>
               </div>
             </div>
@@ -1723,15 +1763,15 @@ function CheckoutInner() {
           {/* Kontakt */}
           <section>
             <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
-              KONTAKT
+              {t("KONTAKT")}
             </h2>
             <div className="mt-4">
-              <Label>E-MAIL</Label>
+              <Label>{t("E_MAIL")}</Label>
               <Input
                 type="email"
                 value={email}
                 onChange={setEmail}
-                placeholder="deine@email.com"
+                placeholder={t("CHECKOUT_PLACEHOLDER_EMAIL")}
                 required
               />
             </div>
@@ -1740,60 +1780,60 @@ function CheckoutInner() {
           {/* Lieferadresse */}
           <section className="mt-8">
             <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
-              LIEFERADRESSE
+              {t("LIEFERADRESSE")}
             </h2>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <Label>VORNAME</Label>
+                <Label>{t("VORNAME")}</Label>
                 <Input
                   value={firstName}
                   onChange={setFirstName}
-                  placeholder="Max"
+                  placeholder={t("CHECKOUT_PLACEHOLDER_FIRST")}
                   required
                 />
               </div>
               <div>
-                <Label>NACHNAME</Label>
+                <Label>{t("NACHNAME")}</Label>
                 <Input
                   value={lastName}
                   onChange={setLastName}
-                  placeholder="Mustermann"
+                  placeholder={t("CHECKOUT_PLACEHOLDER_LAST")}
                   required
                 />
               </div>
             </div>
             <div className="mt-3">
-              <Label>STRASSE + HAUSNUMMER</Label>
+              <Label>{t("STRASSE")}</Label>
               <Input
                 value={street}
                 onChange={setStreet}
-                placeholder="Musterstraße 1"
+                placeholder={t("CHECKOUT_PLACEHOLDER_STREET")}
                 required
               />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <Label>PLZ</Label>
+                <Label>{t("PLZ")}</Label>
                 <Input
                   value={zip}
                   onChange={setZip}
-                  placeholder="6020"
+                  placeholder={t("CHECKOUT_PLACEHOLDER_ZIP")}
                   required
                 />
               </div>
               <div>
-                <Label>ORT</Label>
+                <Label>{t("ORT")}</Label>
                 <Input
                   value={city}
                   onChange={setCity}
-                  placeholder="Innsbruck"
+                  placeholder={t("CHECKOUT_PLACEHOLDER_CITY")}
                   required
                 />
               </div>
             </div>
             {provinceOptions.length > 0 && (
               <div className="mt-3">
-                <Label>PROVINZ</Label>
+                <Label>{t("CHECKOUT_PROVINZ")}</Label>
                 <Select
                   value={state}
                   onChange={setState}
@@ -1803,8 +1843,8 @@ function CheckoutInner() {
                     {
                       value: "",
                       label: provinceListLoading
-                        ? "Provinzen werden geladen …"
-                        : "Bitte wählen …",
+                        ? t("CHECKOUT_PROVINCE_LOADING")
+                        : t("CHECKOUT_SELECT_PLACEHOLDER"),
                     },
                     ...provinceOptions.map((p) => ({
                       value: p.code,
@@ -1815,7 +1855,7 @@ function CheckoutInner() {
               </div>
             )}
             <div className="mt-3">
-              <Label>LAND</Label>
+              <Label>{t("LAND")}</Label>
               <Select
                 value={country}
                 onChange={(v) => {
@@ -1831,7 +1871,7 @@ function CheckoutInner() {
               country.trim() &&
               !isWholesaleCountryAllowed(country.trim().toUpperCase()) && (
                 <p className="mt-1 rounded border border-amber-600/45 bg-amber-950/35 px-2 py-1.5 text-[10px] text-amber-200/95">
-                  Wholesale-Bestellungen sind nur innerhalb der EU möglich.
+                  {t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY")}
                 </p>
               )}
             {!isWholesale && items.length > 0 && (
@@ -1850,7 +1890,7 @@ function CheckoutInner() {
               !shipError &&
               !shipNoZone && (
                 <div className="mt-6 border border-[#222] bg-[#111] p-4">
-                  <Label>VERSANDART</Label>
+                  <Label>{t("CHECKOUT_VERSANDART")}</Label>
                   <div className="mt-3 space-y-3">
                     {shipOptions.map((opt) => (
                       <label
@@ -1889,20 +1929,23 @@ function CheckoutInner() {
                 </div>
               )}
             <div className="mt-3">
-              <Label>FIRMA {isWholesale ? "" : "(optional)"}</Label>
+              <Label>
+                {t("FIRMA")}{" "}
+                {!isWholesale && t("CHECKOUT_FIRMA_OPTIONAL")}
+              </Label>
               <Input
                 value={company}
                 onChange={(v) => {
                   setCompany(v);
                   if (error && isWholesale) setError("");
                 }}
-                placeholder="z. B. Muster GmbH"
+                placeholder={t("CHECKOUT_PLACEHOLDER_COMPANY")}
                 required={isWholesale}
               />
             </div>
             {isWholesale && (
               <div className="mt-3">
-                <Label>UID-NR.</Label>
+                <Label>{t("CHECKOUT_UID_LABEL")}</Label>
                 <Input
                   value={vat}
                   onChange={(v) => {
@@ -1912,18 +1955,16 @@ function CheckoutInner() {
                   }}
                   onBlur={() => {
                     if (!vat.trim()) {
-                      setVatFieldError("UID ist erforderlich.");
+                      setVatFieldError(t("CHECKOUT_VALIDATION_UID_REQUIRED"));
                       return;
                     }
                     if (!validateEuVatFormat(vat)) {
-                      setVatFieldError(
-                        "UID-Format ungültig — Beispiel: ATU12345678"
-                      );
+                      setVatFieldError(t("CHECKOUT_VALIDATION_UID_FORMAT"));
                       return;
                     }
                     setVatFieldError("");
                   }}
-                  placeholder="ATU12345678"
+                  placeholder={t("CHECKOUT_PLACEHOLDER_UID")}
                   required
                 />
                 {vatFieldError && (
@@ -1955,7 +1996,7 @@ function CheckoutInner() {
                     .then((r) => r.json())
                     .then((data) => {
                       if (data.alreadySubscribed) {
-                        setError("Du bist bereits für den Newsletter angemeldet.");
+                        setError(t("CHECKOUT_NEWSLETTER_ALREADY"));
                         setNewsletter(false);
                         return;
                       }
@@ -1968,8 +2009,10 @@ function CheckoutInner() {
                     .catch(() => {});
                 }
               }}>
-                <span style={{ color: "#c0392b", fontWeight: "bold" }}>10% SPAREN</span>
-                {" "}— Newsletter abonnieren &amp; persönlichen Rabattcode sofort erhalten
+                <span style={{ color: "#c0392b", fontWeight: "bold" }}>
+                  {t("CHECKOUT_NEWSLETTER_SPAREN")}
+                </span>
+                {t("CHECKOUT_NEWSLETTER_OPTIN")}
               </Checkbox>
             </div>
           )}
@@ -1977,7 +2020,7 @@ function CheckoutInner() {
           {/* Zahlung */}
           <section className="mt-8">
             <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
-              ZAHLUNG
+              {t("ZAHLUNG")}
             </h2>
 
             {/* Payment method selector */}
@@ -1985,13 +2028,13 @@ function CheckoutInner() {
               <PaymentOption
                 selected={paymentMethod === "card"}
                 onClick={() => setPaymentMethod("card")}
-                label="KREDITKARTE"
+                label={t("KREDITKARTE")}
                 icon={<CardIcons />}
               />
               <PaymentOption
                 selected={paymentMethod === "bank"}
                 onClick={() => setPaymentMethod("bank")}
-                label="ÜBERWEISUNG"
+                label={t("UEBERWEISUNG")}
                 icon={<BankIcon />}
               />
               <PaymentOption
@@ -2009,7 +2052,7 @@ function CheckoutInner() {
               <PaymentOption
                 selected={paymentMethod === "eps"}
                 onClick={() => setPaymentMethod("eps")}
-                label="EPS-ÜBERWEISUNG"
+                label={t("CHECKOUT_EPS_TRANSFER")}
                 icon={<EpsIcon />}
               />
             </div>
@@ -2078,21 +2121,17 @@ function CheckoutInner() {
                         wholesaleCheckoutBlocked || shippingBlocksCheckout
                       }
                       onError={() =>
-                        setError(
-                          "PayPal-Zahlung fehlgeschlagen. Bitte versuche es erneut."
-                        )
+                        setError(t("CHECKOUT_PAYPAL_FAILED"))
                       }
                       onBeforePayPalCreateOrder={async () => {
                         if (wholesaleCheckoutBlocked) {
-                          throw new Error(
-                            "Bitte Firmenname und gültige UID eingeben."
-                          );
+                          throw new Error(t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED"));
                         }
                       }}
                     />
                   ) : (
                     <p className="text-xs text-white/30">
-                      PayPal ist derzeit nicht verfügbar.
+                      {t("CHECKOUT_PAYPAL_UNAVAILABLE")}
                     </p>
                   )}
                 </div>
@@ -2101,8 +2140,7 @@ function CheckoutInner() {
               {paymentMethod === "klarna" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   <p className="text-xs leading-relaxed text-white/50">
-                    Du wirst nach dem Absenden zur Klarna-Zahlung
-                    weitergeleitet.
+                    {t("CHECKOUT_KLARNA_REDIRECT")}
                   </p>
                 </div>
               )}
@@ -2110,8 +2148,7 @@ function CheckoutInner() {
               {paymentMethod === "eps" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   <p className="text-xs leading-relaxed text-white/50">
-                    Du wirst nach dem Absenden zur EPS-Zahlung
-                    weitergeleitet.
+                    {t("CHECKOUT_EPS_REDIRECT")}
                   </p>
                 </div>
               )}
@@ -2141,7 +2178,7 @@ function CheckoutInner() {
               {processing ? (
                 <div className="h-5 w-5 animate-spin border-2 border-white border-t-transparent" />
               ) : (
-                "JETZT KAUFEN"
+                t("JETZT_KAUFEN")
               )}
             </button>
           )}
