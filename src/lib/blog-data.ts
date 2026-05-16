@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { wooFetch } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
+import { filterRecommendableProducts } from "@/lib/woo-product-filters";
 import type {
   BlogProductCard,
   BlogVideoItem,
@@ -29,7 +30,7 @@ async function fetchProductCards(ids: number[]): Promise<Map<number, BlogProduct
       { revalidate: 300 }
     );
     if (!Array.isArray(products)) return map;
-    for (const p of products) {
+    for (const p of filterRecommendableProducts(products)) {
       const image = p.images?.[0]?.src;
       map.set(p.id, {
         id: p.id,

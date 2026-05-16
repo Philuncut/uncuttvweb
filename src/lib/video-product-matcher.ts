@@ -1,6 +1,7 @@
 import { wooFetch } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
 import { WOO_SEARCH_CONCURRENCY } from "@/lib/async-chunks";
+import { filterRecommendableProducts } from "@/lib/woo-product-filters";
 
 const STOPWORDS = new Set([
   "der",
@@ -37,7 +38,8 @@ async function searchProductsByKeyword(
     { search: keyword, per_page: "10" },
     { cache: "no-store" }
   );
-  return Array.isArray(products) ? products : [];
+  if (!Array.isArray(products)) return [];
+  return filterRecommendableProducts(products);
 }
 
 export async function autoMatchProductIds(title: string): Promise<number[]> {

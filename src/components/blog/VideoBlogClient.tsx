@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
-import { formatPrice } from "@/lib/format-price";
-import { parsePrice } from "@/lib/parse-price";
-import type { BlogProductCard, BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
+import type { BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
+import VideoLightbox from "@/components/blog/VideoLightbox";
 
 const FONT_HEADING = `'Playfair Display', Georgia, serif`;
 const FONT_BODY = `'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
@@ -19,16 +17,6 @@ type Props = {
   subscriberCount: string;
   subscribeUrl: string;
 };
-
-function truncate(text: string, max: number): string {
-  const t = text.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max).trim()}…`;
-}
-
-function productLink(slug: string, videoId: string): string {
-  return `/shop/${slug}?source=video&video_id=${encodeURIComponent(videoId)}`;
-}
 
 function tabButtonClass(active: boolean): string {
   return `px-6 py-4 text-sm font-bold tracking-widest transition ${
@@ -157,61 +145,15 @@ export default function VideoBlogClient({
       </section>
 
       {activeVideo && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.9)" }}
-          onClick={closeLightbox}
-          role="presentation"
-        >
-          <div
-            className="relative w-full max-w-[1200px] rounded-lg bg-[#111] p-4 sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={activeVideo.title}
-          >
-            <button
-              type="button"
-              onClick={closeLightbox}
-              className="absolute right-3 top-3 z-10 text-2xl text-white/80 hover:text-white"
-              aria-label="Close"
-            >
-              ×
-            </button>
-
-            <div className="relative aspect-video w-full overflow-hidden rounded bg-black">
-              {embedReady && (
-                <iframe
-                  src={embedSrc}
-                  title={activeVideo.title}
-                  className="absolute inset-0 h-full w-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              )}
-            </div>
-
-            <h2
-              className="mt-6 text-2xl font-bold text-white"
-              style={{ fontFamily: FONT_HEADING }}
-            >
-              {activeVideo.title}
-            </h2>
-            {activeVideo.description && (
-              <p className="mt-2 text-sm text-white/60">
-                {truncate(activeVideo.description, 200)}
-              </p>
-            )}
-
-            {lightboxProducts.length > 0 && (
-              <ProductSection
-                products={lightboxProducts}
-                videoId={activeVideo.video_id}
-                t={t}
-              />
-            )}
-          </div>
-        </div>
+        <VideoLightbox
+          video={activeVideo}
+          embedReady={embedReady}
+          embedSrc={embedSrc}
+          products={lightboxProducts}
+          onClose={closeLightbox}
+          inVideoLabel={t("BLOG_IN_VIDEO_SHOWN")}
+          buyNowLabel={t("BLOG_BUY_NOW")}
+        />
       )}
     </>
   );
@@ -317,77 +259,5 @@ function VideoCard({
         {views} · {minutes}
       </p>
     </article>
-  );
-}
-
-function ProductSection({
-  products,
-  videoId,
-  t,
-}: {
-  products: BlogProductCard[];
-  videoId: string;
-  t: (k: string) => string;
-}) {
-  return (
-    <div className="mt-8">
-      <h3 className="mb-4 text-xs font-bold tracking-widest text-white/50">
-        {t("BLOG_IN_VIDEO_SHOWN").toUpperCase()}
-      </h3>
-      <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">
-        {products.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            videoId={videoId}
-            t={t}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProductCard({
-  product,
-  videoId,
-  t,
-}: {
-  product: BlogProductCard;
-  videoId: string;
-  t: (k: string) => string;
-}) {
-  return (
-    <div className="min-w-[220px] shrink-0 rounded border border-white/10 bg-black/30 p-3 md:min-w-0">
-      {product.image && (
-        <ProductImage product={product} />
-      )}
-      <p className="line-clamp-2 text-sm font-medium text-white">{product.name}</p>
-      <p className="mt-1 text-sm text-[#c0392b]">
-        {formatPrice(parsePrice(product.price))}
-      </p>
-      <Link
-        href={productLink(product.slug, videoId)}
-        className="mt-3 inline-block w-full rounded bg-[#c0392b] py-2 text-center text-xs font-bold tracking-wider text-white hover:bg-[#a93226]"
-      >
-        {t("BLOG_BUY_NOW")}
-      </Link>
-    </div>
-  );
-}
-
-function ProductImage({ product }: { product: BlogProductCard }) {
-  if (!product.image) return null;
-  return (
-    <div className="relative mb-3 aspect-square w-full overflow-hidden rounded bg-black/50">
-      <Image
-        src={product.image}
-        alt={product.name}
-        fill
-        className="object-cover"
-        sizes="200px"
-        unoptimized
-      />
-    </div>
   );
 }
