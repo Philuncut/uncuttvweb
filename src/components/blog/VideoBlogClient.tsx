@@ -156,6 +156,7 @@ export default function VideoBlogClient({
           showMoreLabel={t("BLOG_SHOW_MORE")}
           showLessLabel={t("BLOG_SHOW_LESS")}
           closeLabel={t("BLOG_CLOSE")}
+          featuredProductsLabel={t("BLOG_FEATURED_PRODUCTS")}
         />
       )}
     </>

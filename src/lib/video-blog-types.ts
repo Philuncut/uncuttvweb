@@ -10,6 +10,8 @@ export type ShopVideoRow = {
   published_at: string | null;
   featured_products: number[] | null;
   auto_matched_products: number[] | null;
+  /** "auto" = keyword match found, "featured" = fallback (sale/vorverkauf) */
+  match_type?: string | null;
 };
 
 export type BlogProductCard = {

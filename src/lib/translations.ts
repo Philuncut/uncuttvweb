@@ -32,6 +32,7 @@ const translations: Record<string, Record<string, string>> = {
   BLOG_SHOW_MORE: { de: "Mehr anzeigen", en: "Show more" },
   BLOG_SHOW_LESS: { de: "Weniger anzeigen", en: "Show less" },
   BLOG_CLOSE: { de: "Schließen", en: "Close" },
+  BLOG_FEATURED_PRODUCTS: { de: "Aus unserem Shop", en: "From our shop" },
 
   // Shop sections
   JETZT_VORBESTELLEN: { de: "JETZT VORBESTELLEN", en: "PRE-ORDER NOW" },

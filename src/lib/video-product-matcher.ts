@@ -73,6 +73,55 @@ async function searchProductsByKeyword(keyword: string): Promise<WooProduct[]> {
   return filterRecommendableProducts(products);
 }
 
+async function fetchCategoryId(slug: string): Promise<number | null> {
+  const cats = await wooFetch<Array<{ id: number }>>(
+    "/products/categories",
+    { slug },
+    { cache: "no-store" }
+  );
+  if (!Array.isArray(cats) || cats.length === 0) return null;
+  return cats[0].id;
+}
+
+/** Fetches top 3 instock products from "sale" and "vorverkauf" categories, sorted by date_modified. */
+async function fetchFallbackProductIds(): Promise<number[]> {
+  const slugs = ["sale", "vorverkauf"];
+  const catIdResults = await Promise.allSettled(slugs.map(fetchCategoryId));
+  const catIds = catIdResults
+    .map((r) => (r.status === "fulfilled" ? r.value : null))
+    .filter((id): id is number => id !== null);
+
+  if (catIds.length === 0) return [];
+
+  const productResults = await Promise.allSettled(
+    catIds.map((catId) =>
+      wooFetch<WooProductForMatch[]>(
+        "/products",
+        { category: String(catId), per_page: "5", orderby: "modified", order: "desc" },
+        { cache: "no-store" }
+      )
+    )
+  );
+
+  const seen = new Set<number>();
+  const candidates: WooProductForMatch[] = [];
+  for (const result of productResults) {
+    if (result.status === "rejected" || !Array.isArray(result.value)) continue;
+    for (const p of filterRecommendableProducts(result.value) as WooProductForMatch[]) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        candidates.push(p);
+      }
+    }
+  }
+
+  candidates.sort((a, b) =>
+    parseDateModified(b).localeCompare(parseDateModified(a))
+  );
+
+  return candidates.slice(0, 3).map((p) => p.id);
+}
+
 export async function autoMatchProductIds(title: string): Promise<number[]> {
   const keywords = extractTitleKeywords(title);
   if (keywords.length === 0) return [];
@@ -119,4 +168,19 @@ export async function autoMatchProductIds(title: string): Promise<number[]> {
     .sort((a, b) => compareMatchMeta(a[1], b[1]))
     .slice(0, 3)
     .map(([id]) => id);
+}
+
+/**
+ * Resolves product IDs for sync. Tries keyword match first; falls back to
+ * "sale" + "vorverkauf" categories if no specific match found.
+ */
+export async function resolveProductIdsForSync(title: string): Promise<{
+  ids: number[];
+  matchType: "auto" | "featured";
+}> {
+  const autoIds = await autoMatchProductIds(title);
+  if (autoIds.length > 0) return { ids: autoIds, matchType: "auto" };
+
+  const fallbackIds = await fetchFallbackProductIds();
+  return { ids: fallbackIds, matchType: "featured" };
 }

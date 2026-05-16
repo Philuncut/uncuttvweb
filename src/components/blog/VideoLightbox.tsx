@@ -26,6 +26,7 @@ type Props = {
   showMoreLabel: string;
   showLessLabel: string;
   closeLabel: string;
+  featuredProductsLabel: string;
 };
 
 export default function VideoLightbox({
@@ -39,6 +40,7 @@ export default function VideoLightbox({
   showMoreLabel,
   showLessLabel,
   closeLabel,
+  featuredProductsLabel,
 }: Props) {
   const [descExpanded, setDescExpanded] = useState(false);
   const closingRef = useRef(false);
@@ -164,7 +166,11 @@ export default function VideoLightbox({
                   className="mb-4 text-xs font-bold tracking-widest text-white/50"
                   style={{ fontFamily: FONT_BODY }}
                 >
-                  {inVideoLabel.toUpperCase()}
+                  {((video.featured_products?.length ?? 0) > 0 ||
+                    video.match_type !== "featured"
+                    ? inVideoLabel
+                    : featuredProductsLabel
+                  ).toUpperCase()}
                 </h3>
                 <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-3 md:overflow-visible md:px-0 md:snap-none">
                   {products.map((product) => (

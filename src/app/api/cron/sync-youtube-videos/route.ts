@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { autoMatchProductIds } from "@/lib/video-product-matcher";
+import { resolveProductIdsForSync } from "@/lib/video-product-matcher";
 import { forEachBatch, VIDEO_SYNC_BATCH_SIZE } from "@/lib/async-chunks";
 import {
   formatSyncDurationMs,
@@ -166,8 +166,9 @@ export async function GET(request: Request): Promise<Response> {
             .eq("video_id", videoId)
             .maybeSingle();
 
-          const autoMatched = await autoMatchProductIds(title);
-          const row: Omit<ShopVideoRow, "featured_products" | "auto_matched_products"> & {
+          const { ids: autoMatched, matchType } =
+            await resolveProductIdsForSync(title);
+          const row: Omit<ShopVideoRow, "featured_products" | "auto_matched_products" | "match_type"> & {
             featured_products?: number[] | null;
             updated_at?: string;
           } = {
@@ -189,7 +190,8 @@ export async function GET(request: Request): Promise<Response> {
             supabase,
             "shop_youtube_videos",
             row,
-            autoMatched
+            autoMatched,
+            matchType
           );
 
           return existing?.video_id
