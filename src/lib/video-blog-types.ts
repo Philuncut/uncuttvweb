@@ -12,6 +12,10 @@ export type ShopVideoRow = {
   auto_matched_products: number[] | null;
   /** "auto" = keyword match found, "featured" = fallback (sale/vorverkauf) */
   match_type?: string | null;
+  /** Cached English translation of description (empty string = untranslated) */
+  description_en?: string | null;
+  /** MD5 hash of description at translation time — used to detect stale caches */
+  description_hash?: string | null;
 };
 
 export type BlogProductCard = {

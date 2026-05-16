@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "@/lib/LanguageContext";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import type { BlogProductCard, BlogVideoItem } from "@/lib/video-blog-types";
@@ -44,6 +45,7 @@ export default function VideoLightbox({
 }: Props) {
   const [descExpanded, setDescExpanded] = useState(false);
   const closingRef = useRef(false);
+  const { language } = useLanguage();
 
   // Browser back button closes the lightbox instead of navigating away.
   useEffect(() => {
@@ -77,7 +79,9 @@ export default function VideoLightbox({
     onClose();
   };
 
-  const rawDesc = video.description?.trim() ?? "";
+  const descEn = video.description_en?.trim() ?? "";
+  const rawDesc =
+    language === "en" && descEn ? descEn : video.description?.trim() ?? "";
   const needsToggle = rawDesc.length > DESC_THRESHOLD;
   const displayedDesc =
     needsToggle && !descExpanded
