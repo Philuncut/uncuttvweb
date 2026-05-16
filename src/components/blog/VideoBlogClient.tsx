@@ -257,7 +257,7 @@ function VideoCard({
         {/* UncutTV branded play button — overlays iOS default media controls */}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span
-            className="flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition duration-200 ease-out group-hover:scale-110 sm:h-12 sm:w-12"
+            className="flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition duration-200 ease-out group-hover:scale-110 sm:h-10 sm:w-10"
             style={{
               background: "rgba(192, 57, 43, 0.95)",
               boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
@@ -269,7 +269,7 @@ function VideoCard({
             <svg
               viewBox="0 0 24 24"
               fill="white"
-              className="h-6 w-6 sm:h-5 sm:w-5"
+              className="h-6 w-6 sm:h-4 sm:w-4"
               style={{ marginLeft: "2px" }}
               aria-hidden="true"
             >
