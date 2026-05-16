@@ -332,6 +332,7 @@ export default function Navbar() {
         name: null,
         dashboardHref: null,
         isWholesale: false,
+        isNewsletterSubscribed: false,
       });
     } finally {
       setSessionReady(true);

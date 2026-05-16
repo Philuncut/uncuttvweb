@@ -193,6 +193,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Du bist bereits für den Newsletter angemeldet.",
     en: "You are already subscribed to the newsletter.",
   },
+  NEWSLETTER_ALREADY_MEMBER: {
+    de: "Du bist bereits dabei — danke!",
+    en: "You're already subscribed — thank you!",
+  },
   CHECKOUT_QUANTITY: { de: "Menge: {{qty}}", en: "Qty: {{qty}}" },
   CHECKOUT_INVALID_COUPON: { de: "Ungültiger Code.", en: "Invalid code." },
   CHECKOUT_COUPON_VALIDATE_ERROR: {

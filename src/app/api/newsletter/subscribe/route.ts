@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
+import { getCartPersistAuth } from "@/lib/cart-persist-auth";
+import { setNewsletterSubscribedCustomerMeta } from "@/lib/newsletter-customer-meta";
 
 const GHOST_API_URL = process.env.GHOST_API_URL;
 const GHOST_ADMIN_API_KEY = process.env.GHOST_ADMIN_API_KEY;
@@ -18,6 +20,16 @@ function createGhostToken(): string | null {
     Buffer.from(secret, "hex"),
     { algorithm: "HS256", header: { alg: "HS256", kid: id, typ: "JWT" } }
   );
+}
+
+async function markNewsletterSubscribedForLoggedInCustomer(): Promise<void> {
+  try {
+    const auth = await getCartPersistAuth();
+    if (!auth) return;
+    await setNewsletterSubscribedCustomerMeta(auth.customerId);
+  } catch (err) {
+    console.error("[Newsletter] WooCommerce meta write failed:", err);
+  }
 }
 
 async function sendWelcomeEmail(email: string) {
@@ -101,6 +113,7 @@ export async function POST(request: Request) {
     if (!(GHOST_API_URL && GHOST_ADMIN_API_KEY)) {
       console.log("[Newsletter] Ghost not configured, treating as success:", email);
       await sendWelcomeEmail(email);
+      await markNewsletterSubscribedForLoggedInCustomer();
       return NextResponse.json({ success: true });
     }
 
@@ -133,11 +146,13 @@ export async function POST(request: Request) {
     if (res.ok) {
       console.log("[Newsletter] New subscriber:", email);
       await sendWelcomeEmail(email);
+      await markNewsletterSubscribedForLoggedInCustomer();
       return NextResponse.json({ success: true });
     }
 
     if (res.status === 409 || res.status === 422) {
       console.log("[Newsletter] Already subscribed:", email);
+      await markNewsletterSubscribedForLoggedInCustomer();
       return NextResponse.json({
         success: false,
         alreadySubscribed: true,

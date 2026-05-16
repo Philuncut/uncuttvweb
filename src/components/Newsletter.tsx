@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, type FormEvent } from "react";
+import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 
@@ -11,8 +11,31 @@ export default function Newsletter() {
   const [status, setStatus] = useState<NewsletterStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isNewsletterSubscribed, setIsNewsletterSubscribed] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const { language } = useLanguage();
   const t = createT(language);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { isNewsletterSubscribed?: boolean };
+        if (!cancelled) {
+          setIsNewsletterSubscribed(data.isNewsletterSubscribed === true);
+        }
+      } catch {
+        /* guest */
+      } finally {
+        if (!cancelled) setSessionChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -46,8 +69,10 @@ export default function Newsletter() {
         }
 
         if (data.success === true) {
+          setIsNewsletterSubscribed(true);
           setStatus("success");
         } else if (data.alreadySubscribed === true) {
+          setIsNewsletterSubscribed(true);
           setStatus("already");
         } else {
           setStatus("error");
@@ -73,6 +98,16 @@ export default function Newsletter() {
   );
 
   const renderRightColumn = () => {
+    if (sessionChecked && isNewsletterSubscribed && status === "idle") {
+      return (
+        <div className="text-center lg:text-left">
+          <p className="text-sm leading-relaxed text-white/45">
+            {t("NEWSLETTER_ALREADY_MEMBER")}
+          </p>
+        </div>
+      );
+    }
+
     switch (status) {
       case "idle":
         return (

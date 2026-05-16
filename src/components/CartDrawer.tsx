@@ -25,6 +25,39 @@ export default function CartDrawer() {
     setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
   }, [pathname]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { isNewsletterSubscribed?: boolean };
+        if (!cancelled) {
+          setIsNewsletterSubscribed(data.isNewsletterSubscribed === true);
+        }
+      } catch {
+        /* guest or offline */
+      }
+    })();
+    const onSessionChanged = () => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/auth/session", { cache: "no-store" });
+          if (!res.ok) return;
+          const data = (await res.json()) as { isNewsletterSubscribed?: boolean };
+          setIsNewsletterSubscribed(data.isNewsletterSubscribed === true);
+        } catch {
+          /* ignore */
+        }
+      })();
+    };
+    window.addEventListener("uncuttv:session-changed", onSessionChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("uncuttv:session-changed", onSessionChanged);
+    };
+  }, []);
+
   const isB2B =
     (pathname ?? "").startsWith("/haendler") || dealerCookie;
 
@@ -45,6 +78,7 @@ export default function CartDrawer() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [newsletter, setNewsletter] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState("");
+  const [isNewsletterSubscribed, setIsNewsletterSubscribed] = useState(false);
 
   useEffect(() => {
     if (!isB2B) return;
@@ -331,7 +365,7 @@ export default function CartDrawer() {
               </span>
             </div>
 
-            {!isB2B && (
+            {!isB2B && !isNewsletterSubscribed && (
               <div className="mt-4 border border-[#222] bg-[#0a0a0a] p-3">
                 <label className="flex cursor-pointer items-start gap-3">
                   <span

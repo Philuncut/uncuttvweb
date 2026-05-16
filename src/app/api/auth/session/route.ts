@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getCartPersistAuth } from "@/lib/cart-persist-auth";
+import {
+  isNewsletterSubscribedFromMeta,
+} from "@/lib/newsletter-customer-meta";
+import { fetchWooCustomer } from "@/lib/woo-customer-api";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +14,23 @@ export type AuthSessionPayload = {
   name: string | null;
   dashboardHref: string | null;
   isWholesale: boolean;
+  isNewsletterSubscribed: boolean;
 };
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0]?.trim() ?? email;
   return local.replace(/[._]+/g, " ").trim() || email;
+}
+
+async function resolveNewsletterSubscribed(): Promise<boolean> {
+  const auth = await getCartPersistAuth();
+  if (!auth) return false;
+  try {
+    const customer = await fetchWooCustomer(auth.customerId);
+    return isNewsletterSubscribedFromMeta(customer.meta_data);
+  } catch {
+    return false;
+  }
 }
 
 export async function GET() {
@@ -23,6 +40,7 @@ export async function GET() {
     name: null,
     dashboardHref: null,
     isWholesale: false,
+    isNewsletterSubscribed: false,
   };
 
   const cookieStore = await cookies();
@@ -38,12 +56,14 @@ export async function GET() {
   if (haendlerToken && haendlerEmail) {
     const nameCookie = cookieStore.get("haendler_name")?.value?.trim();
     const name = nameCookie || displayNameFromEmail(haendlerEmail);
+    const isNewsletterSubscribed = await resolveNewsletterSubscribed();
     return NextResponse.json({
       isLoggedIn: true,
       type: "haendler",
       name,
       dashboardHref: "/konto",
       isWholesale: haendlerIsWholesale,
+      isNewsletterSubscribed,
     } satisfies AuthSessionPayload);
   }
 
@@ -58,12 +78,14 @@ export async function GET() {
       wooRole === "wholesale" ||
       wooRole === "administrator" ||
       wooRole === "shop_manager";
+    const isNewsletterSubscribed = await resolveNewsletterSubscribed();
     return NextResponse.json({
       isLoggedIn: true,
       type: "customer",
       name,
       dashboardHref: "/konto",
       isWholesale,
+      isNewsletterSubscribed,
     } satisfies AuthSessionPayload);
   }
 

@@ -713,6 +713,7 @@ function CheckoutInner() {
   >([]);
   const [provinceListLoading, setProvinceListLoading] = useState(false);
   const [isWholesale, setIsWholesale] = useState(false);
+  const [isNewsletterSubscribed, setIsNewsletterSubscribed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [company, setCompany] = useState("");
   const [vat, setVat] = useState("");
@@ -729,6 +730,7 @@ function CheckoutInner() {
           if (!cancelled && sessionRes.ok) {
             const s = await sessionRes.json();
             setIsWholesale(s.isWholesale === true);
+            setIsNewsletterSubscribed(s.isNewsletterSubscribed === true);
           }
         } catch {
           /* ignore */
@@ -1975,7 +1977,7 @@ function CheckoutInner() {
           </section>
 
           {/* 10% SPAREN — Newsletter opt-in + WELCOME coupon (B2C / guest only) */}
-          {!isWholesale && !autoCouponApplied && (
+          {!isWholesale && !autoCouponApplied && !isNewsletterSubscribed && (
             <div
               className="mt-8"
               style={{
@@ -1996,11 +1998,13 @@ function CheckoutInner() {
                     .then((r) => r.json())
                     .then((data) => {
                       if (data.alreadySubscribed) {
+                        setIsNewsletterSubscribed(true);
                         setError(t("CHECKOUT_NEWSLETTER_ALREADY"));
                         setNewsletter(false);
                         return;
                       }
                       if (data.success) {
+                        setIsNewsletterSubscribed(true);
                         setCouponName("WELCOME10");
                         setCouponDiscount("−10%");
                         setAutoCouponApplied(true);
