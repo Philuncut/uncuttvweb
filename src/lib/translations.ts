@@ -29,6 +29,8 @@ const translations: Record<string, Record<string, string>> = {
   },
   BLOG_VIDEO_VIEWS: { de: "{{count}} Views", en: "{{count}} views" },
   BLOG_VIDEO_MINUTES: { de: "{{minutes}} Min", en: "{{minutes}} min" },
+  BLOG_SHOW_MORE: { de: "Mehr anzeigen", en: "Show more" },
+  BLOG_SHOW_LESS: { de: "Weniger anzeigen", en: "Show less" },
 
   // Shop sections
   JETZT_VORBESTELLEN: { de: "JETZT VORBESTELLEN", en: "PRE-ORDER NOW" },

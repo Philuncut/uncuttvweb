@@ -2,18 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import type { BlogProductCard, BlogVideoItem } from "@/lib/video-blog-types";
 
 const FONT_HEADING = `'Playfair Display', Georgia, serif`;
 const FONT_BODY = `'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-
-function truncate(text: string, max: number): string {
-  const t = text.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max).trim()}…`;
-}
+const DESC_THRESHOLD = 200;
 
 function productLink(slug: string, videoId: string): string {
   return `/shop/${slug}?source=video&video_id=${encodeURIComponent(videoId)}`;
@@ -27,6 +23,8 @@ type Props = {
   onClose: () => void;
   inVideoLabel: string;
   buyNowLabel: string;
+  showMoreLabel: string;
+  showLessLabel: string;
 };
 
 export default function VideoLightbox({
@@ -37,7 +35,18 @@ export default function VideoLightbox({
   onClose,
   inVideoLabel,
   buyNowLabel,
+  showMoreLabel,
+  showLessLabel,
 }: Props) {
+  const [descExpanded, setDescExpanded] = useState(false);
+
+  const rawDesc = video.description?.trim() ?? "";
+  const needsToggle = rawDesc.length > DESC_THRESHOLD;
+  const displayedDesc =
+    needsToggle && !descExpanded
+      ? `${rawDesc.slice(0, DESC_THRESHOLD).trimEnd()}…`
+      : rawDesc;
+
   return (
     <>
       <div className="fixed inset-0 z-[200] bg-black/90" onClick={onClose} aria-hidden />
@@ -85,13 +94,29 @@ export default function VideoLightbox({
             >
               {video.title}
             </h2>
-            {video.description && (
-              <p
-                className="mt-2 text-sm leading-relaxed text-white/70 sm:text-base"
-                style={{ fontFamily: FONT_BODY }}
-              >
-                {truncate(video.description, 200)}
-              </p>
+            {rawDesc && (
+              <div className="mt-2" style={{ fontFamily: FONT_BODY }}>
+                <p
+                  className="text-sm leading-relaxed text-white/70 sm:text-base"
+                  style={{
+                    overflow: "hidden",
+                    transition: "max-height 300ms ease",
+                    maxHeight: descExpanded ? "1000px" : "4.5em",
+                  }}
+                >
+                  {displayedDesc}
+                </p>
+                {needsToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setDescExpanded((v) => !v)}
+                    className="mt-1 text-sm underline underline-offset-2 text-white/50 hover:text-[#c0392b] transition-colors"
+                    style={{ fontFamily: FONT_BODY }}
+                  >
+                    {descExpanded ? showLessLabel : showMoreLabel}
+                  </button>
+                )}
+              </div>
             )}
             {products.length > 0 && (
               <div className="mt-8">

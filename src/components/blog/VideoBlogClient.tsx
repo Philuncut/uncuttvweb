@@ -153,6 +153,8 @@ export default function VideoBlogClient({
           onClose={closeLightbox}
           inVideoLabel={t("BLOG_IN_VIDEO_SHOWN")}
           buyNowLabel={t("BLOG_BUY_NOW")}
+          showMoreLabel={t("BLOG_SHOW_MORE")}
+          showLessLabel={t("BLOG_SHOW_LESS")}
         />
       )}
     </>
