@@ -155,6 +155,7 @@ export default function VideoBlogClient({
           buyNowLabel={t("BLOG_BUY_NOW")}
           showMoreLabel={t("BLOG_SHOW_MORE")}
           showLessLabel={t("BLOG_SHOW_LESS")}
+          closeLabel={t("BLOG_CLOSE")}
         />
       )}
     </>

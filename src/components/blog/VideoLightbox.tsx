@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import type { BlogProductCard, BlogVideoItem } from "@/lib/video-blog-types";
@@ -25,6 +25,7 @@ type Props = {
   buyNowLabel: string;
   showMoreLabel: string;
   showLessLabel: string;
+  closeLabel: string;
 };
 
 export default function VideoLightbox({
@@ -37,8 +38,42 @@ export default function VideoLightbox({
   buyNowLabel,
   showMoreLabel,
   showLessLabel,
+  closeLabel,
 }: Props) {
   const [descExpanded, setDescExpanded] = useState(false);
+  const closingRef = useRef(false);
+
+  // Browser back button closes the lightbox instead of navigating away.
+  useEffect(() => {
+    history.pushState({ lightboxOpen: true }, "");
+
+    const handlePop = () => {
+      if (!closingRef.current) {
+        closingRef.current = true;
+        onClose();
+      }
+    };
+
+    window.addEventListener("popstate", handlePop);
+    return () => {
+      window.removeEventListener("popstate", handlePop);
+      // If the component was unmounted by an external caller (e.g. Escape key in
+      // parent) without going through handleClose, clean up the history entry.
+      if (!closingRef.current) {
+        history.back();
+      }
+    };
+    // onClose intentionally excluded — effect runs once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleClose = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    // history.back() fires popstate async; listener is removed before it runs.
+    history.back();
+    onClose();
+  };
 
   const rawDesc = video.description?.trim() ?? "";
   const needsToggle = rawDesc.length > DESC_THRESHOLD;
@@ -49,14 +84,14 @@ export default function VideoLightbox({
 
   return (
     <>
-      <div className="fixed inset-0 z-[200] bg-black/90" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 z-[200] bg-black/90" onClick={handleClose} aria-hidden />
       <div
         className="fixed inset-0 z-[201] flex items-stretch justify-center overflow-y-auto overscroll-contain sm:items-center sm:p-4"
         style={{
           paddingTop: "max(0px, env(safe-area-inset-top))",
           paddingBottom: "max(0px, env(safe-area-inset-bottom))",
         }}
-        onClick={onClose}
+        onClick={handleClose}
       >
         <div
           role="dialog"
@@ -66,16 +101,21 @@ export default function VideoLightbox({
           style={{ fontFamily: FONT_BODY }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="sticky top-0 z-20 flex shrink-0 justify-end border-b border-white/10 bg-[#111]/95 px-3 py-2 backdrop-blur-sm">
+          {/* Sticky header bar with enlarged X button */}
+          <div
+            className="sticky top-0 z-20 flex shrink-0 justify-end border-b border-white/10 bg-[#111]/95 px-3 py-2 backdrop-blur-sm"
+            style={{ paddingTop: "max(8px, calc(env(safe-area-inset-top) + 4px))" }}
+          >
             <button
               type="button"
-              onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center text-2xl leading-none text-white/80 transition hover:text-white"
-              aria-label="Close"
+              onClick={handleClose}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl leading-none text-white/80 transition hover:bg-white/20 hover:text-white active:scale-95"
+              aria-label={closeLabel}
             >
               ×
             </button>
           </div>
+
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-4 sm:px-6">
             <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-md bg-black">
               {embedReady && (
@@ -168,6 +208,16 @@ export default function VideoLightbox({
                 </div>
               </div>
             )}
+
+            {/* Bottom close button */}
+            <button
+              type="button"
+              onClick={handleClose}
+              className="mt-8 w-full rounded border border-white/20 bg-black py-3 text-sm font-semibold tracking-wide text-white/80 transition hover:bg-white/10 hover:text-white active:scale-[0.98]"
+              style={{ fontFamily: FONT_BODY }}
+            >
+              {closeLabel}
+            </button>
           </div>
         </div>
       </div>
