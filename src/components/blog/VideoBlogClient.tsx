@@ -237,7 +237,11 @@ function VideoCard({
 
   return (
     <article>
-      <div className="relative aspect-video overflow-hidden rounded bg-black/40">
+      {/* -webkit-touch-callout suppresses iOS Safari's native media overlay on thumbnail images */}
+      <div
+        className="relative aspect-video overflow-hidden rounded bg-black/40"
+        style={{ WebkitTouchCallout: "none" as never, userSelect: "none" }}
+      >
         {video.thumbnail_url ? (
           <Image
             src={video.thumbnail_url}
@@ -250,9 +254,27 @@ function VideoCard({
         ) : (
           <div className="absolute inset-0 bg-white/5" />
         )}
+        {/* UncutTV branded play button — overlays iOS default media controls */}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white">
-            ▶
+          <span
+            className="flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition duration-200 ease-out group-hover:scale-110 sm:h-[72px] sm:w-[72px]"
+            style={{
+              background: "rgba(192, 57, 43, 0.95)",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+              backdropFilter: "blur(2px)",
+              WebkitBackdropFilter: "blur(2px)",
+            }}
+          >
+            {/* Play triangle — 2px right offset for optical centering */}
+            <svg
+              viewBox="0 0 24 24"
+              fill="white"
+              className="h-6 w-6 sm:h-8 sm:w-8"
+              style={{ marginLeft: "2px" }}
+              aria-hidden="true"
+            >
+              <path d="M8 5v14l11-7z" />
+            </svg>
           </span>
         </span>
       </div>
