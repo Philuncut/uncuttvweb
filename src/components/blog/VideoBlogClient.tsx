@@ -6,6 +6,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
 import type { BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
 import VideoLightbox from "@/components/blog/VideoLightbox";
+import BlogSubscribeHero from "@/components/blog/BlogSubscribeHero";
 
 const FONT_HEADING = `'Playfair Display', Georgia, serif`;
 const FONT_BODY = `'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
@@ -72,10 +73,6 @@ export default function VideoBlogClient({
     return () => cancelAnimationFrame(id);
   }, [activeVideo]);
 
-  const subscribeCta = formatTranslation("BLOG_SUBSCRIBE_CTA", language, {
-    count: subscriberCount,
-  });
-
   const embedSrc = activeVideo
     ? tab === "youtube"
       ? `https://www.youtube.com/embed/${activeVideo.video_id}?modestbranding=1&rel=0`
@@ -94,7 +91,7 @@ export default function VideoBlogClient({
 
       <section
         className="flex flex-col items-center justify-center bg-[#0a0a0a] px-4 text-center"
-        style={{ minHeight: "30vh", fontFamily: FONT_BODY }}
+        style={{ minHeight: "20vh", fontFamily: FONT_BODY }}
       >
         <h1
           className="text-3xl font-bold text-white sm:text-4xl md:text-5xl"
@@ -106,6 +103,13 @@ export default function VideoBlogClient({
           {t("BLOG_HERO_SUBTITLE")}
         </p>
       </section>
+
+      <BlogSubscribeHero
+        subscriberCount={subscriberCount}
+        subscribeUrl={subscribeUrl}
+        language={language}
+        t={t}
+      />
 
       <BlogTabs tab={tab} setTab={setTab} t={t} />
 
@@ -128,33 +132,6 @@ export default function VideoBlogClient({
             onOpen={setActiveVideo}
           />
         )}
-      </section>
-
-      <section className="border-t border-white/10 bg-[#0a0a0a] px-4 py-16 text-center">
-        <p className="mb-6 text-lg text-white/90" style={{ fontFamily: FONT_BODY }}>
-          {subscribeCta}
-        </p>
-        <a
-          href={subscribeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-block rounded bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-widest text-white transition hover:bg-[#a93226]"
-        >
-          {t("BLOG_SUBSCRIBE_BUTTON")}
-        </a>
-
-        <div className="mx-auto mt-12 max-w-xl border-t border-white/10 pt-10">
-          <h2
-            className="mb-3 text-lg font-bold text-white"
-            style={{ fontFamily: FONT_BODY }}
-          >
-            {t("BLOG_SUBSCRIBE_HOOK_TITLE")}
-          </h2>
-          <p className="mb-6 text-sm text-white/60" style={{ fontFamily: FONT_BODY }}>
-            {t("BLOG_SUBSCRIBE_HOOK_DESC")}
-          </p>
-          <YouTubeCouponForm language={language} t={t} />
-        </div>
       </section>
 
       {activeVideo && (
@@ -301,87 +278,3 @@ function VideoCard({
   );
 }
 
-type CouponFormStatus = "idle" | "loading" | "success" | "alreadyClaimed" | "error";
-
-function YouTubeCouponForm({
-  language,
-  t,
-}: {
-  language: "de" | "en";
-  t: (k: string) => string;
-}) {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<CouponFormStatus>("idle");
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (status === "loading" || status === "success") return;
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed.includes("@") || !trimmed.includes(".")) return;
-
-    setStatus("loading");
-    try {
-      const res = await fetch("/api/youtube-subscribe-coupon", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, locale: language }),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        alreadyClaimed?: boolean;
-        error?: string;
-      };
-      if (data.ok) {
-        setStatus("success");
-      } else if (data.alreadyClaimed) {
-        setStatus("alreadyClaimed");
-      } else {
-        setStatus("error");
-      }
-    } catch {
-      setStatus("error");
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} noValidate>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder={t("BLOG_SUBSCRIBE_HOOK_PLACEHOLDER")}
-          disabled={status === "loading" || status === "success"}
-          className="w-full rounded border border-white/20 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b] focus:ring-1 focus:ring-[#c0392b] disabled:opacity-50 sm:w-72"
-          style={{ fontFamily: FONT_BODY }}
-        />
-        <button
-          type="submit"
-          disabled={status === "loading" || status === "success"}
-          className="shrink-0 rounded bg-[#c0392b] px-6 py-3 text-xs font-bold tracking-widest text-white transition hover:bg-[#a93226] disabled:cursor-not-allowed disabled:opacity-60"
-          style={{ fontFamily: FONT_BODY }}
-        >
-          {status === "loading"
-            ? t("BLOG_SUBSCRIBE_HOOK_LOADING")
-            : t("BLOG_SUBSCRIBE_HOOK_SUBMIT")}
-        </button>
-      </div>
-      {status === "success" && (
-        <p className="mt-4 text-sm text-green-400" style={{ fontFamily: FONT_BODY }}>
-          {t("BLOG_SUBSCRIBE_HOOK_SUCCESS")}
-        </p>
-      )}
-      {status === "alreadyClaimed" && (
-        <p className="mt-4 text-sm text-yellow-400" style={{ fontFamily: FONT_BODY }}>
-          {t("BLOG_SUBSCRIBE_HOOK_ALREADY")}
-        </p>
-      )}
-      {status === "error" && (
-        <p className="mt-4 text-sm text-red-400" style={{ fontFamily: FONT_BODY }}>
-          {t("BLOG_SUBSCRIBE_HOOK_ERROR")}
-        </p>
-      )}
-    </form>
-  );
-}

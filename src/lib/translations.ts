@@ -14,11 +14,28 @@ const translations: Record<string, Record<string, string>> = {
   BLOG_TAB_VIMEO: { de: "VIMEO", en: "VIMEO" },
   BLOG_IN_VIDEO_SHOWN: { de: "Im Video gezeigt", en: "Featured in this video" },
   BLOG_BUY_NOW: { de: "Jetzt kaufen", en: "Buy now" },
-  BLOG_SUBSCRIBE_CTA: {
-    de: "{{count}} Abonnenten · Werde Teil unserer Community",
-    en: "{{count}} subscribers · Join our community",
+  BLOG_HERO_BANNER_EYEBROW: {
+    de: "FAST GESCHAFFT — HILF UNS ÜBER DIE LINIE",
+    en: "ALMOST THERE — HELP US OVER THE LINE",
   },
-  BLOG_SUBSCRIBE_BUTTON: { de: "ABONNIEREN", en: "SUBSCRIBE" },
+  BLOG_HERO_BANNER_TITLE: {
+    de: "Abonniere & sichere dir 15% Rabatt",
+    en: "Subscribe & get 15% off",
+  },
+  BLOG_HERO_BANNER_SUB: {
+    de: "Folge uns auf YouTube und hol dir einen einmaligen 15% Rabattcode für deine nächste Bestellung.",
+    en: "Follow us on YouTube and get a one-time 15% discount code for your next order.",
+  },
+  BLOG_HERO_STEP_1_TITLE: { de: "Schritt 1", en: "Step 1" },
+  BLOG_HERO_STEP_1_LABEL: { de: "ABONNIEREN", en: "SUBSCRIBE" },
+  BLOG_HERO_STEP_1_BUTTON: { de: "JETZT ABONNIEREN", en: "SUBSCRIBE NOW" },
+  BLOG_HERO_STEP_2_TITLE: { de: "Schritt 2", en: "Step 2" },
+  BLOG_HERO_STEP_2_LABEL: { de: "15% CODE ANFORDERN", en: "GET 15% CODE" },
+  BLOG_HERO_SUBSCRIBER_COUNT: {
+    de: "{{count}} / {{goal}} ABONNENTEN",
+    en: "{{count}} / {{goal}} SUBSCRIBERS",
+  },
+  BLOG_HERO_GOAL_REACHED: { de: "GESCHAFFT! WEITER GEHTS", en: "WE MADE IT! NEXT GOAL AHEAD" },
   BLOG_VIMEO_PLACEHOLDER: {
     de: "Vimeo-Content kommt bald",
     en: "Vimeo content coming soon",
@@ -33,19 +50,7 @@ const translations: Record<string, Record<string, string>> = {
   BLOG_SHOW_LESS: { de: "Weniger anzeigen", en: "Show less" },
   BLOG_CLOSE: { de: "Schließen", en: "Close" },
   BLOG_FEATURED_PRODUCTS: { de: "Aus unserem Shop", en: "From our shop" },
-  BLOG_SUBSCRIBE_HOOK_TITLE: {
-    de: "Bereits abonniert? Hol dir 10% Rabatt!",
-    en: "Already subscribed? Get 10% off!",
-  },
-  BLOG_SUBSCRIBE_HOOK_DESC: {
-    de: "Trag deine Email-Adresse ein und wir schicken dir einen einmaligen 10% Rabattcode für deine nächste Bestellung.",
-    en: "Enter your email address and we'll send you a one-time 10% discount code for your next order.",
-  },
   BLOG_SUBSCRIBE_HOOK_PLACEHOLDER: { de: "deine@email.com", en: "your@email.com" },
-  BLOG_SUBSCRIBE_HOOK_SUBMIT: {
-    de: "10% RABATT-CODE ANFORDERN",
-    en: "GET 10% DISCOUNT CODE",
-  },
   BLOG_SUBSCRIBE_HOOK_LOADING: { de: "Wird gesendet...", en: "Sending..." },
   BLOG_SUBSCRIBE_HOOK_SUCCESS: {
     de: "Check deine Mailbox – Code unterwegs! 💌",
