@@ -267,11 +267,12 @@ export function buildMail2DeHtml(d: AbandonedCartEmailData): string {
             <p style="margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:${COLORS.redBright};">DEIN WARENKORB · TAG 2</p>
             <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">Hast du uns vergessen?</h1>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Hallo ${escapeHtml(d.firstName)},</p>
-            <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">deine Auswahl liegt seit gestern bereit.</p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
-              <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint}. Vielleicht eine Edition die du nicht mehr aus dem Kopf bekommst. Vielleicht hast du sie einfach übersehen im Alltag.
+              dein <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint} wartet noch.
             </p>
-            <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Wir wollten kurz erinnern — falls du noch zugreifen willst.</p>
+            <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
+              Ist das was für dich? Wenn ja, dann schnapp dir's bevor's weg ist. Wir wollten dich nur erinnern.
+            </p>
             ${d.cartItemsBlock}
             <p style="margin:16px 0 0; font-size:14px; color:${COLORS.textMuted};">Gesamt: <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.cartTotal)}</strong></p>
             ${ctaButton("BESTELLUNG ABSCHLIESSEN", d.ctaUrl)}
@@ -297,11 +298,12 @@ export function buildMail2EnHtml(d: AbandonedCartEmailData): string {
             <p style="margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:${COLORS.redBright};">YOUR CART · DAY 2</p>
             <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">Did you forget about us?</h1>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Hi ${escapeHtml(d.firstName)},</p>
-            <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">your selection has been waiting since yesterday.</p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
-              <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint}. Maybe an edition you can't get out of your head. Maybe you just missed it in your daily routine.
+              your <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint} is still waiting.
             </p>
-            <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">We wanted to remind you — in case you still want to grab it.</p>
+            <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
+              Is this for you? If yes, grab it before it's gone. Just wanted to remind you.
+            </p>
             ${d.cartItemsBlock}
             <p style="margin:16px 0 0; font-size:14px; color:${COLORS.textMuted};">Total: <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.cartTotal)}</strong></p>
             ${ctaButton("COMPLETE YOUR ORDER", d.ctaUrl)}
