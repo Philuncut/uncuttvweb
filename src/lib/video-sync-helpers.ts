@@ -16,6 +16,11 @@ export function resendConfigured(): boolean {
   return !!k && k !== "your_resend_api_key";
 }
 
+export function formatSyncDurationMs(startedAt: number): string {
+  const seconds = (Date.now() - startedAt) / 1000;
+  return `${seconds.toFixed(1)}s`;
+}
+
 export async function sendVideoSyncSummaryEmail(
   subject: string,
   body: string

@@ -1,14 +1,16 @@
 import { getSupabaseAdmin } from "@/lib/supabase-server";
 import { autoMatchProductIds } from "@/lib/video-product-matcher";
+import { forEachBatch, VIDEO_SYNC_BATCH_SIZE } from "@/lib/async-chunks";
 import {
+  formatSyncDurationMs,
   parseIso8601Duration,
   sendVideoSyncSummaryEmail,
   verifyVideoSyncCronAuth,
 } from "@/lib/video-sync-helpers";
 import type { ShopVideoRow } from "@/lib/video-blog-types";
 
-export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 
 type YouTubePlaylistItem = {
   snippet?: {
@@ -96,6 +98,8 @@ function thumbnailFromSnippet(
 }
 
 export async function GET(request: Request): Promise<Response> {
+  const startedAt = Date.now();
+
   if (!verifyVideoSyncCronAuth(request)) {
     return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
       status: 401,
@@ -138,51 +142,65 @@ export async function GET(request: Request): Promise<Response> {
     const videos = await fetchRecentYouTubeVideos(playlistId, apiKey);
     checked = videos.length;
 
-    for (const video of videos) {
-      const videoId = video.id;
-      const title = video.snippet?.title?.trim();
-      if (!videoId || !title) continue;
+    const outcomes = await forEachBatch(
+      videos,
+      VIDEO_SYNC_BATCH_SIZE,
+      "YouTube-Sync",
+      async (video) => {
+        const videoId = video.id;
+        const title = video.snippet?.title?.trim();
+        if (!videoId || !title) return { outcome: "skipped" as const };
 
-      try {
-        const { data: existing } = await supabase
-          .from("shop_youtube_videos")
-          .select("video_id")
-          .eq("video_id", videoId)
-          .maybeSingle();
+        try {
+          const { data: existing } = await supabase
+            .from("shop_youtube_videos")
+            .select("video_id")
+            .eq("video_id", videoId)
+            .maybeSingle();
 
-        const auto_matched_products = await autoMatchProductIds(title);
-        const row: Omit<ShopVideoRow, "featured_products"> & {
-          featured_products?: number[] | null;
-          updated_at?: string;
-        } = {
-          video_id: videoId,
-          title,
-          description: video.snippet?.description ?? null,
-          thumbnail_url: thumbnailFromSnippet(video.snippet),
-          view_count: video.statistics?.viewCount
-            ? parseInt(video.statistics.viewCount, 10)
-            : 0,
-          duration_seconds: parseIso8601Duration(
-            video.contentDetails?.duration
-          ),
-          published_at: video.snippet?.publishedAt ?? null,
-          auto_matched_products,
-          updated_at: new Date().toISOString(),
-        };
+          const auto_matched_products = await autoMatchProductIds(title);
+          const row: Omit<ShopVideoRow, "featured_products"> & {
+            featured_products?: number[] | null;
+            updated_at?: string;
+          } = {
+            video_id: videoId,
+            title,
+            description: video.snippet?.description ?? null,
+            thumbnail_url: thumbnailFromSnippet(video.snippet),
+            view_count: video.statistics?.viewCount
+              ? parseInt(video.statistics.viewCount, 10)
+              : 0,
+            duration_seconds: parseIso8601Duration(
+              video.contentDetails?.duration
+            ),
+            published_at: video.snippet?.publishedAt ?? null,
+            auto_matched_products,
+            updated_at: new Date().toISOString(),
+          };
 
-        const { error: upsertError } = await supabase
-          .from("shop_youtube_videos")
-          .upsert(row, { onConflict: "video_id" });
+          const { error: upsertError } = await supabase
+            .from("shop_youtube_videos")
+            .upsert(row, { onConflict: "video_id" });
 
-        if (upsertError) throw new Error(upsertError.message);
+          if (upsertError) throw new Error(upsertError.message);
 
-        if (existing?.video_id) updated += 1;
-        else created += 1;
-      } catch (err) {
+          return existing?.video_id
+            ? ({ outcome: "updated" as const })
+            : ({ outcome: "created" as const });
+        } catch (err) {
+          const note = `${videoId}: ${err instanceof Error ? err.message : String(err)}`;
+          console.error("[YouTube-Sync] video error", note);
+          return { outcome: "error" as const, message: note };
+        }
+      }
+    );
+
+    for (const result of outcomes) {
+      if (result.outcome === "created") created += 1;
+      else if (result.outcome === "updated") updated += 1;
+      else if (result.outcome === "error") {
         errors += 1;
-        const note = `${videoId}: ${err instanceof Error ? err.message : String(err)}`;
-        errorNotes.push(note);
-        console.error("[YouTube-Sync] video error", note);
+        errorNotes.push(result.message);
       }
     }
   } catch (err) {
@@ -192,7 +210,8 @@ export async function GET(request: Request): Promise<Response> {
     console.error("[YouTube-Sync] fatal", note);
   }
 
-  const summary = `[YouTube-Sync] ${checked} videos checked, ${updated} updated, ${created} new, ${errors} errors`;
+  const duration = formatSyncDurationMs(startedAt);
+  const summary = `[YouTube-Sync] ${checked} videos checked, ${updated} updated, ${created} new, ${errors} errors, duration ${duration}`;
   console.log(summary, errorNotes.length ? errorNotes : "");
   await sendVideoSyncSummaryEmail("[YouTube-Sync] daily summary", summary);
 
@@ -202,5 +221,6 @@ export async function GET(request: Request): Promise<Response> {
     updated,
     created,
     errors,
+    durationMs: Date.now() - startedAt,
   });
 }
