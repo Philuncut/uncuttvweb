@@ -188,7 +188,7 @@ function wrapEmail(
 // --- Mail 1 DE ---
 
 export function buildMail1DeSubject(): string {
-  return "Du hattest da was in den Händen";
+  return "Da war doch noch was";
 }
 
 export function buildMail1DeHtml(d: AbandonedCartEmailData): string {
@@ -201,13 +201,13 @@ export function buildMail1DeHtml(d: AbandonedCartEmailData): string {
     "de",
     `
             <p style="margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:${COLORS.redBright};">DEIN WARENKORB</p>
-            <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">Du hattest da was in den Händen</h1>
+            <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">Da war doch noch was</h1>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Hallo ${escapeHtml(d.firstName)},</p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
               du hattest gerade noch was im Warenkorb. <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint}.
             </p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
-              Vielleicht hat dich was abgelenkt. Vielleicht wolltest du nur kurz nachdenken. Vielleicht warten deine Sachen einfach nur darauf, abgeholt zu werden.
+              Vielleicht hat dich was abgelenkt. Vielleicht wolltest du nur kurz nachdenken wo du das alles in deine Filmsammlung packst. Vielleicht warten deine Sachen einfach nur darauf, abgeholt zu werden.
             </p>
             <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Wir halten alles für dich bereit.</p>
             ${d.cartItemsBlock}
@@ -220,7 +220,7 @@ export function buildMail1DeHtml(d: AbandonedCartEmailData): string {
 // --- Mail 1 EN ---
 
 export function buildMail1EnSubject(): string {
-  return "You had something in your hands";
+  return "Wasn't there something else?";
 }
 
 export function buildMail1EnHtml(d: AbandonedCartEmailData): string {
@@ -233,13 +233,13 @@ export function buildMail1EnHtml(d: AbandonedCartEmailData): string {
     "en",
     `
             <p style="margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:${COLORS.redBright};">YOUR CART</p>
-            <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">You had something in your hands</h1>
+            <h1 style="margin:0 0 28px; font-family:${FONT_STACK_HEADING}; font-size:28px; font-weight:900; line-height:1.2; color:${COLORS.textPrimary};">Wasn't there something else?</h1>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">Hi ${escapeHtml(d.firstName)},</p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
               you had something in your cart just now. <strong style="color:${COLORS.textPrimary};">${escapeHtml(d.productName)}</strong>${hint}.
             </p>
             <p style="margin:0 0 20px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">
-              Maybe something distracted you. Maybe you wanted to think it over. Maybe your things are just waiting to be picked up.
+              Maybe something distracted you. Maybe you just needed a moment to think about where to fit it all into your film collection. Maybe your things are just waiting to be picked up.
             </p>
             <p style="margin:0 0 8px; font-size:15px; line-height:1.75; color:${COLORS.textSecondary};">We've kept everything ready for you.</p>
             ${d.cartItemsBlock}
