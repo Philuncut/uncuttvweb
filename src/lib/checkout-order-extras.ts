@@ -53,11 +53,17 @@ export function buildCheckoutShippingBody(
   return { checkoutShipping: shipping };
 }
 
+export type VideoUtmCheckoutPayload = {
+  source: string;
+  videoId: string;
+};
+
 export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
   ReturnType<typeof buildCheckoutOrderExtras> & {
     checkoutShipping?: CheckoutShippingForWoo;
     isReverseCharge?: boolean;
     isWholesale?: boolean;
+    videoUtm?: VideoUtmCheckoutPayload;
   };
 
 const PAYLOAD_PREFIX = "checkout_pi_payload_";

@@ -6,6 +6,10 @@ import type { CartItem } from "@/lib/CartContext";
 import { getVatRateForCountry } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
+import {
+  buildVideoUtmOrderMeta,
+  type VideoUtmInput,
+} from "@/lib/video-utm-server";
 
 interface Body {
   items: CartItem[];
@@ -29,6 +33,7 @@ interface Body {
   };
   /** Echoed in PI metadata for success page / receipts (e.g. GLS, Post.at). */
   shippingMethodTitle?: string;
+  videoUtm?: VideoUtmInput;
 }
 
 export async function POST(request: Request) {
@@ -42,7 +47,10 @@ export async function POST(request: Request) {
       taxCountry,
       shippingForStripe,
       shippingMethodTitle,
+      videoUtm,
     } = (await request.json()) as Body;
+
+    const videoUtmMeta = await buildVideoUtmOrderMeta(videoUtm);
 
     const resolvedCountry =
       isWholesale === true
@@ -196,6 +204,15 @@ export async function POST(request: Request) {
         is_wholesale: isWholesale === true ? "true" : "false",
         shipping_method_title: metaShipTitle,
         shipping_country: metaShipCountry,
+        ...(videoUtmMeta[0]
+          ? { utm_source: String(videoUtmMeta[0].value) }
+          : {}),
+        ...(videoUtmMeta[1]
+          ? { utm_video_id: String(videoUtmMeta[1].value) }
+          : {}),
+        ...(videoUtmMeta[2]
+          ? { utm_video_title: String(videoUtmMeta[2].value) }
+          : {}),
       },
     });
 

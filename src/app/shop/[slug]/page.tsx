@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import VideoUtmCapture from "@/components/blog/VideoUtmCapture";
 import { wooFetch } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
 import Navbar from "@/components/Navbar";
@@ -97,6 +99,9 @@ export default async function ProductPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
+      <Suspense fallback={null}>
+        <VideoUtmCapture />
+      </Suspense>
       <Navbar />
       <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
         <ProductDetail

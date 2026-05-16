@@ -34,6 +34,7 @@ import {
   persistCheckoutSyncPayload,
   type CheckoutShippingForWoo,
 } from "@/lib/checkout-order-extras";
+import { clearVideoUtmStorage, videoUtmRequestField } from "@/lib/video-utm";
 import { standardVatFraction } from "@/lib/woo-vat-split";
 import { getShippingLogo } from "@/components/ShippingLogos";
 import { filterDeAtShippingRatesForDisplay } from "@/lib/filter-de-at-shipping-rates";
@@ -1229,6 +1230,7 @@ function CheckoutInner() {
                 },
                 shippingMethodTitle: shipLabel.trim() || undefined,
               }),
+          ...videoUtmRequestField(),
         }),
       });
       const data = (await res.json()) as {
@@ -1507,6 +1509,7 @@ function CheckoutInner() {
               ...buildCheckoutShippingBody(checkoutShippingForWoo),
               ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
               ...(isWholesale ? { isWholesale: true } : {}),
+              ...videoUtmRequestField(),
             };
             await fetch("/api/sync-order", {
               method: "POST",
@@ -1518,6 +1521,7 @@ function CheckoutInner() {
             // non-blocking
           }
           clearCart();
+          clearVideoUtmStorage();
           router.push(
             "/bestellung/erfolg?payment_intent=" + paymentIntent.id
           );
@@ -1532,6 +1536,7 @@ function CheckoutInner() {
             ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
             ...(isWholesale ? { isWholesale: true } : {}),
             locale: language,
+            ...videoUtmRequestField(),
           };
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
@@ -1541,6 +1546,7 @@ function CheckoutInner() {
           const data = await res.json();
           if (data.success) {
             clearCart();
+            clearVideoUtmStorage();
             router.push(
               "/bestellung/erfolg?method=bank&order=" +
                 data.orderNumber +
@@ -1617,6 +1623,7 @@ function CheckoutInner() {
               : {}),
             isReverseCharge: wholesaleReverseCharge,
             ...(isWholesale ? { isWholesale: true } : {}),
+            ...videoUtmRequestField(),
           });
         }
 
@@ -1681,6 +1688,7 @@ function CheckoutInner() {
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
         };
         await fetch("/api/sync-order", {
           method: "POST",
@@ -1691,6 +1699,7 @@ function CheckoutInner() {
         // non-blocking
       }
       clearCart();
+      clearVideoUtmStorage();
       router.push("/bestellung/erfolg?method=paypal");
     },
     [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge, isWholesale]

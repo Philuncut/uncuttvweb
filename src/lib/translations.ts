@@ -4,6 +4,31 @@ const translations: Record<string, Record<string, string>> = {
   SHOP: { de: "SHOP", en: "SHOP" },
   MEIN_KONTO: { de: "MEIN KONTO", en: "MY ACCOUNT" },
   HAENDLER: { de: "HÄNDLER", en: "DEALERS" },
+  BLOG: { de: "BLOG", en: "BLOG" },
+  BLOG_HERO_TITLE: { de: "Über 300 Videos.", en: "More than 300 videos." },
+  BLOG_HERO_SUBTITLE: {
+    de: "Reviews, Interviews, Festivalberichte. Tief im Genre.",
+    en: "Reviews, interviews, festival reports. Deep in the genre.",
+  },
+  BLOG_TAB_YOUTUBE: { de: "YOUTUBE", en: "YOUTUBE" },
+  BLOG_TAB_VIMEO: { de: "VIMEO", en: "VIMEO" },
+  BLOG_IN_VIDEO_SHOWN: { de: "Im Video gezeigt", en: "Featured in this video" },
+  BLOG_BUY_NOW: { de: "Jetzt kaufen", en: "Buy now" },
+  BLOG_SUBSCRIBE_CTA: {
+    de: "{{count}} Abonnenten · Werde Teil unserer Community",
+    en: "{{count}} subscribers · Join our community",
+  },
+  BLOG_SUBSCRIBE_BUTTON: { de: "ABONNIEREN", en: "SUBSCRIBE" },
+  BLOG_VIMEO_PLACEHOLDER: {
+    de: "Vimeo-Content kommt bald",
+    en: "Vimeo content coming soon",
+  },
+  BLOG_EMPTY_STATE: {
+    de: "Videos werden bald hier erscheinen",
+    en: "Videos will appear here soon",
+  },
+  BLOG_VIDEO_VIEWS: { de: "{{count}} Views", en: "{{count}} views" },
+  BLOG_VIDEO_MINUTES: { de: "{{minutes}} Min", en: "{{minutes}} min" },
 
   // Shop sections
   JETZT_VORBESTELLEN: { de: "JETZT VORBESTELLEN", en: "PRE-ORDER NOW" },

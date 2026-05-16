@@ -15,6 +15,7 @@ import { parsePrice } from "@/lib/parse-price";
 import { getShippingLogo } from "@/components/ShippingLogos";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation, getTranslation } from "@/lib/translations";
+import { clearVideoUtmStorage } from "@/lib/video-utm";
 
 interface OrderDetails {
   customerName: string;
@@ -79,6 +80,7 @@ export default function OrderSuccess() {
         // Bank transfer — no Stripe details to fetch
         if (method === "bank") {
           clearCart();
+          clearVideoUtmStorage();
           let wholesale = searchParams.get("wholesale") === "1";
           if (!wholesale) {
             try {
@@ -216,6 +218,7 @@ export default function OrderSuccess() {
                     ? { isReverseCharge: true }
                     : {}),
                   ...(stored?.isWholesale ? { isWholesale: true } : {}),
+                  ...(stored?.videoUtm ? { videoUtm: stored.videoUtm } : {}),
                 }),
               });
             }
@@ -223,6 +226,7 @@ export default function OrderSuccess() {
         }
 
         clearCart();
+        clearVideoUtmStorage();
       } catch {
         setError(getTranslation("ORDER_SUCCESS_LOAD_FAILED", language));
       } finally {

@@ -19,6 +19,11 @@ import {
   enqueueWholesaleOfficeNotification,
 } from "@/lib/notify-wholesale-order";
 import { formatTranslation, getTranslation } from "@/lib/translations";
+import {
+  buildVideoUtmOrderMeta,
+  mergeVideoUtmIntoMeta,
+  type VideoUtmInput,
+} from "@/lib/video-utm-server";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -54,6 +59,7 @@ interface Body {
   isReverseCharge?: boolean;
   isWholesale?: boolean;
   locale?: "de" | "en";
+  videoUtm?: VideoUtmInput;
 }
 
 async function sendBankTransferEmail(
@@ -293,10 +299,13 @@ export async function POST(request: Request) {
 
     const taxCountry = billing.country || customer.country || "";
 
-    const meta_data =
+    const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
+    const meta_data = mergeVideoUtmIntoMeta(
       bodyMeta && bodyMeta.length > 0
         ? [...bodyMeta].filter((e) => e.key !== "_eu_vat_guard_order_vat_exempt")
-        : undefined;
+        : undefined,
+      videoUtmMeta
+    );
 
     const orderData: Record<string, unknown> = {
       status: "pending",

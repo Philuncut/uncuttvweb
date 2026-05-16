@@ -14,6 +14,11 @@ import {
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
 import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
+import {
+  buildVideoUtmOrderMeta,
+  mergeVideoUtmIntoMeta,
+  type VideoUtmInput,
+} from "@/lib/video-utm-server";
 
 interface CartMeta {
   id: number;
@@ -55,6 +60,7 @@ interface SyncBody {
     rate_id?: string;
     instance_id?: number;
   };
+  videoUtm?: VideoUtmInput;
 }
 
 function asString(value: unknown): string {
@@ -486,6 +492,8 @@ export async function POST(request: Request) {
       vatFromFrontendMeta,
       profileVat
     );
+    const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
+    mergedMeta = mergeVideoUtmIntoMeta(mergedMeta, videoUtmMeta);
     mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
     mergedMeta = appendThirdCountryExportMeta(mergedMeta, isThirdCountryB2c);
     if (mergedMeta && mergedMeta.length > 0) {
