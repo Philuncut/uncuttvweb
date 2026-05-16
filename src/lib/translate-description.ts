@@ -19,9 +19,9 @@ export async function translateDescriptionToEnglish(
   if (!trimmed) return "";
   if (trimmed.length < MIN_LENGTH_TO_TRANSLATE) return trimmed;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const apiKey = process.env.ANTHROPIC_API_KEY2?.trim();
   if (!apiKey || apiKey === "your_anthropic_api_key") {
-    console.warn("[translate-description] ANTHROPIC_API_KEY not set, skipping translation");
+    console.warn("[translate-description] ANTHROPIC_API_KEY2 not set, skipping translation");
     return "";
   }
 
