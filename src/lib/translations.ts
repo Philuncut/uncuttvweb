@@ -57,6 +57,84 @@ const translations: Record<string, Record<string, string>> = {
   LAND: { de: "LAND", en: "COUNTRY" },
   KREDITKARTE: { de: "KREDITKARTE", en: "CREDIT CARD" },
   UEBERWEISUNG: { de: "ÜBERWEISUNG", en: "BANK TRANSFER" },
+  BANK_TEXT_B2C: {
+    de: "Bitte überweise den Betrag innerhalb von 5 Werktagen an:",
+    en: "Please transfer the amount within 5 business days to:",
+  },
+  BANK_TEXT_WHOLESALE: {
+    de: "Bitte überweise den Betrag innerhalb von 14 Tagen an:",
+    en: "Please transfer the amount within 14 days to:",
+  },
+  BANK_HINT_WHOLESALE: {
+    de: "Hinweis: Bei ausstehender Zahlung erhältst du automatische Erinnerungen nach 7, 12 und 13 Tagen. Nach 14 Tagen ohne Zahlungseingang wird die Bestellung automatisch storniert.",
+    en: "Note: If payment is outstanding, you will receive automatic reminders on days 7, 12 and 13. After 14 days without payment, the order will be cancelled automatically.",
+  },
+
+  // Order success page
+  ORDER_SUCCESS_NONE: { de: "Keine Bestellung gefunden.", en: "No order found." },
+  ORDER_SUCCESS_PAYMENT_PROCESSING_TITLE: {
+    de: "ZAHLUNG WIRD VERARBEITET",
+    en: "PAYMENT PROCESSING",
+  },
+  ORDER_SUCCESS_PAYMENT_PROCESSING_BODY: {
+    de: "Deine Zahlung wird noch verarbeitet. Du erhältst eine Bestätigungs-E-Mail sobald die Zahlung abgeschlossen ist.",
+    en: "Your payment is still being processed. You will receive a confirmation email once payment is complete.",
+  },
+  ORDER_SUCCESS_PAYMENT_FAILED_TITLE: {
+    de: "ZAHLUNG FEHLGESCHLAGEN",
+    en: "PAYMENT FAILED",
+  },
+  ORDER_SUCCESS_PAYMENT_FAILED_BODY: {
+    de: "Die Zahlung ist fehlgeschlagen. Bitte versuche es erneut.",
+    en: "Payment failed. Please try again.",
+  },
+  ORDER_SUCCESS_LOAD_FAILED: {
+    de: "Bestellung konnte nicht geladen werden.",
+    en: "Order could not be loaded.",
+  },
+  ORDER_SUCCESS_RETRY: { de: "ERNEUT VERSUCHEN", en: "TRY AGAIN" },
+  ORDER_SUCCESS_BACK_TO_SHOP: { de: "ZURÜCK ZUM SHOP", en: "BACK TO SHOP" },
+  ORDER_SUCCESS_BANK_TITLE: { de: "BESTELLUNG EINGEGANGEN", en: "ORDER RECEIVED" },
+  ORDER_SUCCESS_BANK_THANKS: {
+    de: "Vielen Dank! Deine Bestellung{{order}} wurde erfasst.",
+    en: "Thank you! Your order{{order}} has been received.",
+  },
+  ORDER_SUCCESS_TITLE: { de: "BESTELLUNG ERFOLGREICH", en: "ORDER SUCCESSFUL" },
+  ORDER_SUCCESS_PAID_THANKS: {
+    de: "Vielen Dank für deine Bestellung! Du erhältst eine Bestätigungs-E-Mail",
+    en: "Thank you for your order! You will receive a confirmation email",
+  },
+  ORDER_SUCCESS_PAID_THANKS_AT: { de: "an", en: "at" },
+  ORDER_SUCCESS_SUMMARY: { de: "ZUSAMMENFASSUNG", en: "SUMMARY" },
+  ORDER_SUCCESS_WHOLESALE_SHIPPING: {
+    de: "WHOLESALE-VERSAND",
+    en: "WHOLESALE SHIPPING",
+  },
+  ORDER_SUCCESS_SHIPPING_DEFAULT: { de: "VERSAND", en: "SHIPPING" },
+
+  // Bank order confirmation email (Resend)
+  EMAIL_ORDER_CONFIRMATION: { de: "Bestellbestätigung", en: "Order confirmation" },
+  EMAIL_BANK_SUBJECT: {
+    de: "Deine Bestellung bei UncutTV – Zahlungsdetails",
+    en: "Your UncutTV order – payment details",
+  },
+  EMAIL_BANK_GREETING: {
+    de: "Hallo {{name}},<br/><br/>vielen Dank für deine Bestellung <strong style=\"color:#fff;\">#{{order}}</strong>.",
+    en: "Hello {{name}},<br/><br/>Thank you for your order <strong style=\"color:#fff;\">#{{order}}</strong>.",
+  },
+  EMAIL_ORDER_OVERVIEW: { de: "Bestellübersicht", en: "Order summary" },
+  EMAIL_FOOTER_AFTER_PAYMENT: {
+    de: "Nach Zahlungseingang wird deine Bestellung umgehend versendet. Bei Fragen kontaktiere uns unter",
+    en: "Your order will be shipped as soon as we receive your payment. If you have any questions, contact us at",
+  },
+  EMAIL_ACCOUNT_HOLDER: { de: "Kontoinhaber:", en: "Account holder:" },
+  EMAIL_BANK_LABEL: { de: "Bank:", en: "Bank:" },
+  EMAIL_PAYMENT_REFERENCE: { de: "Verwendungszweck:", en: "Payment reference:" },
+  EMAIL_ORDER_REFERENCE_VALUE: {
+    de: "Bestellung #{{order}}",
+    en: "Order #{{order}}",
+  },
+
   ZWISCHENSUMME: { de: "Zwischensumme", en: "Subtotal" },
   RABATT: { de: "Rabatt", en: "Discount" },
   SSL_HINWEIS: { de: "Sichere SSL-Verschlüsselung", en: "Secure SSL encryption" },
@@ -138,6 +216,18 @@ const detailLabels: Record<string, string> = {
 
 export function getTranslation(key: string, lang: "de" | "en"): string {
   return translations[key]?.[lang] || translations[key]?.de || key;
+}
+
+export function formatTranslation(
+  key: string,
+  lang: "de" | "en",
+  vars: Record<string, string> = {}
+): string {
+  let text = getTranslation(key, lang);
+  for (const [name, value] of Object.entries(vars)) {
+    text = text.replaceAll(`{{${name}}}`, value);
+  }
+  return text;
 }
 
 export function translateCategoryName(name: string, lang: "de" | "en"): string {

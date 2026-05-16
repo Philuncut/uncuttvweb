@@ -41,6 +41,8 @@ import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
+import { useLanguage } from "@/lib/LanguageContext";
+import { createT } from "@/lib/translations";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -655,6 +657,8 @@ function CheckoutInner() {
   const elements = useElements();
   const router = useRouter();
   const { items, totalPrice, clearCart } = useCart();
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
 
   const [email, setEmail] = useState("");
   const [newsletter, setNewsletter] = useState(false);
@@ -1272,6 +1276,10 @@ function CheckoutInner() {
     [isWholesale, couponDiscount]
   );
 
+  const bankPaymentText = isWholesale
+    ? t("BANK_TEXT_WHOLESALE")
+    : t("BANK_TEXT_B2C");
+
   const checkoutShippingForWoo = useMemo((): CheckoutShippingForWoo | null => {
     if (!shipResolved || shipError) return null;
     if (shipNoZone || shipRate === null) return null;
@@ -1491,6 +1499,7 @@ function CheckoutInner() {
             ...buildCheckoutShippingBody(checkoutShippingForWoo),
             ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
             ...(isWholesale ? { isWholesale: true } : {}),
+            locale: language,
           };
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
@@ -1501,7 +1510,9 @@ function CheckoutInner() {
           if (data.success) {
             clearCart();
             router.push(
-              "/bestellung/erfolg?method=bank&order=" + data.orderNumber
+              "/bestellung/erfolg?method=bank&order=" +
+                data.orderNumber +
+                (isWholesale ? "&wholesale=1" : "")
             );
           } else {
             setError(data.error || "Bestellung fehlgeschlagen.");
@@ -2028,7 +2039,7 @@ function CheckoutInner() {
               {paymentMethod === "bank" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   <p className="text-xs leading-relaxed text-white/50">
-                    Bitte überweise den Betrag innerhalb von 5 Werktagen an:
+                    {bankPaymentText}
                     <br /><br />
                     <strong style={{ color: "rgba(255,255,255,0.8)" }}>
                       UncutTV GmbH<br />
@@ -2037,6 +2048,18 @@ function CheckoutInner() {
                       BIC: RZTIAT22
                     </strong>
                   </p>
+                  {isWholesale && (
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#888",
+                        marginTop: "12px",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      {t("BANK_HINT_WHOLESALE")}
+                    </p>
+                  )}
                 </div>
               )}
 

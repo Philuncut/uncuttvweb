@@ -18,6 +18,7 @@ import {
   billingVatFromOrderMeta,
   enqueueWholesaleOfficeNotification,
 } from "@/lib/notify-wholesale-order";
+import { formatTranslation, getTranslation } from "@/lib/translations";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
@@ -52,6 +53,7 @@ interface Body {
   };
   isReverseCharge?: boolean;
   isWholesale?: boolean;
+  locale?: "de" | "en";
 }
 
 async function sendBankTransferEmail(
@@ -59,12 +61,37 @@ async function sendBankTransferEmail(
   customerName: string,
   orderNumber: string,
   items: CartMeta[],
-  total: string
+  total: string,
+  options: { isWholesale: boolean; locale: "de" | "en" }
 ) {
   if (!RESEND_API_KEY || RESEND_API_KEY === "your_resend_api_key") {
     console.log("[BankOrder] No Resend API key, skipping email");
     return;
   }
+
+  const { isWholesale, locale } = options;
+  const bankPaymentText = getTranslation(
+    isWholesale ? "BANK_TEXT_WHOLESALE" : "BANK_TEXT_B2C",
+    locale
+  );
+  const bankHint = isWholesale
+    ? getTranslation("BANK_HINT_WHOLESALE", locale)
+    : "";
+  const thanksLine = formatTranslation("EMAIL_BANK_GREETING", locale, {
+    name: customerName,
+    order: orderNumber,
+  });
+  const orderOverviewTitle = getTranslation("EMAIL_ORDER_OVERVIEW", locale);
+  const footerNote = getTranslation("EMAIL_FOOTER_AFTER_PAYMENT", locale);
+  const emailSubject = getTranslation("EMAIL_BANK_SUBJECT", locale);
+  const confirmationLabel = getTranslation("EMAIL_ORDER_CONFIRMATION", locale);
+  const accountHolderLabel = getTranslation("EMAIL_ACCOUNT_HOLDER", locale);
+  const bankLabel = getTranslation("EMAIL_BANK_LABEL", locale);
+  const referenceLabel = getTranslation("EMAIL_PAYMENT_REFERENCE", locale);
+  const referenceValue = formatTranslation("EMAIL_ORDER_REFERENCE_VALUE", locale, {
+    order: orderNumber,
+  });
+  const totalLabel = getTranslation("GESAMT", locale);
 
   const itemRows = items
     .map((item) => {
@@ -82,24 +109,23 @@ async function sendBankTransferEmail(
       <h1 style="font-size:28px;font-weight:900;letter-spacing:0.05em;margin:0;">
         <span style="color:#fff;">UNCUT</span><span style="color:#c0392b;">TV</span>
       </h1>
-      <p style="color:#888;font-size:14px;margin-top:8px;">Bestellbestätigung</p>
+      <p style="color:#888;font-size:14px;margin-top:8px;">${confirmationLabel}</p>
 
       <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
 
       <p style="font-size:16px;line-height:1.6;color:#ccc;">
-        Hallo ${customerName},<br/><br/>
-        vielen Dank für deine Bestellung <strong style="color:#fff;">#${orderNumber}</strong>.
-        Bitte überweise den Betrag innerhalb von <strong style="color:#fff;">5 Werktagen</strong> an folgendes Konto:
+        ${thanksLine}
+        ${bankPaymentText}
       </p>
 
       <div style="margin:24px 0;padding:20px;border:1px solid #222;background:#111;">
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           <tr>
-            <td style="padding:4px 0;color:#888;">Kontoinhaber:</td>
+            <td style="padding:4px 0;color:#888;">${accountHolderLabel}</td>
             <td style="padding:4px 0;color:#fff;text-align:right;font-weight:bold;">UncutTV GmbH</td>
           </tr>
           <tr>
-            <td style="padding:4px 0;color:#888;">Bank:</td>
+            <td style="padding:4px 0;color:#888;">${bankLabel}</td>
             <td style="padding:4px 0;color:#fff;text-align:right;">Raiffeisen Landesbank Tirol AG</td>
           </tr>
           <tr>
@@ -111,17 +137,22 @@ async function sendBankTransferEmail(
             <td style="padding:4px 0;color:#fff;text-align:right;">RZTIAT22</td>
           </tr>
           <tr>
-            <td style="padding:4px 0;color:#888;">Verwendungszweck:</td>
-            <td style="padding:4px 0;color:#c0392b;text-align:right;font-weight:bold;">Bestellung #${orderNumber}</td>
+            <td style="padding:4px 0;color:#888;">${referenceLabel}</td>
+            <td style="padding:4px 0;color:#c0392b;text-align:right;font-weight:bold;">${referenceValue}</td>
           </tr>
         </table>
       </div>
+      ${
+        bankHint
+          ? `<p style="font-size:12px;color:#888;margin-top:12px;line-height:1.5;">${bankHint}</p>`
+          : ""
+      }
 
-      <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 12px;">Bestellübersicht</h3>
+      <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 12px;">${orderOverviewTitle}</h3>
       <table style="width:100%;border-collapse:collapse;font-size:14px;">
         ${itemRows}
         <tr>
-          <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">Gesamt</td>
+          <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">${totalLabel}</td>
           <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">${formatPrice(parsePrice(total))}</td>
         </tr>
       </table>
@@ -129,8 +160,7 @@ async function sendBankTransferEmail(
       <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
 
       <p style="font-size:13px;color:#888;line-height:1.5;">
-        Nach Zahlungseingang wird deine Bestellung umgehend versendet.
-        Bei Fragen kontaktiere uns unter <a href="mailto:office@uncuttv.at" style="color:#c0392b;">office@uncuttv.at</a>.
+        ${footerNote} <a href="mailto:office@uncuttv.at" style="color:#c0392b;">office@uncuttv.at</a>.
       </p>
 
       <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
@@ -151,7 +181,7 @@ async function sendBankTransferEmail(
       body: JSON.stringify({
         from: "UncutTV <office@uncuttv.at>",
         to: [email],
-        subject: `Deine Bestellung bei UncutTV – Zahlungsdetails`,
+        subject: emailSubject,
         html,
       }),
     });
@@ -181,6 +211,7 @@ export async function POST(request: Request) {
 
     const isReverseCharge = bodyIsRC === true;
     const isWholesaleCheckout = body.isWholesale === true;
+    const locale: "de" | "en" = body.locale === "en" ? "en" : "de";
 
     if (!customer || typeof customer.country !== "string") {
       return NextResponse.json(
@@ -405,6 +436,15 @@ export async function POST(request: Request) {
       ) {
         md.push({ key: "_uncuttv_payment_method", value: "bank" });
       }
+      if (!md.some((row) => row.key === "_uncuttv_is_wholesale")) {
+        md.push({
+          key: "_uncuttv_is_wholesale",
+          value: isWholesaleCheckout ? "yes" : "no",
+        });
+      }
+      if (!md.some((row) => row.key === "_uncuttv_locale")) {
+        md.push({ key: "_uncuttv_locale", value: locale });
+      }
       orderData.meta_data = md;
     }
 
@@ -489,7 +529,8 @@ export async function POST(request: Request) {
       `${customer.firstName} ${customer.lastName}`,
       order.number,
       items,
-      total
+      total,
+      { isWholesale: isWholesaleCheckout, locale }
     );
 
     return NextResponse.json({

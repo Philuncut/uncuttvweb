@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import Link from "next/link";
@@ -13,6 +13,8 @@ import {
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { getShippingLogo } from "@/components/ShippingLogos";
+import { useLanguage } from "@/lib/LanguageContext";
+import { createT, formatTranslation, getTranslation } from "@/lib/translations";
 
 interface OrderDetails {
   customerName: string;
@@ -37,10 +39,21 @@ export default function OrderSuccess() {
   const bankOrder = searchParams.get("order");
 
   const { clearCart } = useCart();
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
   const [order, setOrder] = useState<OrderDetails | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isWholesaleBank, setIsWholesaleBank] = useState(false);
   const syncedRef = useRef(false);
+
+  const bankPaymentText = isWholesaleBank
+    ? t("BANK_TEXT_WHOLESALE")
+    : t("BANK_TEXT_B2C");
+
+  const bankThanksText = formatTranslation("ORDER_SUCCESS_BANK_THANKS", language, {
+    order: bankOrder ? ` #${bankOrder}` : "",
+  });
 
   const hasPayment = !!(sessionId || paymentIntentId || method === "bank");
 
@@ -50,7 +63,7 @@ export default function OrderSuccess() {
 
     // Handle failed redirect
     if (redirectStatus === "failed") {
-      setError("Die Zahlung ist fehlgeschlagen. Bitte versuche es erneut.");
+      setError(getTranslation("ORDER_SUCCESS_PAYMENT_FAILED_BODY", language));
       setLoading(false);
       return;
     }
@@ -66,6 +79,21 @@ export default function OrderSuccess() {
         // Bank transfer — no Stripe details to fetch
         if (method === "bank") {
           clearCart();
+          let wholesale = searchParams.get("wholesale") === "1";
+          if (!wholesale) {
+            try {
+              const sessionRes = await fetch("/api/auth/session", {
+                cache: "no-store",
+              });
+              if (sessionRes.ok) {
+                const s = await sessionRes.json();
+                wholesale = s.isWholesale === true;
+              }
+            } catch {
+              // keep B2C default
+            }
+          }
+          setIsWholesaleBank(wholesale);
           setLoading(false);
           return;
         }
@@ -196,25 +224,34 @@ export default function OrderSuccess() {
 
         clearCart();
       } catch {
-        setError("Bestellung konnte nicht geladen werden.");
+        setError(getTranslation("ORDER_SUCCESS_LOAD_FAILED", language));
       } finally {
         setLoading(false);
       }
     }
 
     load();
-  }, [hasPayment, sessionId, paymentIntentId, redirectStatus, method, clearCart]);
+  }, [
+    hasPayment,
+    sessionId,
+    paymentIntentId,
+    redirectStatus,
+    method,
+    clearCart,
+    language,
+    searchParams,
+  ]);
 
   // No params at all
   if (!hasPayment) {
     return (
       <div className="text-center">
-        <p className="text-white/50">Keine Bestellung gefunden.</p>
+        <p className="text-white/50">{t("ORDER_SUCCESS_NONE")}</p>
         <Link
           href="/shop"
           className="mt-4 inline-block text-sm text-[#c0392b] hover:underline"
         >
-          Zurück zum Shop
+          {t("ZURUECK_ZUM_SHOP")}
         </Link>
       </div>
     );
@@ -257,17 +294,16 @@ export default function OrderSuccess() {
           </svg>
         </div>
         <h1 className="mt-6 text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
-          ZAHLUNG WIRD VERARBEITET
+          {t("ORDER_SUCCESS_PAYMENT_PROCESSING_TITLE")}
         </h1>
         <p className="mt-3 text-sm text-white/50">
-          Deine Zahlung wird noch verarbeitet. Du erhältst eine
-          Bestätigungs-E-Mail sobald die Zahlung abgeschlossen ist.
+          {t("ORDER_SUCCESS_PAYMENT_PROCESSING_BODY")}
         </p>
         <Link
           href="/shop"
           className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
         >
-          ZURÜCK ZUM SHOP
+          {t("ORDER_SUCCESS_BACK_TO_SHOP")}
         </Link>
       </div>
     );
@@ -288,14 +324,14 @@ export default function OrderSuccess() {
           </svg>
         </div>
         <h1 className="mt-6 text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
-          ZAHLUNG FEHLGESCHLAGEN
+          {t("ORDER_SUCCESS_PAYMENT_FAILED_TITLE")}
         </h1>
         <p className="mt-3 text-sm text-[#c0392b]">{error}</p>
         <Link
           href="/checkout"
           className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
         >
-          ERNEUT VERSUCHEN
+          {t("ORDER_SUCCESS_RETRY")}
         </Link>
       </div>
     );
@@ -321,14 +357,10 @@ export default function OrderSuccess() {
           </svg>
         </div>
         <h1 className="mt-6 text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
-          BESTELLUNG EINGEGANGEN
+          {t("ORDER_SUCCESS_BANK_TITLE")}
         </h1>
         <p className="mt-3 text-sm text-white/50">
-          Vielen Dank! Deine Bestellung{" "}
-          {bankOrder && (
-            <span className="text-white/70">#{bankOrder}</span>
-          )}{" "}
-          wurde erfasst. Bitte überweise den Betrag innerhalb von 5 Werktagen an:
+          {bankThanksText} {bankPaymentText}
         </p>
         <div className="mt-4 border border-[#222] bg-[#111] p-4 text-left text-sm text-white/70">
           <p className="font-bold text-white">UncutTV GmbH</p>
@@ -336,13 +368,23 @@ export default function OrderSuccess() {
           <p>IBAN: AT52 3600 0000 0083 4978</p>
           <p>BIC: RZTIAT22</p>
         </div>
-        <p className="mt-3 text-sm text-white/50">
-        </p>
+        {isWholesaleBank && (
+          <p
+            style={{
+              fontSize: "12px",
+              color: "#888",
+              marginTop: "12px",
+              lineHeight: "1.5",
+            }}
+          >
+            {t("BANK_HINT_WHOLESALE")}
+          </p>
+        )}
         <Link
           href="/shop"
           className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
         >
-          WEITER EINKAUFEN
+          {t("WEITER_EINKAUFEN")}
         </Link>
       </div>
     );
@@ -368,16 +410,15 @@ export default function OrderSuccess() {
       </div>
 
       <h1 className="mt-6 text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
-        BESTELLUNG ERFOLGREICH
+        {t("ORDER_SUCCESS_TITLE")}
       </h1>
 
       <p className="mt-3 text-sm text-white/50">
-        Vielen Dank für deine Bestellung! Du erhältst eine
-        Bestätigungs-E-Mail
+        {t("ORDER_SUCCESS_PAID_THANKS")}
         {order?.customerEmail && (
           <>
             {" "}
-            an{" "}
+            {t("ORDER_SUCCESS_PAID_THANKS_AT")}{" "}
             <span className="text-white/70">{order.customerEmail}</span>
           </>
         )}
@@ -387,7 +428,7 @@ export default function OrderSuccess() {
       {order && order.items.length > 0 && (
         <div className="mx-auto mt-8 max-w-sm border border-[#222] bg-[#111] p-6 text-left">
           <h3 className="text-xs font-bold tracking-[0.2em] text-white/60">
-            ZUSAMMENFASSUNG
+            {t("ORDER_SUCCESS_SUMMARY")}
           </h3>
           <div className="mt-4 space-y-3">
             {order.items.map((item, i) => (
@@ -408,14 +449,16 @@ export default function OrderSuccess() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 text-white/70">
                     {order.isWholesaleShipping ? (
-                      "WHOLESALE-VERSAND"
+                      t("ORDER_SUCCESS_WHOLESALE_SHIPPING")
                     ) : (
                       <>
                         {getShippingLogo(
-                          order.shippingMethodTitle || "VERSAND"
+                          order.shippingMethodTitle ||
+                            t("ORDER_SUCCESS_SHIPPING_DEFAULT")
                         )}
                         <span>
-                          {order.shippingMethodTitle?.trim() || "VERSAND"}
+                          {order.shippingMethodTitle?.trim() ||
+                            t("ORDER_SUCCESS_SHIPPING_DEFAULT")}
                         </span>
                       </>
                     )}
@@ -428,7 +471,7 @@ export default function OrderSuccess() {
           </div>
           <div className="mt-4 flex items-center justify-between border-t border-[#222] pt-4">
             <span className="text-sm font-bold tracking-wider text-white/60">
-              GESAMT
+              {t("GESAMT")}
             </span>
             <span className="text-xl font-black text-white">
               {formatPrice(parsePrice(order.total))}
@@ -441,7 +484,7 @@ export default function OrderSuccess() {
         href="/shop"
         className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
       >
-        WEITER EINKAUFEN
+        {t("WEITER_EINKAUFEN")}
       </Link>
     </div>
   );
