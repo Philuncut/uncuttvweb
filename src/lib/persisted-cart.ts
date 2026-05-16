@@ -4,6 +4,16 @@ import type { WooProduct } from "@/lib/types";
 export const PERSISTED_CART_META_KEY = "_uncuttv_persisted_cart";
 export const PERSISTED_CART_UPDATED_META_KEY = "_uncuttv_persisted_cart_updated_at";
 
+export const ABANDONED_CART_SENT_1H_KEY = "_uncuttv_abandoned_cart_sent_1h";
+export const ABANDONED_CART_SENT_24H_KEY = "_uncuttv_abandoned_cart_sent_24h";
+export const ABANDONED_CART_SENT_72H_KEY = "_uncuttv_abandoned_cart_sent_72h";
+
+const ABANDONED_CART_SENT_KEYS = [
+  ABANDONED_CART_SENT_1H_KEY,
+  ABANDONED_CART_SENT_24H_KEY,
+  ABANDONED_CART_SENT_72H_KEY,
+] as const;
+
 export const MAX_PERSISTED_CART_ITEMS = 100;
 
 export type PersistedCartItem = CartItem;
@@ -151,7 +161,19 @@ export function mergeCartMeta(
 
   setKey(PERSISTED_CART_META_KEY, cartJson);
   setKey(PERSISTED_CART_UPDATED_META_KEY, updatedAt);
-  return next;
+  return resetAbandonedCartSentFlags(next);
+}
+
+/** Clears abandoned-cart mail flags when the user changes their cart. */
+export function resetAbandonedCartSentFlags(
+  meta: Array<{ key: string; value: string }>
+): Array<{ key: string; value: string }> {
+  for (const key of ABANDONED_CART_SENT_KEYS) {
+    const idx = meta.findIndex((row) => row.key === key);
+    if (idx >= 0) meta[idx] = { key, value: "" };
+    else meta.push({ key, value: "" });
+  }
+  return meta;
 }
 
 export function clearCartMeta(
