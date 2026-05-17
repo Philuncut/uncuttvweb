@@ -8,8 +8,6 @@ import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import type { BlogProductCard, BlogVideoItem } from "@/lib/video-blog-types";
 
-const FONT_HEADING = `'Playfair Display', Georgia, serif`;
-const FONT_BODY = `'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
 const DESC_THRESHOLD = 200;
 
 function productLink(slug: string, videoId: string): string {
@@ -104,7 +102,6 @@ export default function VideoLightbox({
           aria-modal="true"
           aria-label={video.title}
           className="relative my-0 flex h-full min-h-0 w-full max-w-[1200px] flex-col overflow-hidden bg-[#111] text-white sm:my-auto sm:h-auto sm:max-h-[90vh] sm:rounded-lg sm:shadow-2xl"
-          style={{ fontFamily: FONT_BODY }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Sticky header bar with enlarged X button */}
@@ -136,12 +133,11 @@ export default function VideoLightbox({
             </div>
             <h2
               className="mt-4 text-xl font-bold leading-snug text-white sm:mt-6 sm:text-2xl"
-              style={{ fontFamily: FONT_HEADING }}
             >
               {video.title}
             </h2>
             {rawDesc && (
-              <div className="mt-2" style={{ fontFamily: FONT_BODY }}>
+              <div className="mt-2">
                 <p
                   className="text-sm leading-relaxed text-white/70 sm:text-base"
                   style={{
@@ -157,7 +153,6 @@ export default function VideoLightbox({
                     type="button"
                     onClick={() => setDescExpanded((v) => !v)}
                     className="mt-1 text-sm underline underline-offset-2 text-white/50 hover:text-[#c0392b] transition-colors"
-                    style={{ fontFamily: FONT_BODY }}
                   >
                     {descExpanded ? showLessLabel : showMoreLabel}
                   </button>
@@ -168,7 +163,6 @@ export default function VideoLightbox({
               <div className="mt-8">
                 <h3
                   className="mb-4 text-xs font-bold tracking-widest text-white/50"
-                  style={{ fontFamily: FONT_BODY }}
                 >
                   {((video.featured_products?.length ?? 0) > 0 ||
                     video.match_type !== "featured"
@@ -196,20 +190,17 @@ export default function VideoLightbox({
                       )}
                       <p
                         className="line-clamp-2 text-sm font-medium text-white"
-                        style={{ fontFamily: FONT_BODY }}
                       >
                         {product.name}
                       </p>
                       <p
                         className="mt-1 text-sm text-[#c0392b]"
-                        style={{ fontFamily: FONT_BODY }}
                       >
                         {formatPrice(parsePrice(product.price))}
                       </p>
                       <Link
                         href={productLink(product.slug, video.video_id)}
                         className="mt-3 inline-block w-full rounded bg-[#c0392b] py-2 text-center text-xs font-bold tracking-wider text-white hover:bg-[#a93226]"
-                        style={{ fontFamily: FONT_BODY }}
                       >
                         {buyNowLabel}
                       </Link>
@@ -224,7 +215,6 @@ export default function VideoLightbox({
               type="button"
               onClick={handleClose}
               className="mt-8 w-full rounded border border-white/20 bg-black py-3 text-sm font-semibold tracking-wide text-white/80 transition hover:bg-white/10 hover:text-white active:scale-[0.98]"
-              style={{ fontFamily: FONT_BODY }}
             >
               {closeLabel}
             </button>

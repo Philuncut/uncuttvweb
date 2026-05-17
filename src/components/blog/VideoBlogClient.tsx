@@ -8,9 +8,6 @@ import type { BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
 import VideoLightbox from "@/components/blog/VideoLightbox";
 import BlogSubscribeHero from "@/components/blog/BlogSubscribeHero";
 
-const FONT_HEADING = `'Playfair Display', Georgia, serif`;
-const FONT_BODY = `'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-
 type Props = {
   youtubeVideos: BlogVideoItem[];
   vimeoVideos: BlogVideoItem[];
@@ -84,26 +81,6 @@ export default function VideoBlogClient({
 
   return (
     <>
-      <link
-        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;700&display=swap"
-        rel="stylesheet"
-      />
-
-      <section
-        className="flex flex-col items-center justify-center bg-[#0a0a0a] px-4 text-center"
-        style={{ minHeight: "20vh", fontFamily: FONT_BODY }}
-      >
-        <h1
-          className="text-3xl font-bold text-white sm:text-4xl md:text-5xl"
-          style={{ fontFamily: FONT_HEADING }}
-        >
-          {t("BLOG_HERO_TITLE")}
-        </h1>
-        <p className="mt-3 max-w-xl text-sm text-white/70 sm:text-base">
-          {t("BLOG_HERO_SUBTITLE")}
-        </p>
-      </section>
-
       <BlogSubscribeHero
         subscriberCount={subscriberCount}
         subscribeUrl={subscribeUrl}
