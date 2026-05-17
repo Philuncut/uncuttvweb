@@ -501,6 +501,8 @@ export default function Navbar() {
             )}
             <NavLink href="/blog">{t("BLOG")}</NavLink>
             <Divider />
+            <NavLink href="/about">{t("ABOUT")}</NavLink>
+            <Divider />
             {!sessionReady ? (
               <span
                 className="inline-block h-5 w-28 rounded bg-white/10 align-middle animate-pulse"
@@ -934,6 +936,22 @@ export default function Navbar() {
             }}
           >
             {t("BLOG")}
+          </a>
+          <a
+            href="/about"
+            className="menu-link menu-main-link"
+            style={{
+              color: "white",
+              fontSize: "2.2rem",
+              fontWeight: "bold",
+              textDecoration: "none",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              padding: "12px 32px",
+              animationDelay: "0.36s",
+            }}
+          >
+            {t("ABOUT")}
           </a>
 
           {/* MEIN KONTO / ANMELDEN */}

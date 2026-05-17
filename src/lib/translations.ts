@@ -5,6 +5,82 @@ const translations: Record<string, Record<string, string>> = {
   MEIN_KONTO: { de: "MEIN KONTO", en: "MY ACCOUNT" },
   HAENDLER: { de: "HÄNDLER", en: "DEALERS" },
   BLOG: { de: "BLOG", en: "BLOG" },
+  ABOUT: { de: "ÜBER UNS", en: "ABOUT" },
+
+  // About page
+  ABOUT_HERO_EYEBROW: { de: "ÜBER UNCUTTV", en: "ABOUT UNCUTTV" },
+  ABOUT_HERO_TITLE: { de: "Aus dem Keller heraus.", en: "Out of the basement." },
+  ABOUT_HERO_SUB: {
+    de: "Wie aus einem kleinen Slipcase-Projekt eines der wenigen unabhängigen Filmlabel im deutschsprachigen Raum wurde.",
+    en: "How a small slipcase side project became one of the few truly independent film labels in the German-speaking world.",
+  },
+  ABOUT_S1_EYEBROW: { de: "2023", en: "2023" },
+  ABOUT_S1_TITLE: { de: "Aus Liebe zum Film.", en: "Out of love for film." },
+  ABOUT_S1_P1: {
+    de: "UncutTV ist ein unabhängiges Filmlabel mit Sitz in Österreich, gegründet 2023.",
+    en: "UncutTV is an independent film label based in Austria, founded in 2023.",
+  },
+  ABOUT_S1_P2: {
+    de: "Wir haben mit einem einzigen Titel angefangen — aus Spaß und Passion. Niemals hätten wir erwartet, was daraus wird. Immer mehr Regisseure sind auf uns zugekommen, wollten Teil davon sein. Sammler haben uns geschrieben, mit uns über Schnittfassungen diskutiert, uns Tipps gegeben.",
+    en: "We started with a single title — for the fun of it, out of passion. We never expected what it would become. More and more directors reached out, wanting to be part of it. Collectors wrote to us, debated cut versions, gave us tips.",
+  },
+  ABOUT_S1_P3: {
+    de: "In den Anfangstagen war unser Lager ein kleiner angemieteter Keller. Dort haben wir unsere ersten Slipcases gestapelt, mit der Hand verpackt und verschickt.",
+    en: "In the early days, our warehouse was a small rented basement. That's where we stacked our first slipcases, packed them by hand, and shipped them out.",
+  },
+  ABOUT_S2_EYEBROW: { de: "HEUTE", en: "TODAY" },
+  ABOUT_S2_TITLE: { de: "Vom Keller ins Headquarter.", en: "From basement to headquarters." },
+  ABOUT_S2_P1: {
+    de: "Heute haben wir ein richtiges Büro, ein Lager, das diesen Namen verdient, und ein Team, das täglich daran arbeitet, dass jedes Release sitzt — vom Artwork bis zur Verpackung.",
+    en: "Today we have a real office, a warehouse that deserves the name, and a team that works every day to make sure every release is exactly right — from artwork to packaging.",
+  },
+  ABOUT_S2_P2: {
+    de: "Was sich nicht geändert hat: Jede Entscheidung treffen noch immer die zwei, die das hier begonnen haben. Wir kaufen keine Lizenzen für Mainstream-Kataloge. Wir veröffentlichen, was uns bewegt.",
+    en: "What hasn't changed: every decision is still made by the two who started this. We don't license mainstream catalogue titles. We release what moves us.",
+  },
+  ABOUT_S3_EYEBROW: { de: "PERSÖNLICH", en: "PERSONAL" },
+  ABOUT_S3_TITLE: { de: "Kein Helpdesk. Keine Tickets.", en: "No helpdesk. No tickets." },
+  ABOUT_S3_P1: {
+    de: "Wenn du uns schreibst, antworten wir persönlich. Keine Standard-Antworten, kein Support-System dazwischen. Wir kennen unsere Sammler, viele beim Namen, manche seit dem ersten Release.",
+    en: "When you write to us, we write back — personally. No canned replies, no support system in between. We know our collectors, many by name, some since the very first release.",
+  },
+  ABOUT_S3_P2: {
+    de: "Das ist nichts, was wir uns als Verkaufsargument ausgedacht haben. Das hat sich so entwickelt — weil wir UncutTV genau so wollten, wie wir uns selbst als Sammler wünschen würden, behandelt zu werden.",
+    en: "That's not something we invented as a sales pitch. It just happened — because we built UncutTV the way we ourselves would want to be treated as collectors.",
+  },
+  ABOUT_S4_EYEBROW: { de: "HINTER DER KAMERA", en: "BEHIND THE CAMERA" },
+  ABOUT_S4_TITLE: {
+    de: "Manchmal verkaufen wir Filme. Manchmal drehen wir sie selbst.",
+    en: "Sometimes we sell films. Sometimes we shoot them ourselves.",
+  },
+  ABOUT_S4_P1: {
+    de: "Wir haben in den letzten Jahren bei vielen Drehs im deutschen Independent-Bereich mitgeholfen. Mit unseren Freunden von Garden of Gore arbeiten wir von Anfang an eng zusammen.",
+    en: "Over the past years we've been hands-on at many shoots in the German independent scene. With our friends from Garden of Gore, we've been working closely from the very beginning.",
+  },
+  ABOUT_S4_P2: {
+    de: "Im Oktober 2024 haben wir angefangen, unseren eigenen Film zu drehen: \"Vermählung im Blut\". Im Mai 2026 ist er offiziell erschienen. Es war viel Arbeit, viel Stress — und vor allem verdammt viel Spaß. Er war ganz sicher nicht unser letzter.",
+    en: "In October 2024 we started shooting our own film: \"Vermählung im Blut\". In May 2026 it officially released. It was a lot of work, a lot of stress — and above all, a hell of a lot of fun. It won't be our last.",
+  },
+  ABOUT_S4_CTA: { de: "\"Vermählung im Blut\" entdecken", en: "Discover \"Vermählung im Blut\"" },
+  ABOUT_S5_EYEBROW: { de: "FÜR FILMEMACHER", en: "FOR FILMMAKERS" },
+  ABOUT_S5_TITLE: { de: "Du machst Filme. Wir bringen sie ins Regal.", en: "You make films. We put them on the shelf." },
+  ABOUT_S5_P1: {
+    de: "Wenn du Filmemacher bist und ein Label suchst, das deinen Film veröffentlicht — schreib uns. Wir lesen jede Anfrage selbst.",
+    en: "If you're a filmmaker looking for a label to release your film — write to us. We read every submission ourselves.",
+  },
+  ABOUT_S6_EYEBROW: { de: "EIN BLICK INS ARCHIV", en: "A LOOK AT THE ARCHIVE" },
+  ABOUT_S6_TITLE: { de: "Was bisher geschah.", en: "The story so far." },
+  ABOUT_S6_CTA: { de: "Zum gesamten Archiv", en: "Browse the full archive" },
+  ABOUT_S7_EYEBROW: { de: "DANKE", en: "THANK YOU" },
+  ABOUT_S7_TITLE: { de: "An alle, die das möglich machen.", en: "To everyone who makes this possible." },
+  ABOUT_S7_P1: {
+    de: "An jeden Sammler, jeden Filmemacher, jeden Künstler. Ohne euch wäre das hier ein leerer Keller geblieben.",
+    en: "To every collector, every filmmaker, every artist. Without you, this would have stayed an empty basement.",
+  },
+  ABOUT_S7_P2: {
+    de: "Es kommen noch viele Releases. Danke, dass ihr uns treu bleibt.",
+    en: "There are many more releases to come. Thank you for staying with us.",
+  },
   BLOG_TAB_YOUTUBE: { de: "YOUTUBE", en: "YOUTUBE" },
   BLOG_TAB_VIMEO: { de: "VIMEO", en: "VIMEO" },
   BLOG_IN_VIDEO_SHOWN: { de: "Im Video gezeigt", en: "Featured in this video" },
