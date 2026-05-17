@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
@@ -9,6 +15,16 @@ import VideoLightbox from "@/components/blog/VideoLightbox";
 import BlogSubscribeHero from "@/components/blog/BlogSubscribeHero";
 import FeaturedVideoCard from "@/components/blog/FeaturedVideoCard";
 import SectionHeader from "@/components/blog/SectionHeader";
+
+// Fix-kuratierte Must-Watch Video-IDs (YouTube only)
+const MUST_WATCH_IDS = [
+  "gOvF3XqeYD4",
+  "4lYVlYbK0Hg",
+  "28eDo9VaVHg",
+  "lgfeNyOyrW0",
+];
+
+const EXTRA_BATCH = 8;
 
 type Props = {
   youtubeVideos: BlogVideoItem[];
@@ -38,6 +54,12 @@ export default function VideoBlogClient({
   const [tab, setTab] = useState<VideoPlatform>("youtube");
   const [activeVideo, setActiveVideo] = useState<BlogVideoItem | null>(null);
   const [embedReady, setEmbedReady] = useState(false);
+  const [extraLoaded, setExtraLoaded] = useState(0);
+
+  // Reset "load more" counter when switching tabs
+  useEffect(() => {
+    setExtraLoaded(0);
+  }, [tab]);
 
   const videos = tab === "youtube" ? youtubeVideos : vimeoVideos;
   const dbEmpty = youtubeVideos.length === 0 && vimeoVideos.length === 0;
@@ -46,6 +68,69 @@ export default function VideoBlogClient({
     !showVimeoPlaceholder &&
     ((tab === "youtube" && youtubeVideos.length === 0) ||
       (tab === "vimeo" && vimeoVideos.length === 0));
+
+  // ── Section data ──────────────────────────────────────────────────────────
+
+  const featured = videos.length > 0 ? videos[0] : null;
+
+  // Must Watch — YouTube-only, deduplicated against featured
+  const mustWatch = useMemo(() => {
+    if (tab !== "youtube") return [];
+    MUST_WATCH_IDS.forEach((id) => {
+      if (!youtubeVideos.find((v) => v.video_id === id)) {
+        console.warn(`[blog] MUST WATCH video ${id} not found in synced data`);
+      }
+    });
+    return MUST_WATCH_IDS.map((id) => youtubeVideos.find((v) => v.video_id === id))
+      .filter((v): v is BlogVideoItem => v !== undefined)
+      .filter((v) => v.video_id !== featured?.video_id);
+  }, [tab, youtubeVideos, featured]);
+
+  const mostViewed = useMemo(
+    () =>
+      [...videos]
+        .sort((a, b) => (b.view_count ?? 0) - (a.view_count ?? 0))
+        .filter((v) => v.video_id !== featured?.video_id)
+        .slice(0, 4),
+    [videos, featured]
+  );
+
+  const mostViewedIds = useMemo(
+    () => new Set(mostViewed.map((v) => v.video_id)),
+    [mostViewed]
+  );
+
+  const newest = useMemo(
+    () =>
+      videos
+        .filter(
+          (v) =>
+            v.video_id !== featured?.video_id &&
+            !mostViewedIds.has(v.video_id)
+        )
+        .slice(0, 4),
+    [videos, featured, mostViewedIds]
+  );
+
+  // "More" — everything not already shown in fixed sections
+  const alreadyShownIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (featured) ids.add(featured.video_id);
+    mustWatch.forEach((v) => ids.add(v.video_id));
+    mostViewed.forEach((v) => ids.add(v.video_id));
+    newest.forEach((v) => ids.add(v.video_id));
+    return ids;
+  }, [featured, mustWatch, mostViewed, newest]);
+
+  const remainingVideos = useMemo(
+    () => videos.filter((v) => !alreadyShownIds.has(v.video_id)),
+    [videos, alreadyShownIds]
+  );
+
+  const visibleExtras = remainingVideos.slice(0, extraLoaded * EXTRA_BATCH);
+  const hasMore = remainingVideos.length > visibleExtras.length;
+
+  // ── Lightbox ──────────────────────────────────────────────────────────────
 
   const closeLightbox = useCallback(() => {
     setActiveVideo(null);
@@ -81,21 +166,7 @@ export default function VideoBlogClient({
   const lightboxProducts =
     activeVideo && activeVideo.products.length > 0 ? activeVideo.products : [];
 
-  const featured = videos.length > 0 ? videos[0] : null;
-
-  const mostViewed = [...videos]
-    .sort((a, b) => (b.view_count ?? 0) - (a.view_count ?? 0))
-    .filter((v) => v.video_id !== featured?.video_id)
-    .slice(0, 4);
-
-  const mostViewedIds = new Set(mostViewed.map((v) => v.video_id));
-
-  const newest = videos
-    .filter(
-      (v) =>
-        v.video_id !== featured?.video_id && !mostViewedIds.has(v.video_id)
-    )
-    .slice(0, 4);
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -120,9 +191,10 @@ export default function VideoBlogClient({
         {showEmpty && !dbEmpty && (
           <p className="py-16 text-center text-white/50">{t("BLOG_EMPTY_STATE")}</p>
         )}
+
         {!showVimeoPlaceholder && !showEmpty && (
           <div className="space-y-16">
-            {/* Section 1: Featured — newest video */}
+            {/* 1 — Featured: neuestes Video */}
             {featured && (
               <FeaturedVideoCard
                 video={featured}
@@ -132,10 +204,28 @@ export default function VideoBlogClient({
               />
             )}
 
-            {/* Section 2: Most viewed */}
+            {/* 2 — Must Watch (YouTube only) */}
+            {tab === "youtube" && mustWatch.length > 0 && (
+              <section>
+                <SectionHeader
+                  eyebrow={t("BLOG_SECTION_MUST_WATCH")}
+                  title={t("BLOG_SECTION_MUST_WATCH_TITLE")}
+                />
+                <VideoGrid
+                  videos={mustWatch}
+                  language={language}
+                  onOpen={setActiveVideo}
+                />
+              </section>
+            )}
+
+            {/* 3 — Meist Gesehen */}
             {mostViewed.length > 0 && (
               <section>
-                <SectionHeader eyebrow={t("BLOG_SECTION_MOST_VIEWED")} />
+                <SectionHeader
+                  eyebrow={t("BLOG_SECTION_MOST_VIEWED")}
+                  title={t("BLOG_SECTION_MOST_VIEWED_TITLE")}
+                />
                 <VideoGrid
                   videos={mostViewed}
                   language={language}
@@ -144,16 +234,60 @@ export default function VideoBlogClient({
               </section>
             )}
 
-            {/* Section 3: Newest (excluding featured + mostViewed) */}
+            {/* 4 — Neu auf UncutTV */}
             {newest.length > 0 && (
               <section>
-                <SectionHeader eyebrow={t("BLOG_SECTION_NEWEST")} />
+                <SectionHeader
+                  eyebrow={t("BLOG_SECTION_NEWEST")}
+                  title={t("BLOG_SECTION_NEWEST_TITLE")}
+                />
                 <VideoGrid
                   videos={newest}
                   language={language}
                   onOpen={setActiveVideo}
                 />
               </section>
+            )}
+
+            {/* 5 — Weitere Videos (load-more accumulator) */}
+            {visibleExtras.length > 0 && (
+              <section>
+                <SectionHeader
+                  eyebrow={t("BLOG_SECTION_MORE")}
+                  title={t("BLOG_SECTION_MORE_TITLE")}
+                />
+                <VideoGrid
+                  videos={visibleExtras}
+                  language={language}
+                  onOpen={setActiveVideo}
+                  staggerModulo={EXTRA_BATCH}
+                />
+              </section>
+            )}
+
+            {/* Load More button */}
+            {hasMore && (
+              <div className="flex justify-center pt-4">
+                <button
+                  type="button"
+                  onClick={() => setExtraLoaded((n) => n + 1)}
+                  className="group inline-flex items-center gap-3 border border-white/15 bg-transparent px-8 py-4 text-sm font-bold uppercase tracking-widest text-white transition hover:border-[#c0392b] hover:bg-[#c0392b]"
+                >
+                  <span>{t("BLOG_LOAD_MORE")}</span>
+                  <svg
+                    className="h-4 w-4 transition group-hover:translate-y-1"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -177,6 +311,8 @@ export default function VideoBlogClient({
     </>
   );
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function BlogTabs({
   tab,
@@ -213,10 +349,12 @@ function VideoGrid({
   videos,
   language,
   onOpen,
+  staggerModulo,
 }: {
   videos: BlogVideoItem[];
   language: "de" | "en";
   onOpen: (v: BlogVideoItem) => void;
+  staggerModulo?: number;
 }) {
   if (videos.length === 0) return null;
   return (
@@ -226,7 +364,7 @@ function VideoGrid({
           key={video.video_id}
           video={video}
           language={language}
-          animationDelay={Math.min(i * 60, 600)}
+          animationDelay={Math.min((staggerModulo ? i % staggerModulo : i) * 60, 600)}
           onOpen={onOpen}
         />
       ))}
@@ -292,7 +430,8 @@ function VideoCard({
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0)" : "translateY(20px)",
-        transition: `opacity 500ms cubic-bezier(0.22, 1, 0.36, 1), transform 500ms cubic-bezier(0.22, 1, 0.36, 1)`,
+        transition:
+          "opacity 500ms cubic-bezier(0.22, 1, 0.36, 1), transform 500ms cubic-bezier(0.22, 1, 0.36, 1)",
         transitionDelay: visible ? `${animationDelay}ms` : "0ms",
       }}
     >
