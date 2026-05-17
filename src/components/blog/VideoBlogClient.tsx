@@ -161,6 +161,21 @@ function BlogTabs({
   );
 }
 
+type CardSize = "large" | "wide" | "std";
+
+function getCardSize(index: number): CardSize {
+  const mod = index % 6;
+  if (mod === 0) return "large";
+  if (mod === 1 || mod === 4) return "wide";
+  return "std";
+}
+
+function spanClass(size: CardSize): string {
+  if (size === "large") return "md:col-span-2 md:row-span-2";
+  if (size === "wide") return "md:col-span-2 md:row-span-1";
+  return "md:col-span-1 md:row-span-1";
+}
+
 function VideoGrid({
   videos,
   language,
@@ -171,17 +186,20 @@ function VideoGrid({
   onOpen: (v: BlogVideoItem) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {videos.map((video) => (
-        <button
-          key={video.video_id}
-          type="button"
-          className="group w-full text-left"
-          onClick={() => onOpen(video)}
-        >
-          <VideoCard video={video} language={language} />
-        </button>
-      ))}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:auto-rows-[180px] lg:auto-rows-[220px]">
+      {videos.map((video, i) => {
+        const size = getCardSize(i);
+        return (
+          <button
+            key={video.video_id}
+            type="button"
+            className={`group h-full w-full text-left ${spanClass(size)}`}
+            onClick={() => onOpen(video)}
+          >
+            <VideoCard video={video} language={language} size={size} />
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -189,9 +207,11 @@ function VideoGrid({
 function VideoCard({
   video,
   language,
+  size,
 }: {
   video: BlogVideoItem;
   language: "de" | "en";
+  size: CardSize;
 }) {
   const views = formatTranslation("BLOG_VIDEO_VIEWS", language, {
     count: new Intl.NumberFormat(language === "de" ? "de-DE" : "en-US").format(
@@ -202,11 +222,44 @@ function VideoCard({
     minutes: String(Math.max(1, Math.round((video.duration_seconds ?? 0) / 60))),
   });
 
+  const isLarge = size === "large";
+  const isWide = size === "wide";
+
+  const titleClass = isLarge
+    ? "line-clamp-2 text-lg font-bold text-white md:text-xl"
+    : isWide
+      ? "line-clamp-2 text-base font-semibold text-white md:text-lg"
+      : "line-clamp-2 text-sm font-medium text-white";
+
+  const metaClass =
+    isLarge || isWide
+      ? "mt-1 text-xs uppercase tracking-wider text-white/60"
+      : "mt-1 text-[11px] text-white/50";
+
+  const textPad = isLarge || isWide ? "p-5" : "p-3";
+
+  const playSize = isLarge
+    ? "h-20 w-20"
+    : isWide
+      ? "h-16 w-16"
+      : "h-12 w-12";
+
+  const iconSize = isLarge
+    ? "h-8 w-8"
+    : isWide
+      ? "h-6 w-6"
+      : "h-5 w-5";
+
+  const imgSizes = isLarge || isWide
+    ? "(max-width: 640px) 100vw, (max-width: 768px) 50vw, 50vw"
+    : "(max-width: 640px) 100vw, (max-width: 768px) 50vw, 25vw";
+
   return (
-    <article>
-      {/* -webkit-touch-callout suppresses iOS Safari's native media overlay on thumbnail images */}
+    <article className="relative flex h-full flex-col overflow-hidden border border-white/5 bg-black/40 transition hover:border-[#c0392b]/40">
+      {/* Thumbnail area — fills all available height */}
+      {/* -webkit-touch-callout suppresses iOS Safari's native media overlay */}
       <div
-        className="relative aspect-video overflow-hidden rounded bg-black/40"
+        className="relative min-h-0 flex-1 overflow-hidden"
         style={{ WebkitTouchCallout: "none" as never, userSelect: "none" }}
       >
         {video.thumbnail_url ? (
@@ -214,17 +267,26 @@ function VideoCard({
             src={video.thumbnail_url}
             alt={video.title}
             fill
-            className="object-cover transition duration-300 group-hover:scale-105"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+            className="object-cover transition duration-500 group-hover:scale-105"
+            sizes={imgSizes}
             unoptimized
           />
         ) : (
           <div className="absolute inset-0 bg-white/5" />
         )}
-        {/* UncutTV branded play button — overlays iOS default media controls */}
+
+        {/* Bottom vignette for text legibility on large/wide cards */}
+        {(isLarge || isWide) && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
+        )}
+
+        {/* Hover red tint overlay */}
+        <div className="pointer-events-none absolute inset-0 bg-[#c0392b]/0 transition group-hover:bg-[#c0392b]/5" />
+
+        {/* Play button — UncutTV branded, overlays iOS media controls */}
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span
-            className="flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition duration-200 ease-out group-hover:scale-110 sm:h-10 sm:w-10"
+            className={`flex ${playSize} items-center justify-center transition duration-200 ease-out group-hover:scale-110`}
             style={{
               background: "rgba(192, 57, 43, 0.95)",
               boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
@@ -236,7 +298,7 @@ function VideoCard({
             <svg
               viewBox="0 0 24 24"
               fill="white"
-              className="h-6 w-6 sm:h-4 sm:w-4"
+              className={iconSize}
               style={{ marginLeft: "2px" }}
               aria-hidden="true"
             >
@@ -245,12 +307,14 @@ function VideoCard({
           </span>
         </span>
       </div>
-      <h3 className="mt-3 line-clamp-2 text-sm font-semibold text-white">
-        {video.title}
-      </h3>
-      <p className="mt-1 text-xs text-white/40">
-        {views} · {minutes}
-      </p>
+
+      {/* Text section */}
+      <div className={`shrink-0 ${textPad}`}>
+        <h3 className={titleClass}>{video.title}</h3>
+        <p className={metaClass}>
+          {views} · {minutes}
+        </p>
+      </div>
     </article>
   );
 }
