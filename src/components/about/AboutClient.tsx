@@ -1,24 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Caveat } from "next/font/google";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import SectionHeader from "@/components/blog/SectionHeader";
 import type { WooProduct } from "@/lib/types";
 
+const caveat = Caveat({ subsets: ["latin"], weight: ["400", "600"] });
+
 const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")`;
 
-const POLAROIDS = [
-  { src: "/about/flo_und_girl.jpg",   alt: "Set-Foto",          rotDeg: -3 },
-  { src: "/about/flow_und_crew.jpg",  alt: "Crew vor Ort",      rotDeg:  2 },
-  { src: "/about/phil_und_july.jpg",  alt: "Backstage",         rotDeg: -2 },
-  { src: "/about/phil_und_simon.jpg", alt: "Mit dem Regisseur", rotDeg:  3 },
-];
-
-const POLAROID_CAPTIONS_DE = ["Set-Tag", "Mit der Crew", "Backstage", "Mit Simon"];
-const POLAROID_CAPTIONS_EN = ["Set day", "With the crew", "Backstage", "With Simon"];
+const POLAROID_ROTS = [-3, 2, -2, 3] as const;
 
 type Props = {
   newestProducts: WooProduct[];
@@ -29,6 +24,9 @@ export default function AboutClient({ newestProducts }: Props) {
   const t = useMemo(() => createT(language), [language]);
 
   const [heroMounted, setHeroMounted] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitState, setSubmitState] = useState<"idle" | "success" | "error">("idle");
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -39,8 +37,44 @@ export default function AboutClient({ newestProducts }: Props) {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  const polaroidCaptions =
-    language === "de" ? POLAROID_CAPTIONS_DE : POLAROID_CAPTIONS_EN;
+  const polaroids = [
+    { src: "/about/flo_und_girl.jpg",   alt: t("ABOUT_S3_5_CAPTION_1"), caption: t("ABOUT_S3_5_CAPTION_1") },
+    { src: "/about/flow_und_crew.jpg",  alt: t("ABOUT_S3_5_CAPTION_2"), caption: t("ABOUT_S3_5_CAPTION_2") },
+    { src: "/about/phil_und_july.jpg",  alt: t("ABOUT_S3_5_CAPTION_3"), caption: t("ABOUT_S3_5_CAPTION_3") },
+    { src: "/about/phil_und_simon.jpg", alt: t("ABOUT_S3_5_CAPTION_4"), caption: t("ABOUT_S3_5_CAPTION_4") },
+  ];
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setSubmitState("idle");
+
+    const formData = new FormData(e.currentTarget);
+    const payload = {
+      name: formData.get("name"),
+      email: formData.get("email"),
+      filmTitle: formData.get("filmTitle"),
+      message: formData.get("message"),
+    };
+
+    try {
+      const res = await fetch("/api/about/filmmaker-submission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setSubmitState("success");
+        (e.target as HTMLFormElement).reset();
+      } else {
+        setSubmitState("error");
+      }
+    } catch {
+      setSubmitState("error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-20 sm:py-28">
@@ -97,6 +131,7 @@ export default function AboutClient({ newestProducts }: Props) {
           <div className="max-w-3xl space-y-6 text-base leading-relaxed text-white/80 sm:text-lg">
             <p>{t("ABOUT_S2_P1")}</p>
             <p>{t("ABOUT_S2_P2")}</p>
+            <p>{t("ABOUT_S2_P3")}</p>
           </div>
         </section>
 
@@ -105,7 +140,7 @@ export default function AboutClient({ newestProducts }: Props) {
           <div className="grid grid-cols-1 items-center gap-10 md:grid-cols-2 md:gap-16">
             {/* Photo */}
             <div className="relative">
-              <div className="relative aspect-[4/5] overflow-hidden border border-white/10">
+              <div className="relative aspect-[4/5] overflow-hidden">
                 <Image
                   src="/about/flo_und_phil.jpg"
                   alt="Florian und Philipp"
@@ -115,7 +150,18 @@ export default function AboutClient({ newestProducts }: Props) {
                   unoptimized
                 />
                 <div
-                  className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(ellipse 80% 70% at center, transparent 40%, rgba(10,10,10,0.4) 70%, rgba(10,10,10,0.95) 100%)",
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-[#0a0a0a] to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-[#0a0a0a] to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0a0a0a] to-transparent" />
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-[0.08] mix-blend-overlay"
                   style={{
                     backgroundImage: GRAIN_SVG,
                     backgroundRepeat: "repeat",
@@ -144,7 +190,27 @@ export default function AboutClient({ newestProducts }: Props) {
           </div>
         </section>
 
-        {/* ── Section 4: Hinter der Kamera — Polaroids ─────────────────── */}
+        {/* ── Section 3.5: Wir unterwegs — Polaroids ───────────────────── */}
+        <section>
+          <SectionHeader
+            eyebrow={t("ABOUT_S3_5_EYEBROW")}
+            title={t("ABOUT_S3_5_TITLE")}
+          />
+          <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
+            {polaroids.map((p, i) => (
+              <PolaroidCard
+                key={p.src}
+                src={p.src}
+                alt={p.alt}
+                caption={p.caption}
+                rotDeg={POLAROID_ROTS[i]}
+                caveatFontFamily={caveat.style.fontFamily}
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* ── Section 4: Hinter der Kamera — text + CTA only ───────────── */}
         <section>
           <SectionHeader
             eyebrow={t("ABOUT_S4_EYEBROW")}
@@ -154,22 +220,7 @@ export default function AboutClient({ newestProducts }: Props) {
             <p>{t("ABOUT_S4_P1")}</p>
             <p>{t("ABOUT_S4_P2")}</p>
           </div>
-
-          {/* Polaroid strip */}
-          <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
-            {POLAROIDS.map((img, i) => (
-              <PolaroidCard
-                key={img.src}
-                src={img.src}
-                alt={img.alt}
-                caption={polaroidCaptions[i]}
-                rotDeg={img.rotDeg}
-              />
-            ))}
-          </div>
-
-          {/* CTA */}
-          <div className="mt-16 flex justify-start">
+          <div className="mt-10 flex justify-start">
             <Link
               href="/shop/vermaehlung-im-blut-mediabook-cover-b"
               className="group inline-flex items-center gap-3 border border-white/15 bg-transparent px-8 py-4 text-sm font-bold uppercase tracking-widest text-white transition hover:border-[#c0392b] hover:bg-[#c0392b]"
@@ -191,7 +242,7 @@ export default function AboutClient({ newestProducts }: Props) {
           </div>
         </section>
 
-        {/* ── Section 5: Für Filmemacher ───────────────────────────────── */}
+        {/* ── Section 5: Für Filmemacher — form ───────────────────────── */}
         <section>
           <SectionHeader
             eyebrow={t("ABOUT_S5_EYEBROW")}
@@ -200,9 +251,13 @@ export default function AboutClient({ newestProducts }: Props) {
           <div className="max-w-3xl text-base leading-relaxed text-white/80 sm:text-lg">
             <p>{t("ABOUT_S5_P1")}</p>
           </div>
+
           <div className="mt-8">
-            <a
-              href="mailto:office@uncuttv.at"
+            <button
+              onClick={() => {
+                setFormOpen(!formOpen);
+                setSubmitState("idle");
+              }}
               className="group inline-flex items-center gap-3 border border-[#c0392b] bg-[#c0392b] px-8 py-4 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-[#a93226]"
             >
               <svg
@@ -215,10 +270,89 @@ export default function AboutClient({ newestProducts }: Props) {
                 viewBox="0 0 24 24"
                 aria-hidden="true"
               >
-                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                <path
+                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                  style={{
+                    transform: formOpen ? "rotate(45deg)" : "rotate(0deg)",
+                    transformOrigin: "center",
+                    transition: "transform 300ms ease",
+                  }}
+                />
               </svg>
-              <span>office@uncuttv.at</span>
-            </a>
+              <span>{formOpen ? t("ABOUT_FORM_CLOSE_LABEL") : t("ABOUT_FORM_OPEN_LABEL")}</span>
+            </button>
+
+            {formOpen && (
+              <form
+                onSubmit={handleSubmit}
+                className="mt-8 max-w-2xl space-y-6 border border-white/10 bg-black/40 p-6 sm:p-8"
+              >
+                <div>
+                  <label className="mb-2 block font-mono text-xs uppercase tracking-widest text-white/60">
+                    {t("ABOUT_FORM_NAME")}
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    required
+                    className="w-full border border-white/15 bg-black/40 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b]"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-mono text-xs uppercase tracking-widest text-white/60">
+                    {t("ABOUT_FORM_EMAIL")}
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    required
+                    className="w-full border border-white/15 bg-black/40 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b]"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-mono text-xs uppercase tracking-widest text-white/60">
+                    {t("ABOUT_FORM_FILM_TITLE")}
+                  </label>
+                  <input
+                    type="text"
+                    name="filmTitle"
+                    required
+                    className="w-full border border-white/15 bg-black/40 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b]"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block font-mono text-xs uppercase tracking-widest text-white/60">
+                    {t("ABOUT_FORM_MESSAGE")}
+                  </label>
+                  <textarea
+                    name="message"
+                    required
+                    rows={5}
+                    className="w-full resize-none border border-white/15 bg-black/40 px-4 py-3 text-sm text-white placeholder-white/30 outline-none focus:border-[#c0392b]"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="border border-[#c0392b] bg-[#c0392b] px-8 py-3 text-sm font-bold uppercase tracking-widest text-white transition hover:bg-[#a93226] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submitting ? t("ABOUT_FORM_SUBMITTING") : t("ABOUT_FORM_SUBMIT")}
+                  </button>
+
+                  {submitState === "success" && (
+                    <p className="text-sm text-green-400">{t("ABOUT_FORM_SUCCESS")}</p>
+                  )}
+                  {submitState === "error" && (
+                    <p className="text-sm text-red-400">{t("ABOUT_FORM_ERROR")}</p>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
         </section>
 
@@ -301,11 +435,13 @@ function PolaroidCard({
   alt,
   caption,
   rotDeg,
+  caveatFontFamily,
 }: {
   src: string;
   alt: string;
   caption: string;
   rotDeg: number;
+  caveatFontFamily: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -347,12 +483,16 @@ function PolaroidCard({
           src={src}
           alt={alt}
           fill
-          className="object-cover [filter:grayscale(0.15)_sepia(0.05)]"
+          className="object-cover"
+          style={{ filter: "grayscale(0.15) sepia(0.05)" }}
           sizes="(max-width: 768px) 100vw, 25vw"
           unoptimized
         />
       </div>
-      <p className="absolute bottom-3 left-0 right-0 text-center font-mono text-xs italic text-black/60">
+      <p
+        className="absolute bottom-3 left-0 right-0 text-center text-base text-black/80"
+        style={{ fontFamily: caveatFontFamily }}
+      >
         {caption}
       </p>
     </div>
