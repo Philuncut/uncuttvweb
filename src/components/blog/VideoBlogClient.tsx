@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
 import type { BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
 import VideoLightbox from "@/components/blog/VideoLightbox";
 import BlogSubscribeHero from "@/components/blog/BlogSubscribeHero";
+import FeaturedVideoCard from "@/components/blog/FeaturedVideoCard";
 
 type Props = {
   youtubeVideos: BlogVideoItem[];
@@ -17,10 +18,10 @@ type Props = {
 };
 
 function tabButtonClass(active: boolean): string {
-  return `px-6 py-4 text-sm font-bold tracking-widest transition ${
+  return `px-6 py-4 text-base font-bold uppercase tracking-widest transition ${
     active
-      ? "border-b-2 border-[#c0392b] text-white"
-      : "border-b-2 border-transparent text-white/50 hover:text-white/80"
+      ? "-mb-[2px] border-b-2 border-[#c0392b] text-white"
+      : "border-b-2 border-transparent text-white/40 hover:text-white/70"
   }`;
 }
 
@@ -79,6 +80,9 @@ export default function VideoBlogClient({
   const lightboxProducts =
     activeVideo && activeVideo.products.length > 0 ? activeVideo.products : [];
 
+  const featuredVideo = videos.length > 0 ? videos[0] : null;
+  const gridVideos = videos.slice(1);
+
   return (
     <>
       <BlogSubscribeHero
@@ -103,11 +107,21 @@ export default function VideoBlogClient({
           <p className="py-16 text-center text-white/50">{t("BLOG_EMPTY_STATE")}</p>
         )}
         {!showVimeoPlaceholder && !showEmpty && (
-          <VideoGrid
-            videos={videos}
-            language={language}
-            onOpen={setActiveVideo}
-          />
+          <>
+            {featuredVideo && (
+              <FeaturedVideoCard
+                video={featuredVideo}
+                language={language}
+                eyebrowLabel={t("BLOG_FEATURED_EYEBROW")}
+                onPlay={() => setActiveVideo(featuredVideo)}
+              />
+            )}
+            <VideoGrid
+              videos={gridVideos}
+              language={language}
+              onOpen={setActiveVideo}
+            />
+          </>
         )}
       </section>
 
@@ -140,7 +154,7 @@ function BlogTabs({
   t: (k: string) => string;
 }) {
   return (
-    <div className="border-b border-white/10 bg-[#0a0a0a]">
+    <div className="border-b-2 border-white/10 bg-[#0a0a0a]">
       <div className="mx-auto flex max-w-7xl justify-center gap-2">
         <button
           type="button"
@@ -161,21 +175,6 @@ function BlogTabs({
   );
 }
 
-type CardSize = "large" | "wide" | "std";
-
-function getCardSize(index: number): CardSize {
-  const mod = index % 6;
-  if (mod === 0) return "large";
-  if (mod === 1 || mod === 4) return "wide";
-  return "std";
-}
-
-function spanClass(size: CardSize): string {
-  if (size === "large") return "md:col-span-2 md:row-span-2";
-  if (size === "wide") return "md:col-span-2 md:row-span-1";
-  return "md:col-span-1 md:row-span-1";
-}
-
 function VideoGrid({
   videos,
   language,
@@ -185,21 +184,18 @@ function VideoGrid({
   language: "de" | "en";
   onOpen: (v: BlogVideoItem) => void;
 }) {
+  if (videos.length === 0) return null;
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:auto-rows-[180px] lg:auto-rows-[220px]">
-      {videos.map((video, i) => {
-        const size = getCardSize(i);
-        return (
-          <button
-            key={video.video_id}
-            type="button"
-            className={`group h-full w-full text-left ${spanClass(size)}`}
-            onClick={() => onOpen(video)}
-          >
-            <VideoCard video={video} language={language} size={size} />
-          </button>
-        );
-      })}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      {videos.map((video, i) => (
+        <VideoCard
+          key={video.video_id}
+          video={video}
+          language={language}
+          animationDelay={Math.min(i * 60, 600)}
+          onOpen={onOpen}
+        />
+      ))}
     </div>
   );
 }
@@ -207,12 +203,43 @@ function VideoGrid({
 function VideoCard({
   video,
   language,
-  size,
+  animationDelay,
+  onOpen,
 }: {
   video: BlogVideoItem;
   language: "de" | "en";
-  size: CardSize;
+  animationDelay: number;
+  onOpen: (v: BlogVideoItem) => void;
 }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    // Respect prefers-reduced-motion — skip animation entirely
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setVisible(true);
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "50px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const views = formatTranslation("BLOG_VIDEO_VIEWS", language, {
     count: new Intl.NumberFormat(language === "de" ? "de-DE" : "en-US").format(
       video.view_count ?? 0
@@ -222,100 +249,75 @@ function VideoCard({
     minutes: String(Math.max(1, Math.round((video.duration_seconds ?? 0) / 60))),
   });
 
-  const isLarge = size === "large";
-  const isWide = size === "wide";
-
-  const titleClass = isLarge
-    ? "line-clamp-2 text-lg font-bold text-white md:text-xl"
-    : isWide
-      ? "line-clamp-2 text-base font-semibold text-white md:text-lg"
-      : "line-clamp-2 text-sm font-medium text-white";
-
-  const metaClass =
-    isLarge || isWide
-      ? "mt-1 text-xs uppercase tracking-wider text-white/60"
-      : "mt-1 text-[11px] text-white/50";
-
-  const textPad = isLarge || isWide ? "p-5" : "p-3";
-
-  const playSize = isLarge
-    ? "h-20 w-20"
-    : isWide
-      ? "h-16 w-16"
-      : "h-12 w-12";
-
-  const iconSize = isLarge
-    ? "h-8 w-8"
-    : isWide
-      ? "h-6 w-6"
-      : "h-5 w-5";
-
-  const imgSizes = isLarge || isWide
-    ? "(max-width: 640px) 100vw, (max-width: 768px) 50vw, 50vw"
-    : "(max-width: 640px) 100vw, (max-width: 768px) 50vw, 25vw";
-
   return (
-    <article className="relative flex h-full flex-col overflow-hidden border border-white/5 bg-black/40 transition hover:border-[#c0392b]/40">
-      {/* Thumbnail area — fills all available height */}
-      {/* -webkit-touch-callout suppresses iOS Safari's native media overlay */}
-      <div
-        className="relative min-h-0 flex-1 overflow-hidden"
-        style={{ WebkitTouchCallout: "none" as never, userSelect: "none" }}
-      >
-        {video.thumbnail_url ? (
-          <Image
-            src={video.thumbnail_url}
-            alt={video.title}
-            fill
-            className="object-cover transition duration-500 group-hover:scale-105"
-            sizes={imgSizes}
-            unoptimized
-          />
-        ) : (
-          <div className="absolute inset-0 bg-white/5" />
-        )}
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => onOpen(video)}
+      className="group w-full text-left"
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : "translateY(20px)",
+        transition: `opacity 500ms cubic-bezier(0.22, 1, 0.36, 1), transform 500ms cubic-bezier(0.22, 1, 0.36, 1)`,
+        transitionDelay: visible ? `${animationDelay}ms` : "0ms",
+      }}
+    >
+      <article className="relative flex flex-col overflow-hidden border border-white/5 bg-black/40 transition hover:border-[#c0392b]/40">
+        {/* Thumbnail — 16:9 */}
+        {/* -webkit-touch-callout suppresses iOS Safari's native media overlay */}
+        <div
+          className="relative aspect-video overflow-hidden"
+          style={{ WebkitTouchCallout: "none" as never, userSelect: "none" }}
+        >
+          {video.thumbnail_url ? (
+            <Image
+              src={video.thumbnail_url}
+              alt={video.title}
+              fill
+              className="object-cover transition duration-500 group-hover:scale-105"
+              sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              unoptimized
+            />
+          ) : (
+            <div className="absolute inset-0 bg-white/5" />
+          )}
 
-        {/* Bottom vignette for text legibility on large/wide cards */}
-        {(isLarge || isWide) && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
-        )}
+          {/* Hover red tint */}
+          <div className="pointer-events-none absolute inset-0 bg-[#c0392b]/0 transition group-hover:bg-[#c0392b]/5" />
 
-        {/* Hover red tint overlay */}
-        <div className="pointer-events-none absolute inset-0 bg-[#c0392b]/0 transition group-hover:bg-[#c0392b]/5" />
-
-        {/* Play button — UncutTV branded, overlays iOS media controls */}
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span
-            className={`flex ${playSize} items-center justify-center transition duration-200 ease-out group-hover:scale-110`}
-            style={{
-              background: "rgba(192, 57, 43, 0.95)",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-              backdropFilter: "blur(2px)",
-              WebkitBackdropFilter: "blur(2px)",
-            }}
-          >
-            {/* Play triangle — 2px right offset for optical centering */}
-            <svg
-              viewBox="0 0 24 24"
-              fill="white"
-              className={iconSize}
-              style={{ marginLeft: "2px" }}
-              aria-hidden="true"
+          {/* Play button */}
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span
+              className="flex h-12 w-12 items-center justify-center transition duration-200 ease-out group-hover:scale-110"
+              style={{
+                background: "rgba(192, 57, 43, 0.95)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                backdropFilter: "blur(2px)",
+                WebkitBackdropFilter: "blur(2px)",
+              }}
             >
-              <path d="M8 5v14l11-7z" />
-            </svg>
+              {/* Play triangle — 2px right offset for optical centering */}
+              <svg
+                viewBox="0 0 24 24"
+                fill="white"
+                className="h-5 w-5"
+                style={{ marginLeft: "2px" }}
+                aria-hidden="true"
+              >
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
 
-      {/* Text section */}
-      <div className={`shrink-0 ${textPad}`}>
-        <h3 className={titleClass}>{video.title}</h3>
-        <p className={metaClass}>
-          {views} · {minutes}
-        </p>
-      </div>
-    </article>
+        {/* Text section */}
+        <div className="p-3">
+          <h3 className="line-clamp-2 text-sm font-medium text-white">{video.title}</h3>
+          <p className="mt-1 text-[11px] text-white/50">
+            {views} · {minutes}
+          </p>
+        </div>
+      </article>
+    </button>
   );
 }
-

@@ -9,6 +9,7 @@ const translations: Record<string, Record<string, string>> = {
   BLOG_TAB_VIMEO: { de: "VIMEO", en: "VIMEO" },
   BLOG_IN_VIDEO_SHOWN: { de: "Im Video gezeigt", en: "Featured in this video" },
   BLOG_BUY_NOW: { de: "Jetzt kaufen", en: "Buy now" },
+  BLOG_FEATURED_EYEBROW: { de: "NEUESTES VIDEO", en: "LATEST VIDEO" },
   BLOG_HERO_LIBRARY_LABEL: {
     de: "Videos · Reviews · Interviews · Festivalberichte",
     en: "Videos · Reviews · Interviews · Festival Coverage",
