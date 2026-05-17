@@ -19,7 +19,7 @@ import SectionHeader from "@/components/blog/SectionHeader";
 // Fix-kuratierte Must-Watch Video-IDs (YouTube only)
 const MUST_WATCH_IDS = [
   "gOvF3XqeYD4",
-  "4lYVlYbK0Hg",
+  "LYF4MICfUvY",
   "28eDo9VaVHg",
   "lgfeNyOyrW0",
 ];

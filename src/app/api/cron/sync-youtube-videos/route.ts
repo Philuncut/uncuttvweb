@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 // Videos that must always be synced regardless of upload order
 const PINNED_VIDEO_IDS = [
   "gOvF3XqeYD4",
-  "4lYV1YbK0Hg",
+  "LYF4MICfUvY",
   "28eDo9VaVHg",
   "lgfeNyOyrW0",
 ];
