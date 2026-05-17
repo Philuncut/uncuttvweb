@@ -1,12 +1,13 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Caveat } from "next/font/google";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import SectionHeader from "@/components/blog/SectionHeader";
+import { useFadeInOnScroll } from "@/hooks/useFadeInOnScroll";
 import type { WooProduct } from "@/lib/types";
 
 const caveat = Caveat({ subsets: ["latin"], weight: ["400", "600"] });
@@ -14,6 +15,10 @@ const caveat = Caveat({ subsets: ["latin"], weight: ["400", "600"] });
 const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")`;
 
 const POLAROID_ROTS = [-3, 2, -2, 3] as const;
+
+const FADE_CLASS = "transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]";
+const VISIBLE = "opacity-100 translate-y-0";
+const HIDDEN = "opacity-0 translate-y-6";
 
 type Props = {
   newestProducts: WooProduct[];
@@ -23,25 +28,37 @@ export default function AboutClient({ newestProducts }: Props) {
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
+  /* Hero: simple mounted fade (always in initial viewport) */
   const [heroMounted, setHeroMounted] = useState(false);
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      setHeroMounted(true);
+      return;
+    }
+    const id = setTimeout(() => setHeroMounted(true), 100);
+    return () => clearTimeout(id);
+  }, []);
+
+  /* Scroll-triggered fade-in for every other section */
+  const s1  = useFadeInOnScroll();
+  const s2  = useFadeInOnScroll();
+  const s3  = useFadeInOnScroll();
+  const s35 = useFadeInOnScroll();
+  const s4  = useFadeInOnScroll();
+  const s5  = useFadeInOnScroll();
+  const s6  = useFadeInOnScroll();
+  const s7  = useFadeInOnScroll();
+
   const [formOpen, setFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitState, setSubmitState] = useState<"idle" | "success" | "error">("idle");
 
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setHeroMounted(true);
-      return;
-    }
-    const id = requestAnimationFrame(() => setHeroMounted(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
   const polaroids = [
-    { src: "/about/flo_und_girl.jpg",   alt: t("ABOUT_S3_5_CAPTION_1"), caption: t("ABOUT_S3_5_CAPTION_1") },
-    { src: "/about/flow_und_crew.jpg",  alt: t("ABOUT_S3_5_CAPTION_2"), caption: t("ABOUT_S3_5_CAPTION_2") },
-    { src: "/about/phil_und_july.jpg",  alt: t("ABOUT_S3_5_CAPTION_3"), caption: t("ABOUT_S3_5_CAPTION_3") },
-    { src: "/about/phil_und_simon.jpg", alt: t("ABOUT_S3_5_CAPTION_4"), caption: t("ABOUT_S3_5_CAPTION_4") },
+    { src: "/about/flo_und_girl.jpg",   caption: t("ABOUT_S3_5_CAPTION_1") },
+    { src: "/about/flow_und_crew.jpg",  caption: t("ABOUT_S3_5_CAPTION_2") },
+    { src: "/about/phil_und_july.jpg",  caption: t("ABOUT_S3_5_CAPTION_3") },
+    { src: "/about/phil_und_simon.jpg", caption: t("ABOUT_S3_5_CAPTION_4") },
   ];
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -81,7 +98,9 @@ export default function AboutClient({ newestProducts }: Props) {
       <div className="space-y-20">
 
         {/* ── Section 0: Hero ──────────────────────────────────────────── */}
-        <section>
+        <section
+          className={`${FADE_CLASS} ${heroMounted ? VISIBLE : HIDDEN}`}
+        >
           <div className="mb-6 flex items-center gap-3">
             <span
               className="h-0.5 bg-[#c0392b]"
@@ -110,7 +129,10 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
         {/* ── Section 1: Wie alles begann ──────────────────────────────── */}
-        <section>
+        <section
+          ref={s1.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s1.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S1_EYEBROW")}
             title={t("ABOUT_S1_TITLE")}
@@ -123,7 +145,10 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
         {/* ── Section 2: Vom Keller ins Headquarter ────────────────────── */}
-        <section>
+        <section
+          ref={s2.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s2.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S2_EYEBROW")}
             title={t("ABOUT_S2_TITLE")}
@@ -136,7 +161,10 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
         {/* ── Section 3: Persönlich — photo + text ─────────────────────── */}
-        <section>
+        <section
+          ref={s3.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s3.visible ? VISIBLE : HIDDEN}`}
+        >
           <div className="grid grid-cols-1 items-center gap-10 md:grid-cols-2 md:gap-16">
             {/* Photo */}
             <div className="relative">
@@ -191,27 +219,56 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
         {/* ── Section 3.5: Wir unterwegs — Polaroids ───────────────────── */}
-        <section>
+        <section
+          ref={s35.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s35.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S3_5_EYEBROW")}
             title={t("ABOUT_S3_5_TITLE")}
           />
           <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
             {polaroids.map((p, i) => (
-              <PolaroidCard
+              <div
                 key={p.src}
-                src={p.src}
-                alt={p.alt}
-                caption={p.caption}
-                rotDeg={POLAROID_ROTS[i]}
-                caveatFontFamily={caveat.style.fontFamily}
-              />
+                className="transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                style={{
+                  transitionDelay: `${i * 100}ms`,
+                  opacity: s35.visible ? 1 : 0,
+                  transform: s35.visible
+                    ? `translateY(0px) rotate(${POLAROID_ROTS[i]}deg)`
+                    : `translateY(32px) rotate(${POLAROID_ROTS[i]}deg)`,
+                }}
+              >
+                <div className="group relative bg-[#f5f0e8] p-3 pb-12 shadow-2xl transition-transform duration-300 hover:scale-[1.03]">
+                  <div className="relative aspect-square overflow-hidden bg-black">
+                    <Image
+                      src={p.src}
+                      alt={p.caption}
+                      fill
+                      className="object-cover"
+                      style={{ filter: "grayscale(0.15) sepia(0.05)" }}
+                      sizes="(max-width: 768px) 100vw, 25vw"
+                      unoptimized
+                    />
+                  </div>
+                  <p
+                    className="absolute bottom-3 left-0 right-0 text-center text-base text-black/80"
+                    style={{ fontFamily: caveat.style.fontFamily }}
+                  >
+                    {p.caption}
+                  </p>
+                </div>
+              </div>
             ))}
           </div>
         </section>
 
         {/* ── Section 4: Hinter der Kamera — text + CTA only ───────────── */}
-        <section>
+        <section
+          ref={s4.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s4.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S4_EYEBROW")}
             title={t("ABOUT_S4_TITLE")}
@@ -243,7 +300,10 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
         {/* ── Section 5: Für Filmemacher — form ───────────────────────── */}
-        <section>
+        <section
+          ref={s5.ref as React.RefObject<HTMLElement>}
+          className={`${FADE_CLASS} ${s5.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S5_EYEBROW")}
             title={t("ABOUT_S5_TITLE")}
@@ -358,17 +418,25 @@ export default function AboutClient({ newestProducts }: Props) {
 
         {/* ── Section 6: Archiv-Block ───────────────────────────────────── */}
         {newestProducts.length > 0 && (
-          <section>
+          <section
+            ref={s6.ref as React.RefObject<HTMLElement>}
+            className={`${FADE_CLASS} ${s6.visible ? VISIBLE : HIDDEN}`}
+          >
             <SectionHeader
               eyebrow={t("ABOUT_S6_EYEBROW")}
               title={t("ABOUT_S6_TITLE")}
             />
             <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              {newestProducts.map((p) => (
+              {newestProducts.map((p, i) => (
                 <Link
                   key={p.id}
                   href={`/shop/${p.slug}`}
-                  className="group relative block overflow-hidden border border-white/10 bg-black/40 transition hover:border-[#c0392b]/40"
+                  className="group relative block overflow-hidden border border-white/10 bg-black/40 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] hover:border-[#c0392b]/40"
+                  style={{
+                    transitionDelay: `${i * 100}ms`,
+                    opacity: s6.visible ? 1 : 0,
+                    transform: s6.visible ? "translateY(0px)" : "translateY(24px)",
+                  }}
                 >
                   <div className="relative aspect-square overflow-hidden">
                     <Image
@@ -412,7 +480,10 @@ export default function AboutClient({ newestProducts }: Props) {
         )}
 
         {/* ── Section 7: Danke ─────────────────────────────────────────── */}
-        <section className="border-t border-white/10 pt-20">
+        <section
+          ref={s7.ref as React.RefObject<HTMLElement>}
+          className={`border-t border-white/10 pt-20 ${FADE_CLASS} ${s7.visible ? VISIBLE : HIDDEN}`}
+        >
           <SectionHeader
             eyebrow={t("ABOUT_S7_EYEBROW")}
             title={t("ABOUT_S7_TITLE")}
@@ -424,77 +495,6 @@ export default function AboutClient({ newestProducts }: Props) {
         </section>
 
       </div>
-    </div>
-  );
-}
-
-// ── Polaroid card ─────────────────────────────────────────────────────────────
-
-function PolaroidCard({
-  src,
-  alt,
-  caption,
-  rotDeg,
-  caveatFontFamily,
-}: {
-  src: string;
-  alt: string;
-  caption: string;
-  rotDeg: number;
-  caveatFontFamily: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="group relative bg-[#f5f0e8] p-3 pb-12 shadow-2xl transition-transform duration-300 hover:scale-[1.03]"
-      style={{
-        transform: `rotate(${rotDeg}deg)`,
-        opacity: visible ? 1 : 0,
-        transition: "opacity 500ms ease, transform 300ms ease",
-      }}
-    >
-      <div className="relative aspect-square overflow-hidden bg-black">
-        <Image
-          src={src}
-          alt={alt}
-          fill
-          className="object-cover"
-          style={{ filter: "grayscale(0.15) sepia(0.05)" }}
-          sizes="(max-width: 768px) 100vw, 25vw"
-          unoptimized
-        />
-      </div>
-      <p
-        className="absolute bottom-3 left-0 right-0 text-center text-base text-black/80"
-        style={{ fontFamily: caveatFontFamily }}
-      >
-        {caption}
-      </p>
     </div>
   );
 }
