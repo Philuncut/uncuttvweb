@@ -8,6 +8,7 @@ import type { BlogVideoItem, VideoPlatform } from "@/lib/video-blog-types";
 import VideoLightbox from "@/components/blog/VideoLightbox";
 import BlogSubscribeHero from "@/components/blog/BlogSubscribeHero";
 import FeaturedVideoCard from "@/components/blog/FeaturedVideoCard";
+import SectionHeader from "@/components/blog/SectionHeader";
 
 type Props = {
   youtubeVideos: BlogVideoItem[];
@@ -80,8 +81,21 @@ export default function VideoBlogClient({
   const lightboxProducts =
     activeVideo && activeVideo.products.length > 0 ? activeVideo.products : [];
 
-  const featuredVideo = videos.length > 0 ? videos[0] : null;
-  const gridVideos = videos.slice(1);
+  const featured = videos.length > 0 ? videos[0] : null;
+
+  const mostViewed = [...videos]
+    .sort((a, b) => (b.view_count ?? 0) - (a.view_count ?? 0))
+    .filter((v) => v.video_id !== featured?.video_id)
+    .slice(0, 4);
+
+  const mostViewedIds = new Set(mostViewed.map((v) => v.video_id));
+
+  const newest = videos
+    .filter(
+      (v) =>
+        v.video_id !== featured?.video_id && !mostViewedIds.has(v.video_id)
+    )
+    .slice(0, 4);
 
   return (
     <>
@@ -107,21 +121,41 @@ export default function VideoBlogClient({
           <p className="py-16 text-center text-white/50">{t("BLOG_EMPTY_STATE")}</p>
         )}
         {!showVimeoPlaceholder && !showEmpty && (
-          <>
-            {featuredVideo && (
+          <div className="space-y-16">
+            {/* Section 1: Featured — newest video */}
+            {featured && (
               <FeaturedVideoCard
-                video={featuredVideo}
+                video={featured}
                 language={language}
                 eyebrowLabel={t("BLOG_FEATURED_EYEBROW")}
-                onPlay={() => setActiveVideo(featuredVideo)}
+                onPlay={() => setActiveVideo(featured)}
               />
             )}
-            <VideoGrid
-              videos={gridVideos}
-              language={language}
-              onOpen={setActiveVideo}
-            />
-          </>
+
+            {/* Section 2: Most viewed */}
+            {mostViewed.length > 0 && (
+              <section>
+                <SectionHeader eyebrow={t("BLOG_SECTION_MOST_VIEWED")} />
+                <VideoGrid
+                  videos={mostViewed}
+                  language={language}
+                  onOpen={setActiveVideo}
+                />
+              </section>
+            )}
+
+            {/* Section 3: Newest (excluding featured + mostViewed) */}
+            {newest.length > 0 && (
+              <section>
+                <SectionHeader eyebrow={t("BLOG_SECTION_NEWEST")} />
+                <VideoGrid
+                  videos={newest}
+                  language={language}
+                  onOpen={setActiveVideo}
+                />
+              </section>
+            )}
+          </div>
         )}
       </section>
 
