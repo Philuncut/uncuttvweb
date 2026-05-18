@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { parsePrice } from "@/lib/parse-price";
 
+interface CartMeta {
+  id: number;
+  name: string;
+  qty: number;
+  price: string;
+}
+
+function parseCartMeta(raw: string | undefined): CartMeta[] {
+  try {
+    return JSON.parse(raw || "[]") as CartMeta[];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("session_id");
@@ -25,6 +40,15 @@ export async function GET(request: Request) {
           ? session.total_details.amount_shipping
           : 0;
 
+      // WooCommerce product IDs for Meta tracking — stored in session metadata
+      const cartMeta = parseCartMeta(session.metadata?.cart_items);
+      const line_items = cartMeta.map((item) => ({
+        product_id: String(item.id),
+        name: item.name,
+        quantity: item.qty,
+        price: parsePrice(item.price),
+      }));
+
       return NextResponse.json({
         customerName: session.customer_details?.name || "",
         customerEmail: session.customer_details?.email || "",
@@ -33,27 +57,26 @@ export async function GET(request: Request) {
         items,
         shippingCents,
         isWholesaleShipping: false,
+        line_items,
       });
     }
 
     if (paymentIntentId) {
       const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
 
-      // Parse cart items from PI metadata
-      interface CartMeta {
-        id: number;
-        name: string;
-        qty: number;
-        price: string;
-      }
-      const cartItems: CartMeta[] = JSON.parse(
-        pi.metadata?.cart_items || "[]"
-      );
+      const cartMeta = parseCartMeta(pi.metadata?.cart_items);
 
-      const items = cartItems.map((item) => ({
+      const items = cartMeta.map((item) => ({
         description: item.name,
         quantity: item.qty,
         amount: Math.round(parsePrice(item.price) * 100) * item.qty,
+      }));
+
+      const line_items = cartMeta.map((item) => ({
+        product_id: String(item.id),
+        name: item.name,
+        quantity: item.qty,
+        price: parsePrice(item.price),
       }));
 
       const shippingMeta = parseInt(pi.metadata?.shipping_cents ?? "", 10);
@@ -69,7 +92,6 @@ export async function GET(request: Request) {
           ? pi.metadata.shipping_country.trim().toUpperCase()
           : "";
 
-      // Try to get customer email from the payment method's billing details
       let customerEmail = "";
       let customerName = "";
       if (pi.latest_charge) {
@@ -94,6 +116,7 @@ export async function GET(request: Request) {
         isWholesaleShipping,
         shippingMethodTitle: shippingMethodTitle || undefined,
         shippingCountry: shippingCountry || undefined,
+        line_items,
       });
     }
 

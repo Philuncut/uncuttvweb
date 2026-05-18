@@ -22,6 +22,7 @@ import {
 } from "@paypal/react-paypal-js";
 import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
+import { trackInitiateCheckout } from "@/lib/meta-pixel";
 import { validateEuVatFormat } from "@/lib/vat-format";
 import { isReverseChargeEligible } from "@/lib/reverse-charge";
 import { parsePrice, parseFixedDiscountEuros } from "@/lib/parse-price";
@@ -699,6 +700,16 @@ function CheckoutInner() {
   const { items, totalPrice, clearCart } = useCart();
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    void trackInitiateCheckout(
+      totalPrice,
+      items.reduce((sum, i) => sum + i.quantity, 0),
+      items.map((i) => i.product.id.toString())
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [email, setEmail] = useState("");
   const [newsletter, setNewsletter] = useState(false);

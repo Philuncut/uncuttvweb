@@ -9,6 +9,7 @@ import { createT } from "@/lib/translations";
 import SectionHeader from "@/components/blog/SectionHeader";
 import { useFadeInOnScroll } from "@/hooks/useFadeInOnScroll";
 import type { WooProduct } from "@/lib/types";
+import { trackLead } from "@/lib/meta-pixel";
 
 const caveat = Caveat({ subsets: ["latin"], weight: ["400", "600"] });
 
@@ -81,6 +82,7 @@ export default function AboutClient({ newestProducts }: Props) {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        trackLead("Filmemacher");
         setSubmitState("success");
         (e.target as HTMLFormElement).reset();
       } else {

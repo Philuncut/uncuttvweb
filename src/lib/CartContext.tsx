@@ -12,6 +12,7 @@ import {
 import type { WooProduct } from "@/lib/types";
 import { parsePrice } from "@/lib/parse-price";
 import { mergeCartItems } from "@/lib/persisted-cart";
+import { trackAddToCart } from "@/lib/meta-pixel";
 
 export interface CartItem {
   product: WooProduct;
@@ -256,6 +257,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return [...prev, { product, quantity: 1 }];
     });
     setCartChangeKey((k) => k + 1);
+    void trackAddToCart(
+      product.id.toString(),
+      product.name,
+      parsePrice(product.price || "0"),
+      1
+    );
   }, []);
 
   const removeFromCart = useCallback((productId: number) => {

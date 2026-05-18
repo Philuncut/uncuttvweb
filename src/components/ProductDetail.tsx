@@ -9,6 +9,7 @@ import ProductGallery from "@/components/ProductGallery";
 import AddToCartButton from "@/components/AddToCartButton";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
+import { trackViewContent } from "@/lib/meta-pixel";
 
 interface DetailEntry {
   label: string;
@@ -161,6 +162,15 @@ export default function ProductDetail({
       });
     }
   }, [language, product.name, rawDescription, product.short_description]);
+
+  useEffect(() => {
+    trackViewContent(
+      product.id.toString(),
+      product.name,
+      parsePrice(product.price || "0")
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

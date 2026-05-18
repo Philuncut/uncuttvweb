@@ -16,6 +16,14 @@ import { getShippingLogo } from "@/components/ShippingLogos";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation, getTranslation } from "@/lib/translations";
 import { clearVideoUtmStorage } from "@/lib/video-utm";
+import { trackPurchase } from "@/lib/meta-pixel";
+
+interface OrderLineItem {
+  product_id: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
 
 interface OrderDetails {
   customerName: string;
@@ -29,6 +37,7 @@ interface OrderDetails {
   shippingMethodTitle?: string;
   /** ISO2 aus PI-Metadaten / SessionStorage für Versand-Logo-Mapping. */
   shippingCountry?: string;
+  line_items?: OrderLineItem[];
 }
 
 export default function OrderSuccess() {
@@ -108,6 +117,11 @@ export default function OrderSuccess() {
         const res = await fetch(`/api/order-details?${param}`);
         if (res.ok) {
           const data = (await res.json()) as OrderDetails;
+          trackPurchase(
+            sessionId ?? paymentIntentId ?? `order-${Date.now()}`,
+            parsePrice(data.total),
+            data.line_items?.map((i) => i.product_id) ?? []
+          );
           let merged = data;
           const stored = paymentIntentId
             ? readCheckoutSyncPayload(paymentIntentId)

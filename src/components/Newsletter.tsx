@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
+import { trackLead } from "@/lib/meta-pixel";
 
 type NewsletterStatus = "idle" | "success" | "already" | "error";
 
@@ -69,6 +70,7 @@ export default function Newsletter() {
         }
 
         if (data.success === true) {
+          trackLead("Newsletter");
           setIsNewsletterSubscribed(true);
           setStatus("success");
         } else if (data.alreadySubscribed === true) {

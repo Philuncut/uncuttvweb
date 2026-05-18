@@ -4,6 +4,7 @@ import { CartProvider } from "@/lib/CartContext";
 import { LanguageProvider } from "@/lib/LanguageContext";
 import NavigationProgress from "@/components/NavigationProgress";
 import CookieConsent from "@/components/CookieConsent";
+import MetaPixel from "@/components/MetaPixel";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -49,6 +50,7 @@ export default function RootLayout({
           <CartProvider>
             {children}
             <CookieConsent />
+            <MetaPixel />
           </CartProvider>
         </LanguageProvider>
       </body>
