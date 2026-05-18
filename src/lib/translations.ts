@@ -199,6 +199,24 @@ const translations: Record<string, Record<string, string>> = {
   // Cart
   WARENKORB: { de: "WARENKORB", en: "CART" },
   WARENKORB_LEER: { de: "Dein Warenkorb ist leer.", en: "Your cart is empty." },
+  CART_REPRICE_NOTICE_TITLE: {
+    de: "Warenkorb aktualisiert",
+    en: "Cart updated",
+  },
+  CART_REPRICE_NOTICE_UPDATED: {
+    de: "{{count}} Artikel wurden mit Händlerpreisen aktualisiert.",
+    en: "{{count}} items were updated with wholesale pricing.",
+  },
+  CART_REPRICE_NOTICE_REMOVED_TITLE: {
+    de:
+      "Folgende Artikel sind im Händlersortiment nicht verfügbar und wurden aus dem Warenkorb entfernt:",
+    en:
+      "The following items are not available in the wholesale catalog and were removed from your cart:",
+  },
+  CART_REPRICE_NOTICE_REMOVED_HINT: {
+    de: "Du kannst diese Artikel weiterhin über einen privaten Account bestellen.",
+    en: "You can still order these items via a private account.",
+  },
   GESAMT: { de: "GESAMT", en: "TOTAL" },
   ZUR_KASSE: { de: "ZUR KASSE", en: "CHECKOUT" },
   WEITER_EINKAUFEN: { de: "WEITER EINKAUFEN", en: "CONTINUE SHOPPING" },

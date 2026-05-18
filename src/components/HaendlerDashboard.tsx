@@ -14,7 +14,7 @@ import {
 import { formatPrice } from "@/lib/format-price";
 import { invoiceErrorMessage } from "@/lib/invoice-download-errors";
 import { parsePrice } from "@/lib/parse-price";
-import { createT } from "@/lib/translations";
+import { createT, formatTranslation } from "@/lib/translations";
 import type { WooCategory } from "@/lib/types";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
 import {
@@ -224,6 +224,11 @@ function ExpandableSection({
 
 const HAENDLER_DASHBOARD_SEEN_KEY = "haendler_dashboard_seen";
 
+type CartRepriceNotice = {
+  repricedCount: number;
+  removedItems: { id: number; name: string; price: string }[];
+};
+
 function DashboardLoadSkeleton() {
   return (
     <div className="min-h-[50vh] animate-pulse space-y-6" aria-hidden>
@@ -343,6 +348,11 @@ export default function HaendlerDashboard() {
   const [saveMsg, setSaveMsg] = useState("");
   const [showCompanyWarning, setShowCompanyWarning] = useState(false);
 
+  /** One-shot wholesale cart re-price notice — set during dealer login flows. */
+  const [repriceNotice, setRepriceNotice] = useState<CartRepriceNotice | null>(
+    null
+  );
+
   // Edit fields
   const [editFirst, setEditFirst] = useState("");
   const [editLast, setEditLast] = useState("");
@@ -358,6 +368,24 @@ export default function HaendlerDashboard() {
   const [editShipZip, setEditShipZip] = useState("");
   const [editShipCountry, setEditShipCountry] = useState("AT");
   const [shipSameAsBilling, setShipSameAsBilling] = useState(true);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("cart_reprice_notice");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as CartRepriceNotice;
+      sessionStorage.removeItem("cart_reprice_notice");
+      if (
+        parsed &&
+        typeof parsed.repricedCount === "number" &&
+        Array.isArray(parsed.removedItems)
+      ) {
+        setRepriceNotice(parsed);
+      }
+    } catch {
+      sessionStorage.removeItem("cart_reprice_notice");
+    }
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -584,6 +612,53 @@ export default function HaendlerDashboard() {
 
   return (
     <div className="space-y-14">
+      {repriceNotice &&
+        (repriceNotice.repricedCount > 0 ||
+          repriceNotice.removedItems.length > 0) && (
+          <div
+            className="flex flex-col gap-3 border border-[#c0392b]/35 bg-[rgba(192,57,43,0.08)] px-4 py-3 text-sm text-white"
+            role="status"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <p className="font-bold">{t("CART_REPRICE_NOTICE_TITLE")}</p>
+              <button
+                type="button"
+                onClick={() => setRepriceNotice(null)}
+                className="cursor-pointer shrink-0 text-white/70 transition-colors hover:text-white"
+                aria-label={language === "de" ? "Hinweis schließen" : "Dismiss notice"}
+              >
+                ✕
+              </button>
+            </div>
+            {repriceNotice.repricedCount > 0 && (
+              <p className="text-white/85">
+                {formatTranslation(
+                  "CART_REPRICE_NOTICE_UPDATED",
+                  language,
+                  { count: String(repriceNotice.repricedCount) }
+                )}
+              </p>
+            )}
+            {repriceNotice.removedItems.length > 0 && (
+              <div className="text-white/80">
+                <p className="font-semibold">
+                  {t("CART_REPRICE_NOTICE_REMOVED_TITLE")}
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-1">
+                  {repriceNotice.removedItems.map((r) => (
+                    <li key={r.id}>
+                      <span>{r.name || `#${r.id}`}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-white/65">
+                  {t("CART_REPRICE_NOTICE_REMOVED_HINT")}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
       {/* Greeting */}
       {showCompanyWarning && (
         <div className="flex items-start justify-between gap-4 border border-[#c0392b] bg-[#3a1310] px-4 py-3 text-sm text-white">

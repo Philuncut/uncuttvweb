@@ -13,11 +13,24 @@ import type { WooProduct } from "@/lib/types";
 import { parsePrice } from "@/lib/parse-price";
 import { mergeCartItems } from "@/lib/persisted-cart";
 import { trackAddToCart } from "@/lib/meta-pixel";
+import { toHaendlerCartProduct } from "@/lib/haendler-to-cart-product";
 
 export interface CartItem {
   product: WooProduct;
   quantity: number;
 }
+
+export type WholesaleRepriceRemovedItem = {
+  id: number;
+  name: string;
+  price: string;
+};
+
+export type WholesaleRepriceResult = {
+  repricedCount: number;
+  removedCount: number;
+  removedItems: WholesaleRepriceRemovedItem[];
+};
 
 interface CartContextValue {
   items: CartItem[];
@@ -27,6 +40,11 @@ interface CartContextValue {
   removeFromCart: (productId: number) => void;
   updateQuantity: (productId: number, quantity: number) => void;
   clearCart: () => void;
+  /**
+   * Fetches Woo wholesale line prices per cart SKU; keeps rows with haendler_preis &gt; 0,
+   * drops the rest (B2C-only catalog items).
+   */
+  repriceCartForWholesale: () => Promise<WholesaleRepriceResult>;
   totalItems: number;
   totalPrice: number;
   drawerOpen: boolean;
@@ -111,6 +129,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [cartChangeKey, setCartChangeKey] = useState(0);
+
+  /** Latest cart snapshot — used by repricing outside React commit timing. */
+  const itemsRef = useRef<CartItem[]>([]);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const persistEnabledRef = useRef(false);
   const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -287,6 +311,66 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [cancelPendingPersist]);
 
+  const repriceCartForWholesale = useCallback(async (): Promise<WholesaleRepriceResult> => {
+    const snapshot = itemsRef.current;
+    if (!snapshot.length) {
+      return { repricedCount: 0, removedCount: 0, removedItems: [] };
+    }
+
+    try {
+      const uniqueIds = [...new Set(snapshot.map((i) => i.product.id))];
+      const res = await fetch("/api/cart/reprice-wholesale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: uniqueIds }),
+        cache: "no-store",
+        credentials: "include",
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        eligible?: Record<string, unknown>;
+      };
+
+      if (!res.ok || !data.ok || !data.eligible) {
+        return { repricedCount: 0, removedCount: 0, removedItems: [] };
+      }
+
+      const nextItems: CartItem[] = [];
+      const removedItems: WholesaleRepriceRemovedItem[] = [];
+      let repricedCount = 0;
+
+      for (const row of snapshot) {
+        const rawEligible = data.eligible[String(row.product.id)];
+        if (rawEligible && typeof rawEligible === "object" && rawEligible !== null) {
+          const cartProduct = toHaendlerCartProduct(
+            rawEligible as WooProduct & { haendler_preis?: string }
+          );
+          nextItems.push({ product: cartProduct, quantity: row.quantity });
+          repricedCount += 1;
+        } else {
+          removedItems.push({
+            id: row.product.id,
+            name: row.product.name ?? "",
+            price: row.product.price ?? "0",
+          });
+        }
+      }
+
+      const loggedIn = await fetchSessionLoggedIn();
+      persistEnabledRef.current = loggedIn;
+      applyCartState(nextItems, { persistImmediately: loggedIn });
+      setCartChangeKey((k) => k + 1);
+
+      return {
+        repricedCount,
+        removedCount: removedItems.length,
+        removedItems,
+      };
+    } catch {
+      return { repricedCount: 0, removedCount: 0, removedItems: [] };
+    }
+  }, [applyCartState]);
+
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = items.reduce(
     (sum, i) => sum + parsePrice(i.product.price || "0") * i.quantity,
@@ -305,6 +389,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         removeFromCart,
         updateQuantity,
         clearCart,
+        repriceCartForWholesale,
         totalItems,
         totalPrice,
         drawerOpen,

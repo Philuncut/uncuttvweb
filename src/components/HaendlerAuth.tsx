@@ -4,6 +4,7 @@ import { useState, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
+import { useCart } from "@/lib/CartContext";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -43,6 +44,7 @@ function Input({
 
 export default function HaendlerAuth() {
   const router = useRouter();
+  const { repriceCartForWholesale } = useCart();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -68,14 +70,32 @@ export default function HaendlerAuth() {
           setLoading(false);
           return;
         }
+        try {
+          const result = await repriceCartForWholesale();
+          if (
+            result.repricedCount > 0 ||
+            result.removedItems.length > 0
+          ) {
+            sessionStorage.setItem(
+              "cart_reprice_notice",
+              JSON.stringify({
+                removedItems: result.removedItems,
+                repricedCount: result.repricedCount,
+              })
+            );
+          }
+        } catch {
+          /* keep cart unchanged on failure */
+        }
         window.dispatchEvent(new Event("uncuttv:session-changed"));
+        setLoading(false);
         router.push("/haendler/dashboard");
       } catch {
         setError("Verbindungsfehler.");
         setLoading(false);
       }
     },
-    [loginEmail, loginPw, router]
+    [loginEmail, loginPw, router, repriceCartForWholesale]
   );
 
   return (

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
+import { useCart } from "@/lib/CartContext";
 
 /** Validates and resolves the post-login redirect target. */
 function resolveRedirectTarget(searchParams: { get(name: string): string | null }): string {
@@ -51,6 +52,7 @@ function Input({
 export default function AuthForms() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { repriceCartForWholesale } = useCart();
   const [tab, setTab] = useState<Tab>("login");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -117,20 +119,41 @@ export default function AuthForms() {
           setLoading(false);
           return;
         }
-        window.dispatchEvent(new Event("uncuttv:session-changed"));
-        // Wholesale takes priority over any stored redirect target —
-        // a wholesale user should never land in the B2C shop flow.
-        if (data.isWholesale) {
+
+        // Wholesale takes priority — B2C shop flow skipped and cart repriced server-side prices.
+        if (data.isWholesale === true) {
+          try {
+            const result = await repriceCartForWholesale();
+            if (
+              result.repricedCount > 0 ||
+              result.removedItems.length > 0
+            ) {
+              sessionStorage.setItem(
+                "cart_reprice_notice",
+                JSON.stringify({
+                  removedItems: result.removedItems,
+                  repricedCount: result.repricedCount,
+                })
+              );
+            }
+          } catch {
+            /* keep cart unchanged on failure */
+          }
+          window.dispatchEvent(new Event("uncuttv:session-changed"));
+          setLoading(false);
           router.push("/haendler/dashboard");
-        } else {
-          router.push(redirectTo);
+          return;
         }
+
+        window.dispatchEvent(new Event("uncuttv:session-changed"));
+        setLoading(false);
+        router.push(redirectTo);
       } catch {
         setError("Verbindungsfehler.");
         setLoading(false);
       }
     },
-    [loginEmail, loginPassword, router, redirectTo]
+    [loginEmail, loginPassword, router, redirectTo, repriceCartForWholesale]
   );
 
   const handleRegister = useCallback(
