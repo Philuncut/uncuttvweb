@@ -118,7 +118,13 @@ export default function AuthForms() {
           return;
         }
         window.dispatchEvent(new Event("uncuttv:session-changed"));
-        router.push(redirectTo);
+        // Wholesale takes priority over any stored redirect target —
+        // a wholesale user should never land in the B2C shop flow.
+        if (data.isWholesale) {
+          router.push("/haendler/dashboard");
+        } else {
+          router.push(redirectTo);
+        }
       } catch {
         setError("Verbindungsfehler.");
         setLoading(false);

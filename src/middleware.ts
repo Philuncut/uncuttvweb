@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WHOLESALE_ROLE } from "@/lib/auth-constants";
 
-const WHOLESALE_ROLES = new Set(["wholesale"]);
+const WHOLESALE_ROLES = new Set([WHOLESALE_ROLE]);
 
 function isWholesaleUser(request: NextRequest): boolean {
   const c = request.cookies;

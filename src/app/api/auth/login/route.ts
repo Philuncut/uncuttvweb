@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { WHOLESALE_ROLE } from "@/lib/auth-constants";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -141,7 +142,21 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 30,
     });
 
-    console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role);
+    // Wholesale users also get the haendler cookie set so the dealer portal
+    // guard accepts them immediately without a second login prompt.
+    // Administrators and shop_managers are intentionally excluded — they
+    // access the B2C shop normally and log into the dealer portal separately.
+    const isWholesale = sessionUser.role === WHOLESALE_ROLE;
+
+    if (isWholesale) {
+      cookieStore.set("haendler_token", token, opts);
+      cookieStore.set("haendler_id", String(sessionUser.id), opts);
+      cookieStore.set("haendler_email", sessionUser.email, opts);
+      cookieStore.set("haendler_role", sessionUser.role, opts);
+      cookieStore.set("haendler_name", sessionUser.first_name, opts);
+    }
+
+    console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role, "isWholesale:", isWholesale);
 
     return NextResponse.json({
       id: sessionUser.id,
@@ -149,6 +164,7 @@ export async function POST(request: Request) {
       firstName: sessionUser.first_name,
       lastName: sessionUser.last_name,
       role: sessionUser.role,
+      isWholesale,
     });
   } catch (error) {
     console.error("[Login] Unexpected error:", error);

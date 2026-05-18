@@ -5,6 +5,7 @@ import {
   isNewsletterSubscribedFromMeta,
 } from "@/lib/newsletter-customer-meta";
 import { fetchWooCustomer } from "@/lib/woo-customer-api";
+import { WHOLESALE_ROLE } from "@/lib/auth-constants";
 
 export const dynamic = "force-dynamic";
 
@@ -48,10 +49,7 @@ export async function GET() {
   const haendlerToken = cookieStore.get("haendler_token")?.value;
   const haendlerEmail = cookieStore.get("haendler_email")?.value;
   const haendlerRole = cookieStore.get("haendler_role")?.value?.toLowerCase() ?? "";
-  const haendlerIsWholesale =
-    haendlerRole === "wholesale" ||
-    haendlerRole === "administrator" ||
-    haendlerRole === "shop_manager";
+  const haendlerIsWholesale = haendlerRole === WHOLESALE_ROLE;
 
   if (haendlerToken && haendlerEmail) {
     const nameCookie = cookieStore.get("haendler_name")?.value?.trim();
@@ -74,10 +72,7 @@ export async function GET() {
     const nameCookie = cookieStore.get("woo_customer_name")?.value?.trim();
     const wooRole = cookieStore.get("woo_customer_role")?.value?.toLowerCase() ?? "";
     const name = nameCookie || displayNameFromEmail(wooEmail);
-    const isWholesale =
-      wooRole === "wholesale" ||
-      wooRole === "administrator" ||
-      wooRole === "shop_manager";
+    const isWholesale = wooRole === WHOLESALE_ROLE;
     const isNewsletterSubscribed = await resolveNewsletterSubscribed();
     return NextResponse.json({
       isLoggedIn: true,
