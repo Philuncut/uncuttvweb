@@ -701,17 +701,17 @@ function CheckoutInner() {
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
+  const initiateCheckoutTracked = useRef(false);
   useEffect(() => {
-    console.log("[CheckoutDebug] mount, items:", items, "totalPrice:", totalPrice);
+    if (initiateCheckoutTracked.current) return;
     if (items.length === 0) return;
+    initiateCheckoutTracked.current = true;
     void trackInitiateCheckout(
       totalPrice,
       items.reduce((sum, i) => sum + i.quantity, 0),
       items.map((i) => i.product.id.toString())
     );
-    console.log("[CheckoutDebug] trackInitiateCheckout called");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [items, totalPrice]);
 
   const [email, setEmail] = useState("");
   const [newsletter, setNewsletter] = useState(false);
