@@ -32,6 +32,7 @@ function generateEventId(): string {
 }
 
 export function fbqTrack(event: FbqEvent, params?: FbqParams): string {
+  console.log("[fbqTrack]", event, params);
   const eventId = params?.event_id ?? generateEventId();
 
   if (typeof window === "undefined") return eventId;

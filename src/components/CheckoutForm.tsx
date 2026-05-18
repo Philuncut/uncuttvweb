@@ -702,12 +702,14 @@ function CheckoutInner() {
   const t = useMemo(() => createT(language), [language]);
 
   useEffect(() => {
+    console.log("[CheckoutDebug] mount, items:", items, "totalPrice:", totalPrice);
     if (items.length === 0) return;
     void trackInitiateCheckout(
       totalPrice,
       items.reduce((sum, i) => sum + i.quantity, 0),
       items.map((i) => i.product.id.toString())
     );
+    console.log("[CheckoutDebug] trackInitiateCheckout called");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
