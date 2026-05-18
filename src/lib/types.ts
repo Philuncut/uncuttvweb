@@ -21,6 +21,8 @@ export interface WooProduct {
   sale_price: string;
   on_sale: boolean;
   stock_status: "instock" | "outofstock" | "onbackorder";
+  /** Present when Woo “Manage stock” is enabled — used for scarcity + wholesale qty. */
+  stock_quantity?: number | null;
   sku: string;
   images: WooImage[];
   categories: WooCategory[];

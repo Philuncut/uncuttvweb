@@ -10,6 +10,10 @@ import { createT, translateCategoryName } from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
+import {
+  getStockDisplay,
+  productHasPreOrderCategory,
+} from "@/lib/stock-display";
 
 /* ── FilterPill ── */
 const pillGlow =
@@ -91,14 +95,32 @@ function hasCatSlug(product: WooProduct, slug: string): boolean {
 function ProductCard({
   product,
   muted,
+  wholesaleSession,
 }: {
   product: WooProduct;
   muted?: boolean;
+  /** `null` = session not fetched yet — hide scarcity overlays. */
+  wholesaleSession: boolean | null;
 }) {
   const [cardFlash, setCardFlash] = useState(false);
   const badge = muted ? "AUSVERKAUFT" : getBadge(product);
   const image = product.images[0]?.src;
   const showQuickAdd = product.stock_status !== "outofstock";
+  const { language } = useLanguage();
+
+  const isPreOrder = productHasPreOrderCategory(product.categories);
+  const scarcityChip =
+    !muted && product.stock_status !== "outofstock"
+      ? getStockDisplay(
+          product.stock_quantity,
+          product.stock_status,
+          wholesaleSession,
+          language,
+          { suppressB2CScarcity: isPreOrder }
+        )
+      : null;
+  const scarcityGridLabel =
+    scarcityChip?.type === "scarcity" ? scarcityChip.gridLabel : null;
 
   const triggerCardFlash = useCallback(() => {
     setCardFlash(true);
@@ -138,6 +160,14 @@ function ProductCard({
             }`}
           >
             {badge}
+          </span>
+        )}
+        {scarcityGridLabel && (
+          <span
+            className="absolute top-3 right-3 bg-[rgba(192,57,43,0.95)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white"
+            title={language === "de" ? "Geringer Lagerbestand" : "Low stock"}
+          >
+            {scarcityGridLabel}
           </span>
         )}
         {showQuickAdd && (
@@ -184,12 +214,14 @@ function ExpandableSection({
   defaultRows,
   muted,
   id,
+  wholesaleSession,
 }: {
   title: string;
   products: WooProduct[];
   defaultRows: number;
   muted?: boolean;
   id?: string;
+  wholesaleSession: boolean | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -241,7 +273,12 @@ function ExpandableSection({
         <div ref={contentRef}>
           <div className="mt-6 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
             {visibleProducts.map((product) => (
-              <ProductCard key={product.id} product={product} muted={muted} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                muted={muted}
+                wholesaleSession={wholesaleSession}
+              />
             ))}
           </div>
         </div>
@@ -275,8 +312,38 @@ export default function ShopContent({
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [flatVisible, setFlatVisible] = useState(8);
+  const [wholesaleSession, setWholesaleSession] = useState<boolean | null>(
+    null
+  );
   const { language } = useLanguage();
   const t = createT(language);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/session", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (!res.ok || cancelled) {
+          if (!cancelled) setWholesaleSession(false);
+          return;
+        }
+        const data = (await res.json()) as { isWholesale?: boolean };
+        if (!cancelled) {
+          setWholesaleSession(
+            typeof data.isWholesale === "boolean" ? data.isWholesale : false
+          );
+        }
+      } catch {
+        if (!cancelled) setWholesaleSession(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Read ?kategorie= from URL on mount and pre-select the matching filter
   useEffect(() => {
@@ -402,7 +469,11 @@ export default function ShopContent({
           <>
             <div className="mt-10 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
               {flatProducts.slice(0, flatVisible).map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  wholesaleSession={wholesaleSession}
+                />
               ))}
             </div>
             {flatProducts.length > flatVisible && (
@@ -432,16 +503,19 @@ export default function ShopContent({
               products={vorverkauf}
               defaultRows={1}
               id="vorbestellen"
+              wholesaleSession={wholesaleSession}
             />
             <ExpandableSection
               title={t("NEU")}
               products={brandneu}
               defaultRows={1}
+              wholesaleSession={wholesaleSession}
             />
             <ExpandableSection
               title={t("JETZT_ERHAELTLICH")}
               products={inStock}
               defaultRows={3}
+              wholesaleSession={wholesaleSession}
             />
           </div>
         )}

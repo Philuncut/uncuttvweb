@@ -10,6 +10,10 @@ import AddToCartButton from "@/components/AddToCartButton";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { trackViewContent } from "@/lib/meta-pixel";
+import {
+  getStockDisplay,
+  productHasPreOrderCategory,
+} from "@/lib/stock-display";
 
 interface DetailEntry {
   label: string;
@@ -92,6 +96,7 @@ export default function ProductDetail({
   const { language } = useLanguage();
   const t = createT(language);
   const isOutOfStock = product.stock_status === "outofstock";
+  const [wholeAuth, setWholeAuth] = useState<boolean | null>(null);
 
   const [translatedName, setTranslatedName] = useState(product.name);
   const [translatedRawDesc, setTranslatedRawDesc] = useState(rawDescription);
@@ -119,13 +124,65 @@ export default function ProductDetail({
           : "";
   const translatedBadge = badgeLabelKey ? t(badgeLabelKey) : badge.label;
 
-  useEffect(() => {
-    console.log("[ProductDetail] language changed to:", language);
-    console.log("[ProductDetail] rawDescription length:", rawDescription?.length);
-    console.log("[ProductDetail] product.name:", product.name);
+  const isPreOrder = useMemo(
+    () => productHasPreOrderCategory(product.categories),
+    [product.categories]
+  );
 
+  const mightBeRetailLowStock =
+    !isPreOrder &&
+    product.stock_status !== "outofstock" &&
+    typeof product.stock_quantity === "number" &&
+    product.stock_quantity >= 1 &&
+    product.stock_quantity <= 9;
+
+  const stockDisplay = useMemo(
+    () =>
+      getStockDisplay(
+        product.stock_quantity,
+        product.stock_status,
+        wholeAuth,
+        language,
+        { suppressB2CScarcity: isPreOrder }
+      ),
+    [
+      wholeAuth,
+      product.stock_quantity,
+      product.stock_status,
+      language,
+      isPreOrder,
+    ]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/session", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (!res.ok || cancelled) {
+          if (!cancelled) setWholeAuth(false);
+          return;
+        }
+        const data = (await res.json()) as { isWholesale?: boolean };
+        if (!cancelled) {
+          setWholeAuth(
+            typeof data.isWholesale === "boolean" ? data.isWholesale : false
+          );
+        }
+      } catch {
+        if (!cancelled) setWholeAuth(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (language === "de") {
-      console.log("[ProductDetail] Resetting to German originals");
       setTranslatedName(product.name);
       setTranslatedRawDesc(rawDescription);
       setTranslatedShort(product.short_description);
@@ -133,33 +190,24 @@ export default function ProductDetail({
     }
 
     // Translate to English
-    console.log("[ProductDetail] Starting EN translations...");
-
-    console.log("[ProductDetail] Calling translateText for name...");
     translateText(product.name, "product name").then((result) => {
-      console.log("[ProductDetail] Name translated:", result);
       setTranslatedName(result);
     });
 
     const rawTextContent = rawDescription?.replace(/<[^>]*>/g, "").trim();
-    console.log("[ProductDetail] Raw description text content length:", rawTextContent?.length);
 
     if (rawTextContent) {
-      console.log("[ProductDetail] Calling translateText for raw description...");
       translateText(rawDescription, "raw description").then((result) => {
-        console.log("[ProductDetail] Raw description translated, result length:", result.length);
         setTranslatedRawDesc(result);
       });
-    } else {
-      console.log("[ProductDetail] Skipping description translation — no text content");
     }
 
     if (product.short_description) {
-      console.log("[ProductDetail] Calling translateText for short description...");
-      translateText(product.short_description, "short description").then((result) => {
-        console.log("[ProductDetail] Short description translated");
-        setTranslatedShort(result);
-      });
+      translateText(product.short_description, "short description").then(
+        (result) => {
+          setTranslatedShort(result);
+        }
+      );
     }
   }, [language, product.name, rawDescription, product.short_description]);
 
@@ -202,13 +250,44 @@ export default function ProductDetail({
             )}
           </div>
 
-          {/* Stock badge */}
-          <div className="mt-4">
-            <span
-              className={`inline-block px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] ${badge.className}`}
-            >
-              {translatedBadge}
-            </span>
+          {/* Stock badges */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {product.stock_status === "outofstock" ? (
+              <span
+                className={`inline-block px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] ${badge.className}`}
+              >
+                {translatedBadge}
+              </span>
+            ) : (
+              <>
+                {isPreOrder && (
+                  <span
+                    className={`inline-block px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] ${badge.className}`}
+                  >
+                    {translatedBadge}
+                  </span>
+                )}
+                {stockDisplay?.type === "scarcity" && (
+                  <div className="inline-block rounded-none border border-[#c0392b]/40 bg-[#c0392b]/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-[#c0392b] animate-pulse">
+                    {stockDisplay.text}
+                  </div>
+                )}
+                {stockDisplay?.type === "wholesale" && (
+                  <div className="inline-block rounded-none border border-green-500/40 bg-green-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-green-400">
+                    {stockDisplay.text}
+                  </div>
+                )}
+                {!stockDisplay &&
+                  !isPreOrder &&
+                  (!mightBeRetailLowStock || wholeAuth !== null) && (
+                  <span
+                    className={`inline-block px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] ${badge.className}`}
+                  >
+                    {translatedBadge}
+                  </span>
+                )}
+              </>
+            )}
           </div>
 
           {/* Short description */}
