@@ -694,7 +694,6 @@ function PayPalButtonWrapper({
 }
 
 function CheckoutInner() {
-  console.log("[CheckoutDebug] CheckoutInner rendering");
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -704,15 +703,9 @@ function CheckoutInner() {
 
   const initiateCheckoutTracked = useRef(false);
   useEffect(() => {
-    console.log("[CheckoutDebug] useEffect fired", {
-      tracked: initiateCheckoutTracked.current,
-      itemsLength: items.length,
-      totalPrice,
-    });
     if (initiateCheckoutTracked.current) return;
     if (items.length === 0) return;
     initiateCheckoutTracked.current = true;
-    console.log("[CheckoutDebug] calling trackInitiateCheckout");
     void trackInitiateCheckout(
       totalPrice,
       items.reduce((sum, i) => sum + i.quantity, 0),
@@ -2251,7 +2244,6 @@ function CheckoutInner() {
 /* ── Wrapper with Stripe Elements ── */
 
 export default function CheckoutForm() {
-  console.log("[CheckoutDebug] CheckoutForm rendering");
   return (
     <Elements
       stripe={stripePromise}
