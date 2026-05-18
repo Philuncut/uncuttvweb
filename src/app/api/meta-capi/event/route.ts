@@ -4,10 +4,8 @@ import { sendCapiEvent } from "@/lib/meta-capi";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  console.log("[CAPI route] POST received");
   try {
     const body = await req.json();
-    console.log("[CAPI route] parsed body:", JSON.stringify(body));
     const { event_name, event_id, event_source_url, custom_data } = body;
 
     if (!event_name) {
@@ -27,7 +25,6 @@ export async function POST(req: NextRequest) {
         .filter((p) => p.length === 2) as [string, string][]
     );
 
-    console.log("[CAPI route] calling sendCapiEvent for:", event_name);
     const success = await sendCapiEvent({
       event_name,
       event_id,
@@ -41,7 +38,6 @@ export async function POST(req: NextRequest) {
       custom_data,
     });
 
-    console.log("[CAPI route] sendCapiEvent returned:", success);
     return NextResponse.json({ ok: success });
   } catch (err) {
     console.error("[CAPI route] error:", err);

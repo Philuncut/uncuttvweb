@@ -76,11 +76,6 @@ export async function sendCapiEvent(event: CapiEvent): Promise<boolean> {
     ...(testEventCode && { test_event_code: testEventCode }),
   };
 
-  console.log("[CAPI] sending event:", event.event_name);
-  console.log("[CAPI] pixelId:", pixelId, "tokenStart:", accessToken?.slice(0, 6));
-  console.log("[CAPI] testEventCode:", testEventCode);
-  console.log("[CAPI] payload:", JSON.stringify(payload));
-
   try {
     const res = await fetch(
       `https://graph.facebook.com/v18.0/${pixelId}/events?access_token=${accessToken}`,
@@ -91,13 +86,12 @@ export async function sendCapiEvent(event: CapiEvent): Promise<boolean> {
       }
     );
 
-    const responseText = await res.text();
-    console.log("[CAPI] response status:", res.status);
     if (!res.ok) {
-      console.error("[CAPI]", event.event_name, "failed:", responseText);
+      const error = await res.text();
+      console.error("[CAPI]", event.event_name, "failed:", error);
       return false;
     }
-    console.log("[CAPI]", event.event_name, "success:", responseText);
+
     return true;
   } catch (err) {
     console.error("[CAPI] network error:", err);
