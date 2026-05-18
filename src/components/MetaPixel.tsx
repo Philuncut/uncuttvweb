@@ -9,26 +9,38 @@ export default function MetaPixel() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    try {
-      const stored = localStorage.getItem("cookie_consent");
-      if (stored === "all" && (window as any).fbq) {
-        (window as any).fbq("consent", "grant");
-        (window as any).fbq("track", "PageView");
+    const checkAndTrack = () => {
+      const fbq = (window as any).fbq;
+      if (!fbq) {
+        setTimeout(checkAndTrack, 50);
+        return;
       }
-    } catch (e) {
-      console.error("[MetaPixel] consent check failed:", e);
-    }
+
+      try {
+        const stored = localStorage.getItem("cookie_consent");
+        if (stored === "all") {
+          fbq("consent", "grant");
+          fbq("track", "PageView");
+        }
+      } catch (e) {
+        console.error("[MetaPixel] consent check failed:", e);
+      }
+    };
+
+    checkAndTrack();
 
     const handleGrant = () => {
-      if ((window as any).fbq) {
-        (window as any).fbq("consent", "grant");
-        (window as any).fbq("track", "PageView");
+      const fbq = (window as any).fbq;
+      if (fbq) {
+        fbq("consent", "grant");
+        fbq("track", "PageView");
       }
     };
 
     const handleRevoke = () => {
-      if ((window as any).fbq) {
-        (window as any).fbq("consent", "revoke");
+      const fbq = (window as any).fbq;
+      if (fbq) {
+        fbq("consent", "revoke");
       }
     };
 

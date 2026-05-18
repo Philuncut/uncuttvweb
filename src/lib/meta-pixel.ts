@@ -36,11 +36,26 @@ export function fbqTrack(event: FbqEvent, params?: FbqParams): string {
 
   if (typeof window === "undefined") return eventId;
   if (!hasConsent()) return eventId;
-  if (!(window as any).fbq) return eventId;
 
   const { event_id, ...rest } = params ?? {};
+  const fbq = (window as any).fbq;
 
-  (window as any).fbq("track", event, rest, { eventID: eventId });
+  if (fbq) {
+    fbq("track", event, rest, { eventID: eventId });
+  } else {
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      const fbqNow = (window as any).fbq;
+      if (fbqNow) {
+        fbqNow("track", event, rest, { eventID: eventId });
+        clearInterval(interval);
+      } else if (attempts > 20) {
+        console.warn("[fbqTrack] fbq not available after 1s, dropping:", event);
+        clearInterval(interval);
+      }
+    }, 50);
+  }
 
   return eventId;
 }
