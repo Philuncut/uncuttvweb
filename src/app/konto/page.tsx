@@ -8,6 +8,6 @@ export default async function KontoPage() {
   if (customerId) {
     redirect("/konto/dashboard");
   } else {
-    redirect("/konto/login");
+    redirect("/konto/login?redirect=/konto");
   }
 }

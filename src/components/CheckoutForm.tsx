@@ -726,6 +726,8 @@ function CheckoutInner() {
     { code: string; name: string }[]
   >([]);
   const [provinceListLoading, setProvinceListLoading] = useState(false);
+  const [checkoutMode, setCheckoutMode] = useState<"unset" | "guest">("unset");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isWholesale, setIsWholesale] = useState(false);
   const [isNewsletterSubscribed, setIsNewsletterSubscribed] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -743,6 +745,7 @@ function CheckoutInner() {
           });
           if (!cancelled && sessionRes.ok) {
             const s = await sessionRes.json();
+            setIsLoggedIn(s.isLoggedIn === true);
             setIsWholesale(s.isWholesale === true);
             setIsNewsletterSubscribed(s.isNewsletterSubscribed === true);
           }
@@ -818,6 +821,24 @@ function CheckoutInner() {
       cancelled = true;
     };
   }, []);
+
+  // Initialise checkout mode from sessionStorage once we know the session state.
+  useEffect(() => {
+    if (!sessionReady) return;
+    if (isLoggedIn || isWholesale) {
+      // Logged-in and wholesale users skip the selection step entirely.
+      setCheckoutMode("guest");
+      return;
+    }
+    try {
+      if (sessionStorage.getItem("checkout_mode") === "guest") {
+        setCheckoutMode("guest");
+      }
+      // else: remains "unset" — card split is shown
+    } catch {
+      // sessionStorage unavailable — keep "unset" so user sees the cards and chooses actively
+    }
+  }, [sessionReady, isLoggedIn, isWholesale]);
 
   const countrySelectOptions = useMemo(
     () =>
@@ -1732,6 +1753,8 @@ function CheckoutInner() {
     );
   }
 
+  const showForm = checkoutMode === "guest" || isLoggedIn;
+
   const needsStripe = paymentMethod === "card" || paymentMethod === "klarna" || paymentMethod === "eps";
   const isStripeDisabled =
     needsStripe &&
@@ -1742,6 +1765,183 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
+          {/* ── Mode-selection cards ── shown to guests before the form ── */}
+          {!showForm && sessionReady && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2" style={{ marginBottom: 32 }}>
+              {/* ── Left card: Sign in ── */}
+              <div
+                style={{
+                  borderLeft: "3px solid #c0392b",
+                  border: "1px solid rgba(192,57,43,0.3)",
+                  borderLeftWidth: 3,
+                  borderLeftColor: "#c0392b",
+                  background: "rgba(192,57,43,0.05)",
+                  padding: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {/* Login icon */}
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#c0392b"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                  <polyline points="10 17 15 12 10 7" />
+                  <line x1="15" y1="12" x2="3" y2="12" />
+                </svg>
+                <div style={{ flex: 1 }}>
+                  <p
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: "#fff",
+                      letterSpacing: "0.05em",
+                      margin: "0 0 8px",
+                    }}
+                  >
+                    {t("CHECKOUT_EXISTING_CUSTOMER_TITLE")}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "rgba(255,255,255,0.6)",
+                      lineHeight: 1.5,
+                      margin: 0,
+                    }}
+                  >
+                    {t("CHECKOUT_EXISTING_CUSTOMER_SUBTITLE")}
+                  </p>
+                </div>
+                <a
+                  href="/konto/login?redirect=/checkout"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "12px 0",
+                    background: "#c0392b",
+                    color: "#fff",
+                    textAlign: "center",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                    transition: "background 0.2s",
+                  }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLAnchorElement).style.background =
+                      "#d04534")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLAnchorElement).style.background =
+                      "#c0392b")
+                  }
+                >
+                  {t("ANMELDEN")}
+                </a>
+              </div>
+
+              {/* ── Right card: Guest ── */}
+              <div
+                style={{
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "rgba(255,255,255,0.03)",
+                  padding: 24,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {/* Guest icon */}
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.7)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <div style={{ flex: 1 }}>
+                  <p
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: "#fff",
+                      letterSpacing: "0.05em",
+                      margin: "0 0 8px",
+                    }}
+                  >
+                    {t("CHECKOUT_GUEST_TITLE")}
+                  </p>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "rgba(255,255,255,0.6)",
+                      lineHeight: 1.5,
+                      margin: 0,
+                    }}
+                  >
+                    {t("CHECKOUT_GUEST_SUBTITLE")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem("checkout_mode", "guest");
+                    } catch {
+                      // private browsing — proceed anyway
+                    }
+                    setCheckoutMode("guest");
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "12px 0",
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    transition: "border-color 0.2s",
+                  }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.borderColor =
+                      "#fff")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.borderColor =
+                      "rgba(255,255,255,0.3)")
+                  }
+                >
+                  {t("CHECKOUT_GUEST_BUTTON")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Full form — visible once a mode is chosen or user is logged in ── */}
+          {showForm && (
+            <>
+
           {/* Auto-applied coupon banner (B2C / guest only — wholesale must not stack discounts) */}
           {!isWholesale && autoCouponApplied && (
             <div
@@ -2208,6 +2408,9 @@ function CheckoutInner() {
               )}
             </button>
           )}
+
+            </>
+          )} {/* end showForm */}
         </form>
 
         {/* Right — Order Summary */}

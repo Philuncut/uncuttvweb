@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useCallback, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
+
+/** Validates and resolves the post-login redirect target. */
+function resolveRedirectTarget(searchParams: { get(name: string): string | null }): string {
+  const raw = searchParams.get("redirect") ?? "";
+  if (raw && raw.startsWith("/") && !raw.startsWith("//") && !raw.includes("://")) {
+    return raw;
+  }
+  return "";
+}
 
 type Tab = "login" | "register";
 
@@ -41,9 +50,37 @@ function Input({
 
 export default function AuthForms() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("login");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Redirect target: URL param wins; referrer is the fallback; /shop is the floor.
+  const [redirectTo, setRedirectTo] = useState<string>("/shop");
+  useEffect(() => {
+    const fromParam = resolveRedirectTarget(searchParams);
+    if (fromParam) {
+      setRedirectTo(fromParam);
+      return;
+    }
+    // Referrer fallback — only safe if same origin and not the login page itself.
+    try {
+      const ref = document.referrer;
+      if (ref) {
+        const refUrl = new URL(ref);
+        if (
+          refUrl.hostname === window.location.hostname &&
+          !refUrl.pathname.startsWith("/konto/login")
+        ) {
+          setRedirectTo(refUrl.pathname + refUrl.search);
+          return;
+        }
+      }
+    } catch {
+      // malformed referrer — ignore
+    }
+    setRedirectTo("/shop");
+  }, [searchParams]);
 
   // Login state
   const [loginEmail, setLoginEmail] = useState("");
@@ -81,13 +118,13 @@ export default function AuthForms() {
           return;
         }
         window.dispatchEvent(new Event("uncuttv:session-changed"));
-        router.push("/konto/dashboard");
+        router.push(redirectTo);
       } catch {
         setError("Verbindungsfehler.");
         setLoading(false);
       }
     },
-    [loginEmail, loginPassword, router]
+    [loginEmail, loginPassword, router, redirectTo]
   );
 
   const handleRegister = useCallback(
@@ -123,13 +160,13 @@ export default function AuthForms() {
           return;
         }
         window.dispatchEvent(new Event("uncuttv:session-changed"));
-        router.push("/konto/dashboard");
+        router.push(redirectTo);
       } catch {
         setError("Verbindungsfehler.");
         setLoading(false);
       }
     },
-    [regEmail, regPassword, regConfirm, regFirst, regLast, router]
+    [regEmail, regPassword, regConfirm, regFirst, regLast, router, redirectTo]
   );
 
   return (

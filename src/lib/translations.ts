@@ -342,6 +342,26 @@ const translations: Record<string, Record<string, string>> = {
     de: "Bitte Firmenname und gültige UID eingeben.",
     en: "Please enter company name and a valid VAT ID.",
   },
+  CHECKOUT_EXISTING_CUSTOMER_TITLE: {
+    de: "BEREITS KUNDE?",
+    en: "EXISTING CUSTOMER?",
+  },
+  CHECKOUT_EXISTING_CUSTOMER_SUBTITLE: {
+    de: "Melde dich an. Adresse und Daten werden automatisch übernommen.",
+    en: "Sign in. Your address and details will be filled in automatically.",
+  },
+  CHECKOUT_GUEST_TITLE: {
+    de: "ALS GAST BESTELLEN",
+    en: "CONTINUE AS GUEST",
+  },
+  CHECKOUT_GUEST_SUBTITLE: {
+    de: "Schneller Checkout ohne Konto.",
+    en: "Quick checkout without an account.",
+  },
+  CHECKOUT_GUEST_BUTTON: {
+    de: "WEITER ALS GAST",
+    en: "CONTINUE AS GUEST",
+  },
   CHECKOUT_COUPON_ACTIVE_TITLE: {
     de: "10% Rabattcode {{code}} aktiv",
     en: "10% discount code {{code}} active",

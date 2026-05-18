@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import AuthForms from "@/components/AuthForms";
@@ -11,7 +12,10 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#0a0a0a]">
       <Navbar />
       <main className="mx-auto max-w-md px-4 py-12 sm:px-6 sm:py-16">
-        <AuthForms />
+        {/* Suspense required because AuthForms reads useSearchParams() */}
+        <Suspense>
+          <AuthForms />
+        </Suspense>
       </main>
       <Footer />
     </div>

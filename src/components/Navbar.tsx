@@ -499,10 +499,14 @@ export default function Navbar() {
                 <Divider />
               </>
             )}
-            <NavLink href="/blog">{t("BLOG")}</NavLink>
-            <Divider />
-            <NavLink href="/about">{t("ABOUT")}</NavLink>
-            <Divider />
+            {!session?.isWholesale && (
+              <>
+                <NavLink href="/blog">{t("BLOG")}</NavLink>
+                <Divider />
+                <NavLink href="/about">{t("ABOUT")}</NavLink>
+                <Divider />
+              </>
+            )}
             {!sessionReady ? (
               <span
                 className="inline-block h-5 w-28 rounded bg-white/10 align-middle animate-pulse"
@@ -538,7 +542,7 @@ export default function Navbar() {
                 </span>
               </>
             ) : (
-              <NavLink href="/konto/login">{t("ANMELDEN")}</NavLink>
+              <NavLink href={`/konto/login?redirect=${encodeURIComponent(pathname)}`}>{t("ANMELDEN")}</NavLink>
             )}
             <Divider />
             <NavLink href="/haendler">{t("HAENDLER")}</NavLink>
@@ -921,38 +925,42 @@ export default function Navbar() {
             </>
           )}
 
-          <a
-            href="/blog"
-            className="menu-link menu-main-link"
-            style={{
-              color: "white",
-              fontSize: "2.2rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              padding: "12px 32px",
-              animationDelay: "0.32s",
-            }}
-          >
-            {t("BLOG")}
-          </a>
-          <a
-            href="/about"
-            className="menu-link menu-main-link"
-            style={{
-              color: "white",
-              fontSize: "2.2rem",
-              fontWeight: "bold",
-              textDecoration: "none",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              padding: "12px 32px",
-              animationDelay: "0.36s",
-            }}
-          >
-            {t("ABOUT")}
-          </a>
+          {!session?.isWholesale && (
+            <>
+              <a
+                href="/blog"
+                className="menu-link menu-main-link"
+                style={{
+                  color: "white",
+                  fontSize: "2.2rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  padding: "12px 32px",
+                  animationDelay: "0.32s",
+                }}
+              >
+                {t("BLOG")}
+              </a>
+              <a
+                href="/about"
+                className="menu-link menu-main-link"
+                style={{
+                  color: "white",
+                  fontSize: "2.2rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  padding: "12px 32px",
+                  animationDelay: "0.36s",
+                }}
+              >
+                {t("ABOUT")}
+              </a>
+            </>
+          )}
 
           {/* MEIN KONTO / ANMELDEN */}
           {!sessionReady ? (
@@ -969,7 +977,7 @@ export default function Navbar() {
               href={
                 session?.isLoggedIn && session.dashboardHref
                   ? session.dashboardHref
-                  : "/konto/login"
+                  : `/konto/login?redirect=${encodeURIComponent(pathname)}`
               }
               className="menu-link menu-main-link"
               style={{
