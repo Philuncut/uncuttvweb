@@ -10,4 +10,4 @@
  * They log in via /haendler directly and must not be auto-redirected out of
  * the B2C shop.
  */
-export const WHOLESALE_ROLE = "wholesale" as const;
+export const WHOLESALE_ROLE = "wholesale";
