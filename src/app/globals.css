@@ -56,6 +56,36 @@ body {
   animation: cart-badge-pulse 0.22s ease-out;
 }
 
+@keyframes preorder-banner-glow {
+  0%,
+  100% {
+    border-color: rgb(245 158 11 / 0.3);
+    box-shadow: 0 0 0 0 rgb(245 158 11 / 0);
+  }
+  50% {
+    border-color: rgb(245 158 11 / 0.6);
+    box-shadow: 0 0 14px 0 rgb(245 158 11 / 0.4);
+  }
+}
+
+@keyframes preorder-banner-icon-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-preorder-banner-glow {
+  animation: preorder-banner-glow 2.5s ease-in-out infinite;
+}
+
+.animate-preorder-banner-icon-pulse {
+  animation: preorder-banner-icon-pulse 2.5s ease-in-out infinite;
+}
+
 @keyframes fly-to-cart {
   from {
     left: var(--start-x);

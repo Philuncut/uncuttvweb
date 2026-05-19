@@ -45,6 +45,8 @@ import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
+import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
+import { cartHasMixedPreOrder } from "@/lib/cart-preorder-mixed";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -1342,6 +1344,11 @@ function CheckoutInner() {
     [isWholesale, company, vat]
   );
 
+  const showPreOrderMixedBanner = useMemo(
+    () => !isWholesale && cartHasMixedPreOrder(items),
+    [isWholesale, items]
+  );
+
   const paypalCouponDiscount = useMemo(
     () => (isWholesale ? null : couponDiscount),
     [isWholesale, couponDiscount]
@@ -1765,6 +1772,9 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
+          {showPreOrderMixedBanner && (
+            <PreOrderMixedShippingBanner className="mb-6" />
+          )}
           {/* ── Mode-selection cards ── shown to guests before the form ── */}
           {!showForm && sessionReady && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2" style={{ marginBottom: 32 }}>

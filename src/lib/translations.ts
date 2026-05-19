@@ -199,6 +199,18 @@ const translations: Record<string, Record<string, string>> = {
   // Cart
   WARENKORB: { de: "WARENKORB", en: "CART" },
   WARENKORB_LEER: { de: "Dein Warenkorb ist leer.", en: "Your cart is empty." },
+  PREORDER_MIXED_SHIPPING_TITLE: {
+    de: "⚠️ VERSAND BEI VORVERKAUF",
+    en: "⚠️ SHIPPING NOTICE — PRE-ORDER IN CART",
+  },
+  PREORDER_MIXED_SHIPPING_BODY: {
+    de: "Dein Warenkorb enthält einen Vorverkaufsartikel UND sofort verfügbare Produkte. Wir versenden alles gemeinsam, sobald der Vorverkaufstitel verfügbar ist.",
+    en: "Your cart contains a pre-order item AND immediately available products. We ship everything together once the pre-order title becomes available.",
+  },
+  PREORDER_MIXED_SHIPPING_HINT: {
+    de: "Möchtest du sofort lieferbare Artikel früher erhalten? Bitte separate Bestellungen aufgeben.",
+    en: "Want to receive available items sooner? Please place separate orders.",
+  },
   CART_REPRICE_NOTICE_TITLE: {
     de: "Warenkorb aktualisiert",
     en: "Cart updated",

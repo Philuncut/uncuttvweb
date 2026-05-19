@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -8,6 +8,8 @@ import { createT } from "@/lib/translations";
 import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
+import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
+import { cartHasMixedPreOrder } from "@/lib/cart-preorder-mixed";
 
 interface CouponState {
   code: string;
@@ -20,6 +22,7 @@ interface CouponState {
 export default function CartDrawer() {
   const pathname = usePathname();
   const [dealerCookie, setDealerCookie] = useState(false);
+  const [isWholesale, setIsWholesale] = useState(false);
 
   useEffect(() => {
     setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
@@ -31,9 +34,13 @@ export default function CartDrawer() {
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { isNewsletterSubscribed?: boolean };
+        const data = (await res.json()) as {
+          isNewsletterSubscribed?: boolean;
+          isWholesale?: boolean;
+        };
         if (!cancelled) {
           setIsNewsletterSubscribed(data.isNewsletterSubscribed === true);
+          setIsWholesale(data.isWholesale === true);
         }
       } catch {
         /* guest or offline */
@@ -44,8 +51,12 @@ export default function CartDrawer() {
         try {
           const res = await fetch("/api/auth/session", { cache: "no-store" });
           if (!res.ok) return;
-          const data = (await res.json()) as { isNewsletterSubscribed?: boolean };
+          const data = (await res.json()) as {
+            isNewsletterSubscribed?: boolean;
+            isWholesale?: boolean;
+          };
           setIsNewsletterSubscribed(data.isNewsletterSubscribed === true);
+          setIsWholesale(data.isWholesale === true);
         } catch {
           /* ignore */
         }
@@ -58,9 +69,6 @@ export default function CartDrawer() {
     };
   }, []);
 
-  const isB2B =
-    (pathname ?? "").startsWith("/haendler") || dealerCookie;
-
   const {
     items,
     removeFromCart,
@@ -69,6 +77,14 @@ export default function CartDrawer() {
     drawerOpen,
     closeDrawer,
   } = useCart();
+
+  const isB2B =
+    (pathname ?? "").startsWith("/haendler") || dealerCookie || isWholesale;
+
+  const showPreOrderMixedBanner = useMemo(
+    () => !isB2B && cartHasMixedPreOrder(items),
+    [isB2B, items]
+  );
 
   const { language } = useLanguage();
   const t = createT(language);
@@ -205,6 +221,9 @@ export default function CartDrawer() {
             </p>
           ) : (
             <>
+              {showPreOrderMixedBanner && (
+                <PreOrderMixedShippingBanner className="mb-4" />
+              )}
               <div className="space-y-4">
               {items.map(({ product, quantity }) => {
                 const image = product.images[0]?.src;
