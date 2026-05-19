@@ -222,12 +222,12 @@ export default function ProductDetail({
 
   return (
     <>
-      <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
+      <div className="grid min-w-0 gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Image Gallery */}
         <ProductGallery images={product.images} />
 
         {/* Right — Product Info */}
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-black tracking-[0.1em] text-white sm:text-3xl">
             {translatedName.toUpperCase()}
           </h1>
@@ -293,7 +293,7 @@ export default function ProductDetail({
           {/* Short description */}
           {translatedShort && (
             <div
-              className="mt-6 text-sm leading-relaxed text-white/60"
+              className="product-description mt-6 text-sm leading-relaxed text-white/60"
               dangerouslySetInnerHTML={{ __html: translatedShort }}
             />
           )}
@@ -315,7 +315,9 @@ export default function ProductDetail({
                     <dt className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
                       {translateDetailLabel(d.label, language)}
                     </dt>
-                    <dd className="mt-0.5 text-sm text-white">{d.value}</dd>
+                    <dd className="mt-0.5 break-words text-sm text-white">
+                      {d.value}
+                    </dd>
                   </div>
                 ))}
               </div>

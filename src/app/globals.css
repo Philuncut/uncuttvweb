@@ -166,7 +166,11 @@ input:-webkit-autofill:focus {
 
 
 
-/* Product description HTML styling */
+/* Product description HTML styling (WooCommerce injected content) */
+.product-description {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .product-description h1,
 .product-description h2,
 .product-description h3,
@@ -201,4 +205,12 @@ input:-webkit-autofill:focus {
   max-width: 100%;
   height: auto;
   margin: 1em 0;
+}
+.product-description table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.product-description iframe {
+  max-width: 100%;
 }

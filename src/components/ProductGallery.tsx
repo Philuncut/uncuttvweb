@@ -16,8 +16,7 @@ export default function ProductGallery({ images }: { images: WooImage[] }) {
   }
 
   return (
-    <div>
-      {/* Main image */}
+    <div className="min-w-0 w-full max-w-full">
       <div className="group overflow-hidden bg-[#111]">
         <img
           src={mainImage.src}
@@ -26,9 +25,8 @@ export default function ProductGallery({ images }: { images: WooImage[] }) {
         />
       </div>
 
-      {/* Thumbnails */}
       {images.length > 1 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto scrollbar-none">
+        <div className="mt-3 flex w-full min-w-0 max-w-full gap-2 overflow-x-auto scrollbar-none">
           {images.map((img, i) => (
             <button
               key={img.id}
