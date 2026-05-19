@@ -362,21 +362,7 @@ function EpsIcon() {
 
 /* ── Order Summary (right column) ── */
 
-function OrderSummary({
-  couponId,
-  couponName,
-  couponDiscount,
-  onCouponApplied,
-  onCouponRemoved,
-  subtotal,
-  hideCoupon,
-  shippingAmount,
-  shippingLabel,
-  shippingLoading,
-  shippingError,
-  shippingNoZone,
-  wholesaleNonRcTotals = null,
-}: {
+type OrderSummaryProps = {
   couponId: string | null;
   couponName: string | null;
   couponDiscount: string | null;
@@ -397,7 +383,127 @@ function OrderSummary({
     vatTotal: number;
     grossTotal: number;
   } | null;
-}) {
+  /** Mobile accordion body: no duplicate title/chrome. */
+  variant?: "default" | "embedded";
+};
+
+function computeOrderGrandTotal(
+  subtotal: number,
+  couponDiscount: string | null,
+  hideCoupon: boolean | undefined,
+  shippingAmount: number,
+  wholesaleNonRcTotals: OrderSummaryProps["wholesaleNonRcTotals"]
+): number {
+  const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
+  let discountedSubtotal = subtotal;
+  if (effectiveCouponDiscount) {
+    const percentMatch = effectiveCouponDiscount.match(/(\d+)%/);
+    const fixedEuros = parseFixedDiscountEuros(effectiveCouponDiscount);
+    if (percentMatch) {
+      const discountAmount = subtotal * (parseFloat(percentMatch[1]) / 100);
+      discountedSubtotal = subtotal - discountAmount;
+    } else if (fixedEuros != null) {
+      discountedSubtotal = Math.max(0, subtotal - fixedEuros);
+    }
+  }
+  return wholesaleNonRcTotals
+    ? wholesaleNonRcTotals.grossTotal
+    : discountedSubtotal + shippingAmount;
+}
+
+function OrderSummaryChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      className={`h-4 w-4 shrink-0 text-white/50 transition-transform duration-300 ease-in-out ${open ? "rotate-180" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function MobileOrderSummaryAccordion(props: OrderSummaryProps) {
+  const [open, setOpen] = useState(false);
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
+  const grandTotal = useMemo(
+    () =>
+      computeOrderGrandTotal(
+        props.subtotal,
+        props.couponDiscount,
+        props.hideCoupon,
+        props.shippingAmount,
+        props.wholesaleNonRcTotals
+      ),
+    [
+      props.subtotal,
+      props.couponDiscount,
+      props.hideCoupon,
+      props.shippingAmount,
+      props.wholesaleNonRcTotals,
+    ]
+  );
+
+  return (
+    <div className="mb-6 border border-[#222] bg-[#111] md:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="min-w-0 text-sm font-black tracking-[0.15em] text-white">
+          {t("BESTELLUNG")}
+          <span className="text-white/40"> · </span>
+          <span className="text-white">{formatPrice(grandTotal)}</span>
+        </span>
+        <OrderSummaryChevron open={open} />
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+      >
+        <div className="overflow-hidden">
+          <div className="border-t border-[#222]">
+            <OrderSummary {...props} variant="embedded" />
+            <div className="px-4 pb-3">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="w-full cursor-pointer py-2 text-center text-xs tracking-wide text-white/50 transition-colors hover:text-white/80"
+              >
+                {t("CHECKOUT_ORDER_SUMMARY_CLOSE")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderSummary({
+  couponId,
+  couponName,
+  couponDiscount,
+  onCouponApplied,
+  onCouponRemoved,
+  subtotal,
+  hideCoupon,
+  shippingAmount,
+  shippingLabel,
+  shippingLoading,
+  shippingError,
+  shippingNoZone,
+  wholesaleNonRcTotals = null,
+  variant = "default",
+}: OrderSummaryProps) {
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
   const effectiveCouponDiscount = hideCoupon ? null : couponDiscount;
@@ -452,13 +558,21 @@ function OrderSummary({
     }
   }, [code, onCouponApplied, t]);
 
-  return (
-    <div className="border border-[#222] bg-[#111] p-6">
-      <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
-        {t("BESTELLUNG")}
-      </h2>
+  const embedded = variant === "embedded";
 
-      <div className="mt-4 space-y-3">
+  return (
+    <div
+      className={
+        embedded ? "p-4 pt-3" : "border border-[#222] bg-[#111] p-6"
+      }
+    >
+      {!embedded ? (
+        <h2 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
+          {t("BESTELLUNG")}
+        </h2>
+      ) : null}
+
+      <div className={embedded ? "space-y-3" : "mt-4 space-y-3"}>
         {items.map(({ product, quantity }) => {
           const image = product.images[0]?.src;
           const price = parsePrice(product.price || "0");
@@ -630,25 +744,29 @@ function OrderSummary({
         </div>
       </div>
 
-      <p className="mt-4 text-[10px] text-white/30">
-        {t("CHECKOUT_SHIPPING_FOOTER")}
-      </p>
+      {!embedded ? (
+        <>
+          <p className="mt-4 text-[10px] text-white/30">
+            {t("CHECKOUT_SHIPPING_FOOTER")}
+          </p>
 
-      <div className="mt-4 flex items-center gap-2 text-white/30">
-        <svg
-          className="h-4 w-4 shrink-0"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path
-            strokeLinecap="square"
-            d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
-          />
-        </svg>
-        <span className="text-[10px]">{t("SSL_HINWEIS")}</span>
-      </div>
+          <div className="mt-4 flex items-center gap-2 text-white/30">
+            <svg
+              className="h-4 w-4 shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="square"
+                d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+              />
+            </svg>
+            <span className="text-[10px]">{t("SSL_HINWEIS")}</span>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -1849,6 +1967,30 @@ function CheckoutInner() {
     needsStripe &&
     (!stripe || !clientSecret || Boolean(paymentIntentError.trim()));
 
+  const orderSummaryProps: OrderSummaryProps = {
+    couponId,
+    couponName,
+    couponDiscount,
+    onCouponApplied: (id, name, display) => {
+      setCouponId(id);
+      setCouponName(name);
+      setCouponDiscount(display);
+    },
+    onCouponRemoved: () => {
+      setCouponId(null);
+      setCouponName(null);
+      setCouponDiscount(null);
+    },
+    subtotal: totalPrice,
+    hideCoupon: isWholesale,
+    shippingAmount: orderSummaryShippingAmount,
+    shippingLabel: shipLabel,
+    shippingLoading: uiShippingLoading,
+    shippingError: shipError,
+    shippingNoZone: shipNoZone,
+    wholesaleNonRcTotals,
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
@@ -1860,6 +2002,7 @@ function CheckoutInner() {
               onDismiss={() => setPreOrderBannerDismissed(true)}
             />
           )}
+          <MobileOrderSummaryAccordion {...orderSummaryProps} />
           {/* ── Mode-selection cards ── shown to guests before the form ── */}
           {!showForm && sessionReady && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2" style={{ marginBottom: 32 }}>
@@ -2499,31 +2642,9 @@ function CheckoutInner() {
           )} {/* end showForm */}
         </form>
 
-        {/* Right — Order Summary */}
-        <div className="lg:sticky lg:top-[80px] lg:self-start">
-          <OrderSummary
-            couponId={couponId}
-            couponName={couponName}
-            couponDiscount={couponDiscount}
-            onCouponApplied={(id, name, display) => {
-              setCouponId(id);
-              setCouponName(name);
-              setCouponDiscount(display);
-            }}
-            onCouponRemoved={() => {
-              setCouponId(null);
-              setCouponName(null);
-              setCouponDiscount(null);
-            }}
-            subtotal={totalPrice}
-            hideCoupon={isWholesale}
-            shippingAmount={orderSummaryShippingAmount}
-            shippingLabel={shipLabel}
-            shippingLoading={uiShippingLoading}
-            shippingError={shipError}
-            shippingNoZone={shipNoZone}
-            wholesaleNonRcTotals={wholesaleNonRcTotals}
-          />
+        {/* Right — Order Summary (tablet/desktop; hidden below md) */}
+        <div className="hidden md:block lg:sticky lg:top-[80px] lg:self-start">
+          <OrderSummary {...orderSummaryProps} />
         </div>
       </div>
     </div>

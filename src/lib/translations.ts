@@ -249,6 +249,10 @@ const translations: Record<string, Record<string, string>> = {
   ZAHLUNG: { de: "ZAHLUNG", en: "PAYMENT" },
   JETZT_KAUFEN: { de: "JETZT KAUFEN", en: "BUY NOW" },
   BESTELLUNG: { de: "BESTELLUNG", en: "ORDER" },
+  CHECKOUT_ORDER_SUMMARY_CLOSE: {
+    de: "— schließen —",
+    en: "— close —",
+  },
   VORNAME: { de: "VORNAME", en: "FIRST NAME" },
   NACHNAME: { de: "NACHNAME", en: "LAST NAME" },
   STRASSE: { de: "STRASSE + HAUSNUMMER", en: "STREET + NUMBER" },
