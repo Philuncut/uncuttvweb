@@ -9,7 +9,10 @@ import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
-import { cartHasMixedPreOrder } from "@/lib/cart-preorder-mixed";
+import {
+  cartHasMixedPreOrder,
+  cartItemsFingerprint,
+} from "@/lib/cart-preorder-mixed";
 
 interface CouponState {
   code: string;
@@ -85,6 +88,16 @@ export default function CartDrawer() {
     () => !isB2B && cartHasMixedPreOrder(items),
     [isB2B, items]
   );
+
+  const [preOrderBannerDismissed, setPreOrderBannerDismissed] = useState(false);
+  const cartFingerprint = useMemo(
+    () => cartItemsFingerprint(items),
+    [items]
+  );
+
+  useEffect(() => {
+    setPreOrderBannerDismissed(false);
+  }, [cartFingerprint]);
 
   const { language } = useLanguage();
   const t = createT(language);
@@ -221,8 +234,11 @@ export default function CartDrawer() {
             </p>
           ) : (
             <>
-              {showPreOrderMixedBanner && (
-                <PreOrderMixedShippingBanner className="mb-4" />
+              {showPreOrderMixedBanner && !preOrderBannerDismissed && (
+                <PreOrderMixedShippingBanner
+                  className="mb-4"
+                  onDismiss={() => setPreOrderBannerDismissed(true)}
+                />
               )}
               <div className="space-y-4">
               {items.map(({ product, quantity }) => {

@@ -46,7 +46,10 @@ import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
 import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
-import { cartHasMixedPreOrder } from "@/lib/cart-preorder-mixed";
+import {
+  cartHasMixedPreOrder,
+  cartItemsFingerprint,
+} from "@/lib/cart-preorder-mixed";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -1407,6 +1410,16 @@ function CheckoutInner() {
     [isWholesale, items]
   );
 
+  const [preOrderBannerDismissed, setPreOrderBannerDismissed] = useState(false);
+  const cartFingerprint = useMemo(
+    () => cartItemsFingerprint(items),
+    [items]
+  );
+
+  useEffect(() => {
+    setPreOrderBannerDismissed(false);
+  }, [cartFingerprint]);
+
   const paypalCouponDiscount = useMemo(
     () => (isWholesale ? null : couponDiscount),
     [isWholesale, couponDiscount]
@@ -1841,8 +1854,11 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
-          {showPreOrderMixedBanner && (
-            <PreOrderMixedShippingBanner className="mb-6" />
+          {showPreOrderMixedBanner && !preOrderBannerDismissed && (
+            <PreOrderMixedShippingBanner
+              className="mb-6"
+              onDismiss={() => setPreOrderBannerDismissed(true)}
+            />
           )}
           {/* ── Mode-selection cards ── shown to guests before the form ── */}
           {!showForm && sessionReady && (

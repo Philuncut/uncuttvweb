@@ -19,3 +19,11 @@ export function cartHasMixedPreOrder(items: CartItem[]): boolean {
 
   return false;
 }
+
+/** Stable key for cart line changes (add/remove/qty) — used to reset dismissible UI. */
+export function cartItemsFingerprint(items: CartItem[]): string {
+  return items
+    .map((i) => `${i.product.id}:${i.quantity}`)
+    .sort()
+    .join("|");
+}

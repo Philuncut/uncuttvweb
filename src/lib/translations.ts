@@ -211,6 +211,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Möchtest du sofort lieferbare Artikel früher erhalten? Bitte separate Bestellungen aufgeben.",
     en: "Want to receive available items sooner? Please place separate orders.",
   },
+  PREORDER_MIXED_SHIPPING_DISMISS: {
+    de: "Banner schließen",
+    en: "Close notice",
+  },
   CART_REPRICE_NOTICE_TITLE: {
     de: "Warenkorb aktualisiert",
     en: "Cart updated",
