@@ -1,40 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  markIntroSeen,
+  removeIntroOverlaySkeleton,
+  setIntroLoading,
+  shouldShowIntroLoader,
+} from "@/lib/intro-loader-boot";
 
-const INTRO_SEEN_KEY = "uncuttv_intro_seen";
-const INTRO_TTL_MS = 24 * 60 * 60 * 1000;
 const MIN_INTRO_MS = 1500;
 const RAMP_MIN_MS = 1500;
 const RAMP_MAX_MS = 2500;
 const EXIT_GLITCH_MS = 100;
 
-function shouldShowIntroLoader(): boolean {
-  try {
-    const raw = localStorage.getItem(INTRO_SEEN_KEY);
-    if (!raw) return true;
-    const seenAt = Number(raw);
-    if (!Number.isFinite(seenAt)) return true;
-    return Date.now() - seenAt >= INTRO_TTL_MS;
-  } catch {
-    return true;
-  }
-}
-
-function markIntroSeen(): void {
-  try {
-    localStorage.setItem(INTRO_SEEN_KEY, String(Date.now()));
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-function lockScroll(lock: boolean) {
-  document.documentElement.classList.toggle("intro-loader-lock", lock);
-}
-
 export default function IntroLoader() {
-  const [mounted, setMounted] = useState(false);
   const [active, setActive] = useState(false);
   const [progress, setProgress] = useState(0);
   const [glitching, setGlitching] = useState(false);
@@ -42,16 +21,23 @@ export default function IntroLoader() {
   const finishedRef = useRef(false);
 
   useEffect(() => {
-    setMounted(true);
+    const shouldShow = shouldShowIntroLoader();
+    const hasLoadingClass =
+      document.documentElement.classList.contains("intro-loading");
+
+    if (!shouldShow) {
+      if (hasLoadingClass) setIntroLoading(false);
+      return;
+    }
+
+    if (!hasLoadingClass) setIntroLoading(true);
+    setActive(true);
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
-    if (!shouldShowIntroLoader()) return;
-    setActive(true);
-    lockScroll(true);
-    return () => lockScroll(false);
-  }, [mounted]);
+    if (!active) return;
+    removeIntroOverlaySkeleton();
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;
@@ -76,8 +62,8 @@ export default function IntroLoader() {
 
       window.setTimeout(() => {
         markIntroSeen();
+        setIntroLoading(false);
         setActive(false);
-        lockScroll(false);
         window.removeEventListener("load", onLoad);
       }, EXIT_GLITCH_MS);
     };
@@ -133,13 +119,13 @@ export default function IntroLoader() {
     };
   }, [active, exitGlitch]);
 
-  if (!mounted || !active) return null;
+  if (!active) return null;
 
   const barGlitch = glitching || exitGlitch;
 
   return (
     <div
-      className="intro-loader fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black"
+      className="intro-overlay intro-loader fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black"
       role="presentation"
       aria-hidden
     >

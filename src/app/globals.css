@@ -254,9 +254,45 @@ textarea:-webkit-autofill:focus {
 }
 
 /* ── Cinematic intro loader (first visit / 24h) ── */
-html.intro-loader-lock,
-html.intro-loader-lock body {
-  overflow: hidden !important;
+html.intro-loading {
+  background: #000;
+}
+
+html.intro-loading body {
+  overflow: hidden;
+  background: #000;
+}
+
+/* Hide page chrome until React intro exits; .intro-overlay stays visible */
+html.intro-loading body > *:not(.intro-overlay) {
+  visibility: hidden;
+}
+
+.intro-overlay-skeleton {
+  display: none;
+}
+
+html.intro-loading .intro-overlay-skeleton {
+  display: flex;
+}
+
+@keyframes intro-skeleton-bar-pulse {
+  0% {
+    width: 12%;
+    margin-left: 0;
+  }
+  50% {
+    width: 42%;
+    margin-left: 28%;
+  }
+  100% {
+    width: 12%;
+    margin-left: 0;
+  }
+}
+
+html.intro-loading .intro-overlay-skeleton__bar {
+  animation: intro-skeleton-bar-pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes intro-logo-jitter {
