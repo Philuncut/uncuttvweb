@@ -252,3 +252,89 @@ textarea:-webkit-autofill:focus {
 .product-description iframe {
   max-width: 100%;
 }
+
+/* ── Cinematic intro loader (first visit / 24h) ── */
+html.intro-loader-lock,
+html.intro-loader-lock body {
+  overflow: hidden !important;
+}
+
+@keyframes intro-logo-jitter {
+  0% {
+    transform: translate(0, 0) skew(0deg);
+  }
+  25% {
+    transform: translate(3px, -2px) skew(2deg);
+  }
+  50% {
+    transform: translate(-3px, 2px) skew(-2deg);
+  }
+  75% {
+    transform: translate(2px, 1px) skew(1deg);
+  }
+  100% {
+    transform: translate(0, 0) skew(0deg);
+  }
+}
+
+@keyframes intro-logo-exit-cut {
+  0% {
+    transform: translate(0) skew(0deg);
+    filter: contrast(1);
+  }
+  40% {
+    transform: translate(-4px, 2px) skew(-3deg);
+    filter: contrast(1.4) brightness(1.15);
+  }
+  100% {
+    transform: translate(4px, -2px) skew(2deg);
+    filter: contrast(1.2);
+  }
+}
+
+@keyframes intro-bar-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.intro-logo__ghost {
+  opacity: 0;
+  transition: opacity 40ms linear;
+}
+
+.intro-logo--glitch .intro-logo__layer-main {
+  animation: intro-logo-jitter 110ms steps(2, end) 1;
+}
+
+.intro-logo--glitch .intro-logo__ghost--red {
+  opacity: 0.85;
+  transform: translate(3px, -1px);
+}
+
+.intro-logo--glitch .intro-logo__ghost--cyan {
+  opacity: 0.85;
+  transform: translate(-3px, 1px);
+}
+
+.intro-logo--exit-cut .intro-logo__layer-main {
+  animation: intro-logo-exit-cut 100ms steps(2, end) 1;
+}
+
+.intro-logo--exit-cut .intro-logo__ghost--red {
+  opacity: 1;
+  transform: translate(5px, -2px);
+}
+
+.intro-logo--exit-cut .intro-logo__ghost--cyan {
+  opacity: 1;
+  transform: translate(-5px, 2px);
+}
+
+.intro-bar--glitch {
+  animation: intro-bar-flicker 100ms steps(2, end) 1;
+}

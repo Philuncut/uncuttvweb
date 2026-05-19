@@ -6,6 +6,7 @@ import NavigationProgress from "@/components/NavigationProgress";
 import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
+import IntroLoader from "@/components/IntroLoader";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -46,6 +47,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark overflow-x-hidden`}
     >
       <body className="min-h-full flex flex-col pt-[60px]">
+        <IntroLoader />
         <NavigationProgress />
         <LanguageProvider>
           <CartProvider>
