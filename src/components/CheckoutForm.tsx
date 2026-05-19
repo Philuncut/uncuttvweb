@@ -82,8 +82,19 @@ const stripeElementsAppearance = {
     ".Input:-webkit-autofill": {
       color: "#ffffff",
       backgroundColor: "transparent",
-      boxShadow: "0 0 0 1000px #111111 inset",
-      WebkitTextFillColor: "#ffffff",
+      boxShadow: "0 0 0 1000px #111111 inset !important",
+      WebkitTextFillColor: "#ffffff !important",
+      caretColor: "#ffffff",
+      transition: "background-color 5000s ease-in-out 0s",
+    },
+    ".Input:-webkit-autofill:hover": {
+      boxShadow: "0 0 0 1000px #111111 inset !important",
+      WebkitTextFillColor: "#ffffff !important",
+    },
+    ".Input:-webkit-autofill:focus": {
+      boxShadow: "0 0 0 1000px #111111 inset !important",
+      WebkitTextFillColor: "#ffffff !important",
+      caretColor: "#ffffff",
     },
   },
 };
