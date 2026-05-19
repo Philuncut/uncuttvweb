@@ -252,3 +252,389 @@ textarea:-webkit-autofill:focus {
 .product-description iframe {
   max-width: 100%;
 }
+
+/* ── Cinematic intro loader v2 (VHS / snuff aesthetic) ── */
+
+html:not(.intro-skip):not(.intro-done) {
+  background: #000;
+}
+
+html:not(.intro-skip):not(.intro-done) body {
+  overflow: hidden;
+  background: #000;
+}
+
+html:not(.intro-skip):not(.intro-done) body > *:not(.intro-overlay) {
+  visibility: hidden;
+}
+
+html.intro-skip .intro-overlay,
+html.intro-done .intro-overlay {
+  display: none !important;
+}
+
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: all;
+}
+
+.intro-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.4) 3px,
+    transparent 4px
+  );
+  pointer-events: none;
+  z-index: 2;
+  animation: intro-scanline-shift 8s linear infinite;
+}
+
+@keyframes intro-scanline-shift {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(4px);
+  }
+}
+
+.intro-noise {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0.15;
+  animation: intro-noise-shift 0.1s steps(2) infinite;
+  mix-blend-mode: overlay;
+}
+
+@keyframes intro-noise-shift {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-5%, 3%);
+  }
+  50% {
+    transform: translate(2%, -4%);
+  }
+  75% {
+    transform: translate(-3%, 5%);
+  }
+  100% {
+    transform: translate(4%, -2%);
+  }
+}
+
+.intro-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+}
+
+.intro-content {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  animation: intro-frame-skip 2.5s ease-in-out infinite;
+}
+
+@keyframes intro-frame-skip {
+  0%,
+  5%,
+  100% {
+    opacity: 1;
+    transform: translate(0);
+  }
+  6% {
+    opacity: 0.3;
+    transform: translate(-10px, 5px) skewX(-5deg);
+  }
+  7% {
+    opacity: 1;
+    transform: translate(0);
+  }
+  30% {
+    opacity: 0.5;
+    transform: translate(8px, -3px) skewX(3deg);
+    filter: blur(2px);
+  }
+  31% {
+    opacity: 1;
+    transform: translate(0);
+    filter: blur(0);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translate(-5px, 0) skewX(-2deg);
+  }
+  51% {
+    opacity: 1;
+    transform: translate(0);
+  }
+  75% {
+    opacity: 0.4;
+    transform: translate(12px, -8px) skewX(8deg);
+    filter: blur(3px);
+  }
+  76% {
+    opacity: 1;
+    transform: translate(0);
+    filter: blur(0);
+  }
+}
+
+.intro-logo {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  font-size: clamp(4rem, 14vw, 8rem);
+  line-height: 1;
+  position: relative;
+  animation: intro-logo-shake 0.15s steps(3) infinite;
+}
+
+@keyframes intro-logo-shake {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-1px, 1px);
+  }
+  50% {
+    transform: translate(1px, -1px);
+  }
+  75% {
+    transform: translate(-2px, 0);
+  }
+  100% {
+    transform: translate(0, 1px);
+  }
+}
+
+.intro-uncut,
+.intro-tv {
+  position: relative;
+  display: inline-block;
+}
+
+.intro-uncut {
+  color: #fff;
+}
+
+.intro-tv {
+  color: #c0392b;
+}
+
+.intro-uncut::before,
+.intro-uncut::after,
+.intro-tv::before,
+.intro-tv::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  opacity: 0.8;
+}
+
+.intro-uncut::before,
+.intro-tv::before {
+  color: #ff0040;
+  animation: intro-rgb-shift-r 0.4s infinite;
+  mix-blend-mode: screen;
+}
+
+.intro-uncut::after,
+.intro-tv::after {
+  color: #00d4ff;
+  animation: intro-rgb-shift-b 0.4s infinite;
+  mix-blend-mode: screen;
+}
+
+@keyframes intro-rgb-shift-r {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-3px, 1px);
+  }
+  40% {
+    transform: translate(2px, -1px);
+  }
+  60% {
+    transform: translate(-1px, 2px);
+  }
+  80% {
+    transform: translate(3px, 0);
+  }
+}
+
+@keyframes intro-rgb-shift-b {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(3px, -1px);
+  }
+  40% {
+    transform: translate(-2px, 1px);
+  }
+  60% {
+    transform: translate(1px, -2px);
+  }
+  80% {
+    transform: translate(-3px, 0);
+  }
+}
+
+.intro-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: clamp(200px, 40vw, 320px);
+}
+
+.intro-progress-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(192, 57, 43, 0.3);
+  overflow: hidden;
+  position: relative;
+}
+
+.intro-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #c0392b 0%, #fff 50%, #c0392b 100%);
+  animation:
+    intro-progress-fill 2.5s ease-out forwards,
+    intro-progress-flicker 0.3s steps(2) infinite;
+  box-shadow:
+    0 0 10px #c0392b,
+    0 0 20px #c0392b;
+}
+
+@keyframes intro-progress-fill {
+  0% {
+    width: 0%;
+  }
+  60% {
+    width: 60%;
+  }
+  90% {
+    width: 90%;
+  }
+  100% {
+    width: 90%;
+  }
+}
+
+@keyframes intro-progress-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+html.intro-ready .intro-progress-fill {
+  width: 100% !important;
+  transition: width 200ms ease-out;
+}
+
+.intro-progress-text {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.2em;
+  text-align: center;
+  animation: intro-text-flicker 0.5s steps(3) infinite;
+}
+
+@keyframes intro-text-flicker {
+  0%,
+  80%,
+  100% {
+    opacity: 0.6;
+  }
+  85% {
+    opacity: 0.2;
+  }
+  90% {
+    opacity: 0.8;
+  }
+}
+
+.intro-overlay.intro-exiting {
+  animation: intro-exit 400ms ease-in forwards;
+}
+
+@keyframes intro-exit {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.05) translateX(-20px);
+    filter: blur(4px) hue-rotate(20deg);
+  }
+  40% {
+    opacity: 0.8;
+    transform: scale(0.95) translateX(15px);
+    filter: blur(8px) hue-rotate(-30deg);
+  }
+  60% {
+    opacity: 0.5;
+    transform: scale(1.1);
+    filter: blur(12px) brightness(2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+    filter: blur(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-logo,
+  .intro-content,
+  .intro-noise,
+  .intro-scanlines,
+  .intro-progress-fill,
+  .intro-progress-text,
+  .intro-uncut::before,
+  .intro-uncut::after,
+  .intro-tv::before,
+  .intro-tv::after {
+    animation: none !important;
+  }
+}
