@@ -8,6 +8,7 @@ import {
   buildProductMetadata,
   type WooProductSeo,
 } from "@/lib/product-seo";
+import { filterPurchasableRelatedProducts } from "@/lib/woo-product-filters";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductDetail from "@/components/ProductDetail";
@@ -94,10 +95,11 @@ export default async function ProductPage({ params }: PageProps) {
   let related: WooProduct[] = [];
   if (product.related_ids && product.related_ids.length > 0) {
     const ids = product.related_ids.slice(0, 4).join(",");
-    related = await wooFetch<WooProduct[]>("/products", {
+    const fetched = await wooFetch<WooProduct[]>("/products", {
       include: ids,
       per_page: "4",
     });
+    related = filterPurchasableRelatedProducts(fetched);
   }
 
   return (
