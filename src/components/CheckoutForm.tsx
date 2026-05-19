@@ -52,6 +52,53 @@ const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
+/** Shared Elements appearance — CardElement iframe + autofill (mobile Safari/Chrome). */
+const stripeElementsAppearance = {
+  theme: "night" as const,
+  variables: {
+    colorPrimary: "#c0392b",
+    colorBackground: "#111111",
+    colorText: "#ffffff",
+    colorTextPlaceholder: "#666666",
+    colorDanger: "#c0392b",
+    fontFamily: "Arial, Helvetica, sans-serif",
+    fontSizeBase: "16px",
+    borderRadius: "0px",
+  },
+  rules: {
+    ".Input": {
+      color: "#ffffff",
+      backgroundColor: "transparent",
+      border: "none",
+      boxShadow: "none",
+    },
+    ".Input:focus": {
+      color: "#ffffff",
+      backgroundColor: "transparent",
+    },
+    ".Input--invalid": {
+      color: "#c0392b",
+    },
+    ".Input:-webkit-autofill": {
+      color: "#ffffff",
+      backgroundColor: "transparent",
+      boxShadow: "0 0 0 1000px #111111 inset",
+      WebkitTextFillColor: "#ffffff",
+    },
+  },
+};
+
+const cardElementStyle = {
+  base: {
+    color: "#ffffff",
+    backgroundColor: "transparent",
+    fontSize: "16px",
+    fontFamily: "Arial, Helvetica, sans-serif",
+    "::placeholder": { color: "#666666" },
+  },
+  invalid: { color: "#c0392b" },
+} as const;
+
 type PaymentMethod = "card" | "bank" | "paypal" | "klarna" | "eps";
 
 /** Map machine-readable API error codes; leave German message strings as-is. */
@@ -2311,16 +2358,7 @@ function CheckoutInner() {
                   <CardElement
                     options={{
                       hidePostalCode: true,
-                      style: {
-                        base: {
-                          color: "#ffffff",
-                          backgroundColor: "#111111",
-                          fontSize: "16px",
-                          fontFamily: "Arial, sans-serif",
-                          "::placeholder": { color: "#555" },
-                        },
-                        invalid: { color: "#c0392b" },
-                      },
+                      style: cardElementStyle,
                     }}
                   />
                 </div>
@@ -2471,15 +2509,7 @@ export default function CheckoutForm() {
   return (
     <Elements
       stripe={stripePromise}
-      options={{
-        appearance: {
-          theme: "night",
-          variables: {
-            colorPrimary: "#c0392b",
-            borderRadius: "0px",
-          },
-        },
-      }}
+      options={{ appearance: stripeElementsAppearance }}
     >
       <CheckoutInner />
     </Elements>
