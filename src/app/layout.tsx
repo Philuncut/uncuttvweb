@@ -6,7 +6,8 @@ import NavigationProgress from "@/components/NavigationProgress";
 import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
-import IntroLoader from "@/components/IntroLoader";
+import IntroLoaderClient from "@/components/IntroLoaderClient";
+import { INTRO_LOADER_BOOT_SCRIPT } from "@/lib/intro-loader-boot";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -46,8 +47,24 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark overflow-x-hidden`}
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: INTRO_LOADER_BOOT_SCRIPT }}
+        />
+      </head>
       <body className="min-h-full flex flex-col pt-[60px]">
-        <IntroLoader />
+        <div id="intro-overlay" className="intro-overlay" aria-hidden>
+          <div className="intro-content">
+            <h1 className="intro-logo">
+              <span className="intro-uncut">UNCUT</span>
+              <span className="intro-tv">TV</span>
+            </h1>
+            <div className="intro-progress">
+              <div className="intro-progress-fill" />
+            </div>
+          </div>
+        </div>
+        <IntroLoaderClient />
         <NavigationProgress />
         <LanguageProvider>
           <CartProvider>
