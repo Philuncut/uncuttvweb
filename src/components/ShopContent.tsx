@@ -9,6 +9,7 @@ import {
   useCallback,
 } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { WooProduct, WooCategory } from "@/lib/types";
 import SearchInput from "@/components/SearchInput";
 import MobileBanner from "@/components/MobileBanner";
@@ -326,6 +327,7 @@ export default function ShopContent({
   const filterBarRef = useRef<HTMLDivElement>(null);
   const productAreaRef = useRef<HTMLElement>(null);
   const shouldScrollAfterFilterRef = useRef(false);
+  const searchParams = useSearchParams();
   const { language } = useLanguage();
   const t = createT(language);
 
@@ -384,11 +386,9 @@ export default function ShopContent({
     };
   }, []);
 
-  // Read ?kategorie= from URL on mount and pre-select the matching filter
+  // Sync filter from ?kategorie= (banner links, navbar, direct URL)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const slug = params.get("kategorie");
+    const slug = searchParams.get("kategorie");
     if (!slug) return;
     const match = categories.find(
       (c) =>
@@ -398,9 +398,9 @@ export default function ShopContent({
     );
     if (match) {
       setActiveCategory(match.id);
+      setFlatVisible(8);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, categories]);
 
   const vorverkauf = useMemo(
     () => sortProducts(products.filter((p) => hasCatSlug(p, VORVERKAUF_SLUG))),

@@ -6,8 +6,8 @@
   "link": "/shop?kategorie=vorverkauf",
   "ctaText": "JETZT VORBESTELLEN",
   "items": [
-    { "image": "", "label": "Collar" },
-    { "image": "", "label": "Film 2" },
-    { "image": "", "label": "Film 3" }
+    { "image": "/promo/collar.jpg", "label": "Collar" },
+    { "image": "/promo/sideling-hill.jpg", "label": "Sideling Hill" },
+    { "image": "/promo/vhs-underground.jpg", "label": "VHS Underground" }
   ]
 }

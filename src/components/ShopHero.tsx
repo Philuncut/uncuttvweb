@@ -139,15 +139,22 @@ export default function ShopHero() {
               <div className="mt-3 flex gap-3">
                 {promo.items.map((item: PromoItem, i: number) => (
                   <div key={i} className="text-center">
-                    <div className="h-[77px] w-[55px] overflow-hidden bg-[#1a1a1a]">
+                    <Link
+                      href={promo.link}
+                      className="mx-auto block h-[77px] w-[55px] cursor-pointer overflow-hidden bg-[#1a1a1a] transition-opacity hover:opacity-90"
+                    >
                       {item.image ? (
-                        <img src={item.image} alt={item.label} className="h-full w-full object-cover" />
+                        <img
+                          src={item.image}
+                          alt={item.label}
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-[8px] text-white/15">
                           {item.label}
                         </div>
                       )}
-                    </div>
+                    </Link>
                     <p className="mt-1 text-[10px] text-[#888]">{item.label}</p>
                   </div>
                 ))}

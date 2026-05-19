@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import promoData from "../../data/promo-banner.json";
 
 interface PromoItem {
@@ -89,26 +90,31 @@ export default function MobileBanner() {
         >
           {promo.items.map((item, i) => (
             <div key={i} style={{ textAlign: "center" }}>
-              {item.image ? (
-                <img
-                  src={item.image}
-                  alt={item.label}
-                  style={{
-                    width: "40px",
-                    height: "56px",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: "40px",
-                    height: "56px",
-                    backgroundColor: "#1a1a1a",
-                  }}
-                />
-              )}
+              <Link
+                href={promo.link}
+                className="block cursor-pointer transition-opacity hover:opacity-90"
+              >
+                {item.image ? (
+                  <img
+                    src={item.image}
+                    alt={item.label}
+                    style={{
+                      width: "40px",
+                      height: "56px",
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "40px",
+                      height: "56px",
+                      backgroundColor: "#1a1a1a",
+                    }}
+                  />
+                )}
+              </Link>
               <div
                 style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}
               >
@@ -119,7 +125,7 @@ export default function MobileBanner() {
         </div>
       )}
 
-      <a
+      <Link
         href={promo.link}
         style={{
           display: "block",
@@ -134,7 +140,7 @@ export default function MobileBanner() {
         }}
       >
         {promo.ctaText} →
-      </a>
+      </Link>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import type { WooProduct, WooCategory } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -130,7 +130,9 @@ export default function ShopPage({ products, categories }: ShopPageProps) {
 
       <Navbar />
       <ShopHero />
-      <ShopContent products={products} categories={categories} />
+      <Suspense fallback={null}>
+        <ShopContent products={products} categories={categories} />
+      </Suspense>
       <Newsletter />
       <Footer />
     </>
