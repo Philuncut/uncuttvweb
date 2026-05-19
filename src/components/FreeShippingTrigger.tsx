@@ -53,7 +53,7 @@ function FillerRow({
 
   return (
     <div
-      className={`flex shrink-0 flex-col border border-[#2a2a2a] bg-[#0d0d0d] transition-shadow duration-300 ${
+      className={`group flex shrink-0 flex-col border border-[#2a2a2a] bg-[#0d0d0d] transition-shadow duration-300 ${
         flash ? "shadow-[0_0_16px_rgba(192,57,43,0.55)]" : ""
       } ${compact ? "w-[108px]" : "w-[132px]"}`}
     >
@@ -76,6 +76,13 @@ function FillerRow({
             —
           </div>
         )}
+        {showQuick && (
+          <ProductCardQuickAdd
+            variant="card"
+            productForCart={product}
+            onCardFlash={onFlash}
+          />
+        )}
       </div>
       <div className={`flex flex-1 flex-col gap-1.5 ${compact ? "p-1.5" : "p-2"}`}>
         <p
@@ -92,15 +99,6 @@ function FillerRow({
         >
           {formatPrice(price)}
         </p>
-        {showQuick && (
-          <div className="mt-auto flex justify-end">
-            <ProductCardQuickAdd
-              variant="inline"
-              productForCart={product}
-              onCardFlash={onFlash}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
