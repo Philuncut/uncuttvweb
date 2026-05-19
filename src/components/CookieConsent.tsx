@@ -7,6 +7,7 @@ const CONSENT_KEY = "cookie_consent";
 export function openCookieSettings() {
   localStorage.removeItem(CONSENT_KEY);
   window.dispatchEvent(new Event("meta-pixel-revoke"));
+  window.dispatchEvent(new Event("analytics-revoke"));
   window.dispatchEvent(new Event("reopenCookieConsent"));
 }
 
@@ -17,6 +18,7 @@ export default function CookieConsent() {
     const stored = localStorage.getItem(CONSENT_KEY);
     if (stored === "all") {
       window.dispatchEvent(new Event("meta-pixel-grant"));
+      window.dispatchEvent(new Event("analytics-grant"));
     } else if (!stored) {
       setVisible(true);
     }
@@ -32,12 +34,14 @@ export default function CookieConsent() {
     localStorage.setItem(CONSENT_KEY, "all");
     setVisible(false);
     window.dispatchEvent(new Event("meta-pixel-grant"));
+    window.dispatchEvent(new Event("analytics-grant"));
   }, []);
 
   const handleNecessaryOnly = useCallback(() => {
     localStorage.setItem(CONSENT_KEY, "necessary");
     setVisible(false);
     window.dispatchEvent(new Event("meta-pixel-revoke"));
+    window.dispatchEvent(new Event("analytics-revoke"));
   }, []);
 
   if (!visible) return null;

@@ -5,6 +5,7 @@ import { LanguageProvider } from "@/lib/LanguageContext";
 import NavigationProgress from "@/components/NavigationProgress";
 import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,6 +52,7 @@ export default function RootLayout({
             {children}
             <CookieConsent />
             <MetaPixel />
+            <GoogleAnalytics />
           </CartProvider>
         </LanguageProvider>
       </body>
