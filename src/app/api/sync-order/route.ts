@@ -1,154 +1,27 @@
 import { NextResponse } from "next/server";
-import { isCountryBlocked } from "@/lib/blocked-countries";
-import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
-import { cookies } from "next/headers";
 import { stripe } from "@/lib/stripe";
-import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
+import type { VideoUtmInput } from "@/lib/video-utm-server";
 import {
-  splitGrossForWooRest,
-  buildWholesaleNonRcLineItem,
-  buildEuB2cNonAtLineItem,
-  buildNonEuB2cLineItem,
-  splitGrossForNonEu,
-  addTaxToNet,
-} from "@/lib/woo-vat-split";
-import { parsePrice } from "@/lib/parse-price";
-import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
-import {
-  buildVideoUtmOrderMeta,
-  mergeVideoUtmIntoMeta,
-  type VideoUtmInput,
-} from "@/lib/video-utm-server";
-
-interface CartMeta {
-  id: number;
-  name: string;
-  qty: number;
-  price: string;
-}
-
-interface CustomerInfo {
-  email: string;
-  firstName: string;
-  lastName: string;
-  street: string;
-  zip: string;
-  city: string;
-  country: string;
-  state?: string;
-}
-
-type OrderMetaEntry = { key: string; value: unknown };
+  createWooOrderFromCheckoutSync,
+  createWooOrderFromPayment,
+  PaymentIntentNotSucceededError,
+  type CartMeta,
+  type CustomerInfo,
+  type CheckoutShippingInput,
+} from "@/lib/wc-order-from-payment";
+import type { OrderMetaEntry } from "@/lib/video-utm-server";
 
 interface SyncBody {
   sessionId?: string;
   paymentIntentId?: string;
   customer?: CustomerInfo;
   items?: CartMeta[];
-  /** Optional checkout extras — company / VAT take precedence over profile when non-empty */
   billing?: Record<string, string>;
   meta_data?: OrderMetaEntry[];
-  /** EU B2B Reverse Charge (UID + shipping rules — client-side). */
   isReverseCharge?: boolean;
-  /** Wholesale checkout (Händlerpreis in cart) — used when !isReverseCharge to avoid catalog override. */
   isWholesale?: boolean;
-  /** Versand — Checkout / Store API / Wholesale-Pauschale */
-  checkoutShipping?: {
-    rate: number;
-    label: string;
-    method_id: string;
-    rate_id?: string;
-    instance_id?: number;
-  };
+  checkoutShipping?: CheckoutShippingInput;
   videoUtm?: VideoUtmInput;
-}
-
-function asString(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value))
-    return String(value).trim();
-  return String(value).trim();
-}
-
-type WooCustomer = {
-  billing?: { company?: string; [key: string]: unknown };
-  meta_data?: Array<{ key?: string; value?: unknown }>;
-};
-
-function billingVatFromCustomerMeta(customer: WooCustomer): string {
-  const entry = customer.meta_data?.find(
-    (m) => m?.key === "_billing_vat" || m?.key === "billing_vat"
-  );
-  return asString(entry?.value);
-}
-
-function vatFromOrderMeta(meta: OrderMetaEntry[] | undefined): string {
-  const entry = meta?.find(
-    (m) => m.key === "_billing_vat" || m.key === "billing_vat"
-  );
-  return asString(entry?.value);
-}
-
-/**
- * Keeps non-VAT meta entries, then sets `_billing_vat` and
- * `_eu_vat_guard_order_vat_number` (VAT Guard plugin) from frontend meta if
- * non-empty, else from Woo customer profile.
- */
-const UNCUTTV_ORDER_META_KEYS = [
-  "_uncuttv_reverse_charge",
-  "_uncuttv_third_country",
-  "_uncuttv_tax_free_export",
-  /** Legacy VIES audit keys — stripped from incoming meta, no longer written. */
-  "_uncuttv_vies_consultation",
-  "_uncuttv_vies_request_date",
-  "_uncuttv_vies_company_name",
-] as const;
-
-function mergeOrderMetaData(
-  existing: OrderMetaEntry[] | undefined,
-  vatFromFrontend: string,
-  vatFromProfile: string
-): OrderMetaEntry[] | undefined {
-  const base = [...(existing ?? [])].filter(
-    (m) =>
-      m.key !== "_billing_vat" &&
-      m.key !== "billing_vat" &&
-      m.key !== "_eu_vat_guard_order_vat_number" &&
-      m.key !== "_eu_vat_guard_order_vat_exempt" &&
-      !UNCUTTV_ORDER_META_KEYS.includes(
-        m.key as (typeof UNCUTTV_ORDER_META_KEYS)[number]
-      )
-  );
-  const vat = asString(vatFromFrontend) || asString(vatFromProfile);
-  if (!vat) {
-    return base.length > 0 ? base : undefined;
-  }
-  base.push({ key: "_billing_vat", value: vat });
-  base.push({ key: "_eu_vat_guard_order_vat_number", value: vat });
-  return base;
-}
-
-function appendReverseChargeMeta(
-  meta: OrderMetaEntry[] | undefined,
-  isRC: boolean
-): OrderMetaEntry[] | undefined {
-  if (!isRC) return meta;
-  const base = [...(meta ?? [])];
-  base.push({ key: "_uncuttv_reverse_charge", value: "yes" });
-  base.push({ key: "_eu_vat_guard_order_vat_exempt", value: "yes" });
-  return base;
-}
-
-function appendThirdCountryExportMeta(
-  meta: OrderMetaEntry[] | undefined,
-  isThirdCountryB2c: boolean
-): OrderMetaEntry[] | undefined {
-  if (!isThirdCountryB2c) return meta;
-  const base = [...(meta ?? [])];
-  base.push({ key: "_uncuttv_third_country", value: "yes" });
-  base.push({ key: "_uncuttv_tax_free_export", value: "yes" });
-  return base;
 }
 
 async function reverseChargeFromStripePaymentIntent(
@@ -171,38 +44,10 @@ async function reverseChargeFromStripePaymentIntent(
   }
 }
 
-function resolveLoggedInCustomerId(cookieStore: Awaited<
-  ReturnType<typeof cookies>
->): string | undefined {
-  const wooId = cookieStore.get("woo_customer_id")?.value?.trim();
-  if (wooId) return wooId;
-  const haendlerToken = cookieStore.get("haendler_token")?.value;
-  const haendlerId = cookieStore.get("haendler_id")?.value?.trim();
-  if (haendlerToken && haendlerId) return haendlerId;
-  return undefined;
-}
-
-async function fetchWooCustomer(
-  customerId: string,
-  wooUrl: string,
-  authHeader: string
-): Promise<WooCustomer | null> {
-  try {
-    const res = await fetch(
-      `${wooUrl}/wp-json/wc/v3/customers/${encodeURIComponent(customerId)}`,
-      {
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      }
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as WooCustomer;
-  } catch {
-    return null;
-  }
+function asString(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  return String(value).trim();
 }
 
 export async function POST(request: Request) {
@@ -212,6 +57,28 @@ export async function POST(request: Request) {
 
     const isWholesaleCheckout = body.isWholesale === true;
 
+    if (body.paymentIntentId?.startsWith("pi_")) {
+      const result = await createWooOrderFromPayment({
+        paymentIntentId: body.paymentIntentId,
+        syncContext: {
+          customer: body.customer,
+          items: body.items,
+          billing: body.billing,
+          meta_data: body.meta_data,
+          checkoutShipping: body.checkoutShipping,
+          isReverseCharge: body.isReverseCharge,
+          isWholesale: body.isWholesale,
+          videoUtm: body.videoUtm,
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        orderId: result.orderId,
+        orderNumber: result.orderNumber,
+        status: result.status,
+      });
+    }
+
     let cartItems: CartMeta[] = [];
     let billing: Record<string, string> = {};
     let shipping: Record<string, string> = {};
@@ -219,7 +86,6 @@ export async function POST(request: Request) {
     let isReverseCharge = false;
 
     if (body.sessionId) {
-      // Stripe Checkout Session flow
       const session = await stripe.checkout.sessions.retrieve(body.sessionId, {
         expand: ["customer_details", "line_items", "payment_intent"],
       });
@@ -245,7 +111,8 @@ export async function POST(request: Request) {
       );
 
       const customer = session.customer_details;
-      const ship = (session as unknown as Record<string, unknown>).shipping_details as {
+      const ship = (session as unknown as Record<string, unknown>)
+        .shipping_details as {
         name?: string;
         address?: {
           line1?: string;
@@ -270,7 +137,8 @@ export async function POST(request: Request) {
 
       shipping = {
         first_name: ship?.name?.split(" ")[0] || billing.first_name,
-        last_name: ship?.name?.split(" ").slice(1).join(" ") || billing.last_name,
+        last_name:
+          ship?.name?.split(" ").slice(1).join(" ") || billing.last_name,
         address_1: ship?.address?.line1 || billing.address_1,
         address_2: ship?.address?.line2 || billing.address_2,
         city: ship?.address?.city || billing.city,
@@ -278,7 +146,6 @@ export async function POST(request: Request) {
         country: ship?.address?.country || billing.country,
       };
     } else if (body.paymentIntentId && body.customer && body.items) {
-      // Direct PaymentIntent flow
       cartItems = body.items;
       transactionId = body.paymentIntentId;
       isReverseCharge = body.isReverseCharge === true;
@@ -303,266 +170,66 @@ export async function POST(request: Request) {
       );
     }
 
-    if (cartItems.length === 0) {
-      return NextResponse.json(
-        { error: "Keine Artikel gefunden." },
-        { status: 400 }
-      );
-    }
-
-    if (body.billing && typeof body.billing === "object") {
-      for (const [key, val] of Object.entries(body.billing)) {
-        if (typeof val === "string" && val.trim()) {
-          billing[key] = val;
-        }
-      }
-    }
-
-    const WOOCOMMERCE_URL = process.env.WOOCOMMERCE_URL!;
-    const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
-    const WOOCOMMERCE_SECRET = process.env.WOOCOMMERCE_SECRET!;
-    const AUTH_HEADER =
-      "Basic " +
-      Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString("base64");
-
-    const cookieStore = await cookies();
-    const customerIdStr = resolveLoggedInCustomerId(cookieStore);
-
-    let profileCompany = "";
-    let profileVat = "";
-    if (customerIdStr) {
-      const wcCustomer = await fetchWooCustomer(
-        customerIdStr,
-        WOOCOMMERCE_URL,
-        AUTH_HEADER
-      );
-      if (wcCustomer) {
-        profileCompany = asString(wcCustomer.billing?.company);
-        profileVat = billingVatFromCustomerMeta(wcCustomer);
-      }
-    }
-
-    const companyFromFrontend = asString(body.billing?.company);
-    const companyMerged =
-      companyFromFrontend || profileCompany || asString(billing.company);
-    if (companyMerged) {
-      billing.company = companyMerged;
-    }
-
-    const vatFromFrontendMeta = vatFromOrderMeta(body.meta_data);
-
-    const taxCountry = billing.country || shipping.country || "";
-
-    const shipCountryNorm = (
-      shipping.country ||
-      billing.country ||
-      ""
-    )
-      .trim()
-      .toUpperCase();
-    if (shipCountryNorm && isCountryBlocked(shipCountryNorm)) {
-      return NextResponse.json(
-        {
-          error: "country_blocked",
-          message: "Versand in dieses Land ist nicht möglich",
-        },
-        { status: 403 }
-      );
-    }
-    if (
-      isWholesaleCheckout &&
-      shipCountryNorm &&
-      !isWholesaleCountryAllowed(shipCountryNorm)
-    ) {
-      return NextResponse.json(
-        {
-          error: "wholesale_eu_only",
-          message: "Wholesale ist nur innerhalb der EU verfügbar",
-        },
-        { status: 403 }
-      );
-    }
-
-    const orderData: Record<string, unknown> = {
-      status: "processing",
-      payment_method: "stripe",
-      payment_method_title: "Stripe",
-      set_paid: true,
-      /**
-       * AT-B2C: product_id + qty (Woo-Steuer AT). EU-B2C außer AT: explizite Netto+MwSt
-       * aus Checkout-Brutto. Drittland B2C: Brutto explizit, 0 % USt. Wholesale: Händler-Netto+MwSt. RC: Brutto, 0 %.
-       */
-      prices_include_tax: true,
+    const result = await createWooOrderFromCheckoutSync({
+      cartItems,
       billing,
       shipping,
-      line_items: cartItems.map((item) => {
-        if (isReverseCharge) {
-          const lineTotal = (parsePrice(item.price) * item.qty).toFixed(2);
-          return {
-            product_id: Number(item.id),
-            quantity: item.qty,
-            subtotal: lineTotal,
-            total: lineTotal,
-            subtotal_tax: "0.00",
-            total_tax: "0.00",
-            taxes: [],
-          };
-        }
-        if (isWholesaleCheckout) {
-          return buildWholesaleNonRcLineItem(item, taxCountry);
-        }
-        if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-          return buildEuB2cNonAtLineItem(item, taxCountry);
-        }
-        if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-          return buildNonEuB2cLineItem(item);
-        }
-        return {
-          product_id: Number(item.id),
-          quantity: item.qty,
-        };
-      }),
-      transaction_id: transactionId,
-    };
-
-    if (isReverseCharge) {
-      orderData.tax_lines = [];
-    } else if (
-      shouldSendExplicitNonEuLineAmounts(taxCountry) &&
-      !isWholesaleCheckout
-    ) {
-      orderData.tax_lines = [];
-    }
-
-    const parsedId = customerIdStr ? parseInt(customerIdStr, 10) : NaN;
-    if (customerIdStr && Number.isFinite(parsedId) && parsedId > 0) {
-      orderData.customer_id = parsedId;
-    }
-
-    if (
-      body.checkoutShipping &&
-      typeof body.checkoutShipping.rate === "number" &&
-      !Number.isNaN(body.checkoutShipping.rate)
-    ) {
-      const s = body.checkoutShipping;
-      if (!(s.method_id === "none" && s.rate === 0)) {
-        const rate = Math.max(0, s.rate);
-        let shipTotal: string;
-        let shipTax: string;
-        let shipTaxes: unknown[] | undefined;
-        if (isReverseCharge) {
-          shipTotal = rate.toFixed(2);
-          shipTax = "0.00";
-          shipTaxes = [];
-        } else if (isWholesaleCheckout) {
-          const p = addTaxToNet(rate, taxCountry);
-          shipTotal = p.net;
-          shipTax = p.tax;
-        } else if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-          const p = splitGrossForNonEu(rate);
-          shipTotal = p.net;
-          shipTax = p.tax;
-          shipTaxes = [];
-        } else {
-          const p = splitGrossForWooRest(rate, taxCountry);
-          shipTotal = p.net;
-          shipTax = p.tax;
-        }
-        orderData.shipping_lines = [
-          {
-            method_id: s.method_id || "flat_rate",
-            method_title: s.label || "Versand",
-            total: shipTotal,
-            total_tax: shipTax,
-            ...(isReverseCharge || shipTaxes !== undefined
-              ? { taxes: shipTaxes ?? [] }
-              : {}),
-          },
-        ];
-      }
-    }
-
-    const isThirdCountryB2c =
-      !isReverseCharge &&
-      !isWholesaleCheckout &&
-      shouldSendExplicitNonEuLineAmounts(taxCountry);
-
-    let mergedMeta = mergeOrderMetaData(
-      body.meta_data,
-      vatFromFrontendMeta,
-      profileVat
-    );
-    const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
-    mergedMeta = mergeVideoUtmIntoMeta(mergedMeta, videoUtmMeta);
-    mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
-    mergedMeta = appendThirdCountryExportMeta(mergedMeta, isThirdCountryB2c);
-    if (mergedMeta && mergedMeta.length > 0) {
-      orderData.meta_data = mergedMeta;
-    }
-
-    console.log("[sync-order] Woo order meta_data (pre-POST)", {
-      taxCountry,
+      transactionId,
       isReverseCharge,
       isWholesaleCheckout,
-      isThirdCountryB2c,
-      meta_data: orderData.meta_data,
-    });
-
-    const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
-      method: "POST",
-      headers: {
-        Authorization: AUTH_HEADER,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(orderData),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`WooCommerce order creation failed: ${errText}`);
-    }
-
-    const order = await res.json();
-
-    console.log("[sync-order] Woo POST response (meta as returned)", {
-      orderId: order.id,
-      orderNumber: order.number,
-      meta_data: (order as { meta_data?: unknown }).meta_data,
-    });
-
-    const mergedVatForNotify =
-      asString(vatFromFrontendMeta) || asString(profileVat);
-    const pmTitleRaw = asString(
-      (order as { payment_method_title?: string }).payment_method_title
-    );
-    const paymentLabelForNotify =
-      !pmTitleRaw || pmTitleRaw.toLowerCase().includes("stripe")
-        ? "Stripe Kreditkarte"
-        : pmTitleRaw;
-
-    enqueueWholesaleOfficeNotification({
-      orderId: Number(order.id),
-      orderNumber: String((order as { number?: string | number }).number ?? order.id),
-      billing,
-      shipping,
-      items: cartItems,
+      billingOverrides: body.billing,
+      meta_data: body.meta_data,
       checkoutShipping: body.checkoutShipping,
-      taxCountry,
-      isWholesaleCheckout,
-      isReverseCharge,
-      orderMeta: (order as { meta_data?: Array<{ key?: string; value?: unknown }> })
-        .meta_data,
-      paymentMethodTitle: paymentLabelForNotify,
-      vatNumber: mergedVatForNotify || undefined,
-      wooCommerceBaseUrl: WOOCOMMERCE_URL,
+      videoUtm: body.videoUtm,
+      stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
     });
 
     return NextResponse.json({
       success: true,
-      orderId: order.id,
-      orderNumber: order.number,
+      orderId: result.orderId,
+      orderNumber: result.orderNumber,
+      status: result.status,
     });
   } catch (err) {
+    if (err instanceof PaymentIntentNotSucceededError) {
+      return NextResponse.json(
+        {
+          error: "payment_intent_not_succeeded",
+          message: err.message,
+        },
+        { status: 400 }
+      );
+    }
+
+    const code =
+      err instanceof Error
+        ? (err as Error & { code?: string }).code
+        : undefined;
+    if (code === "country_blocked") {
+      return NextResponse.json(
+        {
+          error: "country_blocked",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Versand in dieses Land ist nicht möglich",
+        },
+        { status: 403 }
+      );
+    }
+    if (code === "wholesale_eu_only") {
+      return NextResponse.json(
+        {
+          error: "wholesale_eu_only",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Wholesale ist nur innerhalb der EU verfügbar",
+        },
+        { status: 403 }
+      );
+    }
+
     console.error("[sync-order] failed:", err);
     return NextResponse.json(
       {
