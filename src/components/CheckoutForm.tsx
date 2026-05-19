@@ -55,6 +55,32 @@ const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 );
 
+/** Autofill overrides inside Stripe Elements iframe (Safari :autofill + Chrome -webkit-autofill). */
+const stripeInputAutofillStyle = {
+  color: "#ffffff !important",
+  backgroundColor: "#111111 !important",
+  boxShadow: "0 0 0 1000px #111111 inset !important",
+  WebkitTextFillColor: "#ffffff !important",
+  caretColor: "#ffffff !important",
+  transition: "background-color 5000s ease-in-out 0s !important",
+} as const;
+
+const stripeInputAutofillSelectors = [
+  ".Input:autofill",
+  ".Input:-webkit-autofill",
+  ".Input:-webkit-autofill:hover",
+  ".Input:-webkit-autofill:focus",
+  ".Input:-webkit-autofill:active",
+  ".Input:-internal-autofill-selected",
+] as const;
+
+const stripeInputAutofillRules = Object.fromEntries(
+  stripeInputAutofillSelectors.map((selector) => [
+    selector,
+    stripeInputAutofillStyle,
+  ])
+) as Record<(typeof stripeInputAutofillSelectors)[number], typeof stripeInputAutofillStyle>;
+
 /** Shared Elements appearance — CardElement iframe + autofill (mobile Safari/Chrome). */
 const stripeElementsAppearance = {
   theme: "night" as const,
@@ -71,44 +97,36 @@ const stripeElementsAppearance = {
   rules: {
     ".Input": {
       color: "#ffffff",
-      backgroundColor: "transparent",
+      backgroundColor: "#111111",
       border: "none",
       boxShadow: "none",
     },
     ".Input:focus": {
       color: "#ffffff",
-      backgroundColor: "transparent",
+      backgroundColor: "#111111",
     },
     ".Input--invalid": {
       color: "#c0392b",
     },
-    ".Input:-webkit-autofill": {
-      color: "#ffffff",
-      backgroundColor: "transparent",
-      boxShadow: "0 0 0 1000px #111111 inset !important",
-      WebkitTextFillColor: "#ffffff !important",
-      caretColor: "#ffffff",
-      transition: "background-color 5000s ease-in-out 0s",
-    },
-    ".Input:-webkit-autofill:hover": {
-      boxShadow: "0 0 0 1000px #111111 inset !important",
-      WebkitTextFillColor: "#ffffff !important",
-    },
-    ".Input:-webkit-autofill:focus": {
-      boxShadow: "0 0 0 1000px #111111 inset !important",
-      WebkitTextFillColor: "#ffffff !important",
-      caretColor: "#ffffff",
-    },
+    ...stripeInputAutofillRules,
   },
 };
 
 const cardElementStyle = {
   base: {
     color: "#ffffff",
-    backgroundColor: "transparent",
+    backgroundColor: "#111111",
     fontSize: "16px",
     fontFamily: "Arial, Helvetica, sans-serif",
     "::placeholder": { color: "#666666" },
+    ":autofill": {
+      color: "#ffffff",
+      backgroundColor: "#111111",
+    },
+    ":-webkit-autofill": {
+      color: "#ffffff",
+      backgroundColor: "#111111",
+    },
   },
   invalid: { color: "#c0392b" },
 } as const;
