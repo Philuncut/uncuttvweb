@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import {
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import Link from "next/link";
 import type { WooProduct, WooCategory } from "@/lib/types";
 import SearchInput from "@/components/SearchInput";
@@ -315,8 +322,40 @@ export default function ShopContent({
   const [wholesaleSession, setWholesaleSession] = useState<boolean | null>(
     null
   );
+  const filterScrollAnchorRef = useRef<HTMLDivElement>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
+  const productAreaRef = useRef<HTMLElement>(null);
+  const shouldScrollAfterFilterRef = useRef(false);
   const { language } = useLanguage();
   const t = createT(language);
+
+  const scrollToFilterBarIfNeeded = useCallback(() => {
+    const filterEl = filterBarRef.current;
+    const anchorEl = filterScrollAnchorRef.current;
+    const productEl = productAreaRef.current;
+    if (!filterEl || !anchorEl) return;
+
+    const navHeight = 60;
+    const filterRect = filterEl.getBoundingClientRect();
+    const firstCard = productEl?.querySelector<HTMLElement>("a.group.block");
+    const cardRect = firstCard?.getBoundingClientRect();
+
+    // Sticky filter always has top≈60 when pinned — use first product card instead.
+    const productsInView =
+      cardRect != null &&
+      cardRect.top >= filterRect.bottom + 4 &&
+      cardRect.top <= window.innerHeight * 0.85;
+
+    if (productsInView) return;
+
+    anchorEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const handleFilterSelect = useCallback((categoryId: number | null) => {
+    shouldScrollAfterFilterRef.current = true;
+    setActiveCategory(categoryId);
+    setFlatVisible(8);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -403,6 +442,12 @@ export default function ShopContent({
   const showFlat = searchResults !== null || filteredFlat !== null;
   const flatProducts = searchResults ?? filteredFlat ?? [];
 
+  useLayoutEffect(() => {
+    if (!shouldScrollAfterFilterRef.current) return;
+    shouldScrollAfterFilterRef.current = false;
+    scrollToFilterBarIfNeeded();
+  }, [activeCategory, flatVisible, showFlat, scrollToFilterBarIfNeeded]);
+
   return (
     <>
       {/* Search */}
@@ -413,8 +458,19 @@ export default function ShopContent({
       {/* Mobile banner — between search and category bar */}
       <MobileBanner />
 
+      {/* Scroll target (non-sticky) — sticky filter breaks offsetTop / rect+scrollY */}
+      <div
+        ref={filterScrollAnchorRef}
+        className="h-0 scroll-mt-[60px]"
+        aria-hidden
+      />
+
       {/* Sticky category bar */}
-      <div className="relative sticky top-[60px] z-30 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-sm">
+      <div
+        ref={filterBarRef}
+        id="shop-filter-bar"
+        className="relative sticky top-[60px] z-30 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-sm"
+      >
         {/* Right fade to indicate scrollability */}
         <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-16 bg-gradient-to-l from-[#0a0a0a] to-transparent" />
         <div
@@ -423,7 +479,7 @@ export default function ShopContent({
         >
           <FilterPill
             active={activeCategory === null}
-            onClick={() => { setActiveCategory(null); setFlatVisible(8); }}
+            onClick={() => handleFilterSelect(null)}
           >
             {t("ALLE")}
           </FilterPill>
@@ -455,7 +511,7 @@ export default function ShopContent({
                 <FilterPill
                   key={cat.id}
                   active={activeCategory === cat.id}
-                  onClick={() => { setActiveCategory(cat.id); setFlatVisible(8); }}
+                  onClick={() => handleFilterSelect(cat.id)}
                 >
                   {translateCategoryName(cat.name, language).toUpperCase()}
                 </FilterPill>
@@ -464,7 +520,10 @@ export default function ShopContent({
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6">
+      <main
+        ref={productAreaRef}
+        className="mx-auto max-w-7xl px-4 sm:px-6"
+      >
         {showFlat ? (
           <>
             <div className="mt-10 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
