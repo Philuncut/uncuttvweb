@@ -283,6 +283,107 @@ export async function findWooOrderByStripePaymentIntentId(
   return null;
 }
 
+/** Stripe PI (`pi_*`) or PayPal ref (`paypal_*`) — matches `transaction_id` / `_stripe_pi_id`. */
+export function findWooOrderByPaymentReference(
+  paymentRef: string
+): Promise<WooOrderRow | null> {
+  return findWooOrderByStripePaymentIntentId(paymentRef);
+}
+
+export type WooOrderForDetails = WooOrderRow & {
+  billing?: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+  };
+  shipping?: { country?: string };
+  line_items?: Array<{
+    product_id?: number;
+    name?: string;
+    quantity?: number;
+    total?: string;
+  }>;
+  shipping_lines?: Array<{
+    method_title?: string;
+    total?: string;
+  }>;
+  total?: string;
+  currency?: string;
+};
+
+export type OrderDetailsApiPayload = {
+  customerName: string;
+  customerEmail: string;
+  total: string;
+  currency: string;
+  items: Array<{ description: string; quantity: number; amount: number }>;
+  shippingCents: number;
+  isWholesaleShipping: boolean;
+  shippingMethodTitle?: string;
+  shippingCountry?: string;
+  line_items: Array<{
+    product_id: string;
+    name: string;
+    quantity: number;
+    price: number;
+  }>;
+};
+
+export function mapWooOrderToOrderDetailsPayload(
+  order: WooOrderForDetails
+): OrderDetailsApiPayload {
+  const billing = order.billing ?? {};
+  const first = asString(billing.first_name);
+  const last = asString(billing.last_name);
+  const customerName = [first, last].filter(Boolean).join(" ");
+
+  const wooLineItems = order.line_items ?? [];
+  const items = wooLineItems.map((li) => {
+    const qty = Math.max(1, Number(li.quantity) || 1);
+    const lineTotalEuro = parsePrice(String(li.total ?? "0"));
+    return {
+      description: asString(li.name) || "Artikel",
+      quantity: qty,
+      amount: Math.round(lineTotalEuro * 100),
+    };
+  });
+
+  const line_items = wooLineItems.map((li) => {
+    const qty = Math.max(1, Number(li.quantity) || 1);
+    const lineTotalEuro = parsePrice(String(li.total ?? "0"));
+    return {
+      product_id: String(li.product_id ?? 0),
+      name: asString(li.name),
+      quantity: qty,
+      price: lineTotalEuro / qty,
+    };
+  });
+
+  let shippingCents = 0;
+  let shippingMethodTitle = "";
+  for (const line of order.shipping_lines ?? []) {
+    shippingCents += Math.round(parsePrice(String(line.total ?? "0")) * 100);
+    if (!shippingMethodTitle && line.method_title) {
+      shippingMethodTitle = asString(line.method_title);
+    }
+  }
+
+  const shipCountry = asString(order.shipping?.country).toUpperCase();
+
+  return {
+    customerName,
+    customerEmail: asString(billing.email),
+    total: asString(order.total) || "0.00",
+    currency: (asString(order.currency) || "eur").toLowerCase(),
+    items,
+    shippingCents,
+    isWholesaleShipping: false,
+    shippingMethodTitle: shippingMethodTitle || undefined,
+    shippingCountry: shipCountry || undefined,
+    line_items,
+  };
+}
+
 export type CreateWooOrderFromCheckoutSyncInput = {
   cartItems: CartMeta[];
   billing: Record<string, string>;

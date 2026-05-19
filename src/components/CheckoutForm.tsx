@@ -1720,9 +1720,10 @@ function CheckoutInner() {
   const handlePayPalApprove = useCallback(
     async (_data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => {
       const details = await actions.order?.capture();
+      const paypalIntentId = `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`;
       try {
         const paypalSyncBody = {
-          paymentIntentId: `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`,
+          paymentIntentId: paypalIntentId,
           customer: customerData,
           items: cartMeta,
           ...buildCheckoutOrderExtras(company, vat),
@@ -1731,17 +1732,27 @@ function CheckoutInner() {
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
         };
-        await fetch("/api/sync-order", {
+        const syncRes = await fetch("/api/sync-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(paypalSyncBody),
         });
-      } catch {
-        // non-blocking
+        if (!syncRes.ok) {
+          const errBody = await syncRes.text().catch(() => "");
+          console.error(
+            "[PayPal] sync-order failed:",
+            syncRes.status,
+            errBody
+          );
+        }
+      } catch (syncErr) {
+        console.error("[PayPal] sync-order error:", syncErr);
       }
       clearCart();
       clearVideoUtmStorage();
-      router.push("/bestellung/erfolg?method=paypal");
+      router.push(
+        `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
+      );
     },
     [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge, isWholesale]
   );

@@ -65,7 +65,12 @@ export default function OrderSuccess() {
     order: bankOrder ? ` #${bankOrder}` : "",
   });
 
-  const hasPayment = !!(sessionId || paymentIntentId || method === "bank");
+  const hasPayment = !!(
+    sessionId ||
+    paymentIntentId ||
+    method === "bank" ||
+    method === "paypal"
+  );
 
   useEffect(() => {
     if (!hasPayment || syncedRef.current) return;
@@ -157,6 +162,13 @@ export default function OrderSuccess() {
             }
           }
           setOrder(merged);
+        } else if (paymentIntentId?.startsWith("paypal_")) {
+          const errBody = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          if (errBody.message) {
+            setError(errBody.message);
+          }
         }
 
         // Sync order to WooCommerce
@@ -169,7 +181,11 @@ export default function OrderSuccess() {
         }
         // PaymentIntent flow: sync was already done in CheckoutForm before redirect
         // but for Klarna/EPS redirects, we need to sync here too
-        if (paymentIntentId && !sessionId) {
+        if (
+          paymentIntentId &&
+          !sessionId &&
+          !paymentIntentId.startsWith("paypal_")
+        ) {
           if (wasCheckoutPiSynced(paymentIntentId)) {
             clearCheckoutPiSynced(paymentIntentId);
           } else {

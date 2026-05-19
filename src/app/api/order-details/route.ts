@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { parsePrice } from "@/lib/parse-price";
+import {
+  findWooOrderByPaymentReference,
+  mapWooOrderToOrderDetailsPayload,
+} from "@/lib/wc-order-from-payment";
 
 interface CartMeta {
   id: number;
@@ -40,7 +44,6 @@ export async function GET(request: Request) {
           ? session.total_details.amount_shipping
           : 0;
 
-      // WooCommerce product IDs for Meta tracking — stored in session metadata
       const cartMeta = parseCartMeta(session.metadata?.cart_items);
       const line_items = cartMeta.map((item) => ({
         product_id: String(item.id),
@@ -59,6 +62,21 @@ export async function GET(request: Request) {
         isWholesaleShipping: false,
         line_items,
       });
+    }
+
+    if (paymentIntentId?.startsWith("paypal_")) {
+      const wooOrder = await findWooOrderByPaymentReference(paymentIntentId);
+      if (!wooOrder) {
+        return NextResponse.json(
+          {
+            error: "order_not_synced",
+            message:
+              "Bestellung noch nicht synchronisiert. Bitte Seite in ein paar Sekunden neu laden.",
+          },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(mapWooOrderToOrderDetailsPayload(wooOrder));
     }
 
     if (paymentIntentId) {
