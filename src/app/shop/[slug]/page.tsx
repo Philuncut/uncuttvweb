@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import VideoUtmCapture from "@/components/blog/VideoUtmCapture";
 import { wooFetch } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
+import {
+  buildProductJsonLd,
+  buildProductMetadata,
+  type WooProductSeo,
+} from "@/lib/product-seo";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductDetail from "@/components/ProductDetail";
@@ -69,21 +74,19 @@ function getStockBadge(product: WooProduct) {
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const products = await wooFetch<WooProduct[]>("/products", { slug });
+  const products = await wooFetch<WooProductSeo[]>("/products", { slug });
   const product = products[0];
-  if (!product) return { title: "Nicht gefunden — UNCUTTV" };
-  return {
-    title: `${product.name} — UNCUTTV Shop`,
-    description: product.short_description || product.name,
-  };
+  if (!product) return { title: "Nicht gefunden — UncutTV" };
+  return buildProductMetadata(product);
 }
 
 export default async function ProductPage({ params }: PageProps) {
   const { slug } = await params;
-  const products = await wooFetch<WooProduct[]>("/products", { slug });
+  const products = await wooFetch<WooProductSeo[]>("/products", { slug });
   const product = products[0];
   if (!product) notFound();
 
+  const productJsonLd = buildProductJsonLd(product);
   const badge = getStockBadge(product);
   const details = parseDetails(product.description);
   const descriptionHtml = stripInfoGrids(product.description);
@@ -99,11 +102,19 @@ export default async function ProductPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
+      {/* og:type product — hoisted to <head>; see product-seo.ts */}
+      <meta property="og:type" content="product" />
       <Suspense fallback={null}>
         <VideoUtmCapture />
       </Suspense>
       <Navbar />
       <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(productJsonLd),
+          }}
+        />
         <ProductDetail
           product={product}
           details={details}
