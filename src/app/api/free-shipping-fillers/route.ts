@@ -1,61 +1,69 @@
 import { NextResponse } from "next/server";
-import { wooFetch } from "@/lib/woocommerce";
+import { wooFetchAll } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
-import { parsePrice } from "@/lib/parse-price";
-import { MAX_FILLER_PRICE_EUR } from "@/lib/free-shipping-suggestion";
+import {
+  FILLER_TARGET_COUNT,
+  isFillerExcluded,
+  pickFillerProducts,
+  splitFillerPools,
+} from "@/lib/cart-filler-pools";
 
-const RESULT_LIMIT = 6;
-const FETCH_PER_PAGE = "40";
-
-function shuffleInPlace<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+function parseExcludeIds(raw: string): Set<number> {
+  return new Set(
+    raw
+      .split(/[,;\s]+/)
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  );
 }
 
-function unitGrossForFilter(p: WooProduct): number {
-  const sale = parsePrice(p.sale_price);
-  if (p.on_sale && sale > 0) return sale;
-  const reg = parsePrice(p.regular_price);
-  if (reg > 0) return reg;
-  return parsePrice(p.price);
+function parseIdsParam(raw: string): number[] {
+  return raw
+    .split(/[,;\s]+/)
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+async function loadCatalog(): Promise<WooProduct[]> {
+  return wooFetchAll<WooProduct>(
+    "/products",
+    { status: "publish" },
+    { cache: "no-store" }
+  );
 }
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const excludeRaw = searchParams.get("excludeIds") ?? "";
-    const exclude = new Set(
-      excludeRaw
-        .split(/[,;\s]+/)
-        .map((s) => parseInt(s.trim(), 10))
-        .filter((n) => Number.isFinite(n) && n > 0)
-    );
+    const exclude = parseExcludeIds(searchParams.get("excludeIds") ?? "");
+    const pick = searchParams.get("pick") === "1";
+    const idsParam = searchParams.get("ids") ?? "";
+    const requestedIds = parseIdsParam(idsParam);
 
-    const raw = await wooFetch<WooProduct[]>(
-      "/products",
-      {
-        per_page: FETCH_PER_PAGE,
-        status: "publish",
-        orderby: "price",
-        order: "asc",
-      },
-      { cache: "no-store" }
-    );
+    const catalog = await loadCatalog();
 
-    const filtered = raw.filter((p) => {
-      if (p.stock_status === "outofstock") return false;
-      if (exclude.has(p.id)) return false;
-      const u = unitGrossForFilter(p);
-      return u > 0 && u <= MAX_FILLER_PRICE_EUR;
+    if (requestedIds.length > 0) {
+      const byId = new Map(catalog.map((p) => [p.id, p]));
+      const products = requestedIds
+        .map((id) => byId.get(id))
+        .filter((p): p is WooProduct => !!p && !isFillerExcluded(p, exclude));
+
+      return NextResponse.json({ products });
+    }
+
+    const { salePool, regularPool } = splitFillerPools(catalog, exclude);
+
+    if (pick) {
+      const products = pickFillerProducts(salePool, regularPool);
+      return NextResponse.json({ products });
+    }
+
+    return NextResponse.json({
+      products: pickFillerProducts(salePool, regularPool).slice(
+        0,
+        FILLER_TARGET_COUNT
+      ),
     });
-
-    const products = shuffleInPlace(filtered).slice(0, RESULT_LIMIT);
-
-    return NextResponse.json({ products });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error";

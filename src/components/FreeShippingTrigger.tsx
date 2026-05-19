@@ -21,6 +21,13 @@ import {
   shouldShowFreeShippingSuggestion,
 } from "@/lib/free-shipping-suggestion";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
+import {
+  clearCartFillerSessionIds,
+  isSaleFillerCandidate,
+  readCartFillerSessionIds,
+  unitGrossPrice,
+  writeCartFillerSessionIds,
+} from "@/lib/cart-filler-pools";
 
 type SuccessPhase = "idle" | "success" | "gone";
 
@@ -42,7 +49,9 @@ function FillerRow({
 }) {
   const [flash, setFlash] = useState(false);
   const img = product.images[0]?.src;
-  const price = parsePrice(product.price || product.regular_price || "0");
+  const onSale = isSaleFillerCandidate(product);
+  const displayPrice = unitGrossPrice(product);
+  const regularPrice = parsePrice(product.regular_price || product.price || "0");
 
   const onFlash = useCallback(() => {
     setFlash(true);
@@ -53,16 +62,21 @@ function FillerRow({
 
   return (
     <div
-      className={`group flex shrink-0 flex-col border border-[#2a2a2a] bg-[#0d0d0d] transition-shadow duration-300 ${
+      className={`group flex w-full min-w-0 flex-col border border-[#2a2a2a] bg-[#0d0d0d] transition-shadow duration-300 ${
         flash ? "shadow-[0_0_16px_rgba(192,57,43,0.55)]" : ""
-      } ${compact ? "w-[108px]" : "w-[132px]"}`}
+      }`}
     >
       <div
         data-quick-add-root
-        className={`relative w-full overflow-hidden bg-[#151515] ${
-          compact ? "aspect-square max-h-[72px]" : "aspect-square max-h-[88px]"
+        className={`relative aspect-square w-full overflow-hidden bg-[#151515] ${
+          compact ? "max-h-[72px]" : "max-h-[88px]"
         }`}
       >
+        {onSale && (
+          <span className="absolute top-1 left-1 z-10 bg-[#c0392b] px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-white">
+            SALE
+          </span>
+        )}
         {img ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -97,7 +111,16 @@ function FillerRow({
             compact ? "text-[10px]" : "text-xs"
           }`}
         >
-          {formatPrice(price)}
+          {onSale && product.sale_price && regularPrice > displayPrice ? (
+            <>
+              <span className="mr-1 text-white/30 line-through">
+                {formatPrice(regularPrice)}
+              </span>
+              {formatPrice(displayPrice)}
+            </>
+          ) : (
+            formatPrice(displayPrice)
+          )}
         </p>
       </div>
     </div>
@@ -167,15 +190,16 @@ export function FreeShippingTrigger({
 
   const [products, setProducts] = useState<WooProduct[]>([]);
   const [fetching, setFetching] = useState(false);
-  const fetchedOnceRef = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const [intersecting, setIntersecting] = useState(false);
 
+  const excludeIdsKey = useMemo(
+    () => items.map((i) => i.product.id).sort((a, b) => a - b).join(","),
+    [items]
+  );
+
   useEffect(() => {
     if (!observeActive) {
-      fetchedOnceRef.current = false;
-      setProducts([]);
-      setFetching(false);
       setIntersecting(false);
     }
   }, [observeActive]);
@@ -183,7 +207,6 @@ export function FreeShippingTrigger({
   useEffect(() => {
     if (!eligible) {
       setProducts([]);
-      fetchedOnceRef.current = false;
     }
   }, [eligible]);
 
@@ -203,21 +226,71 @@ export function FreeShippingTrigger({
   }, [observeActive, eligible, variant]);
 
   useEffect(() => {
-    if (!intersecting || !eligible || fetchedOnceRef.current || fetching) return;
-    fetchedOnceRef.current = true;
-    const excludeIds = items.map((i) => i.product.id).join(",");
-    setFetching(true);
-    const q = excludeIds
-      ? `?excludeIds=${encodeURIComponent(excludeIds)}`
-      : "";
-    fetch(`/api/free-shipping-fillers${q}`)
-      .then((r) => r.json())
-      .then((d: { products?: WooProduct[] }) =>
-        setProducts(Array.isArray(d.products) ? d.products : [])
-      )
-      .catch(() => setProducts([]))
-      .finally(() => setFetching(false));
-  }, [intersecting, eligible, fetching, items]);
+    if (!intersecting || !eligible) return;
+
+    let cancelled = false;
+
+    async function loadFillers() {
+      setFetching(true);
+      const params = new URLSearchParams();
+      if (excludeIdsKey) {
+        params.set("excludeIds", excludeIdsKey);
+      }
+
+      const cachedIds = readCartFillerSessionIds();
+
+      const fetchByIds = async (ids: number[]) => {
+        params.set("ids", ids.join(","));
+        const res = await fetch(
+          `/api/free-shipping-fillers?${params.toString()}`
+        );
+        const data = (await res.json()) as { products?: WooProduct[] };
+        return Array.isArray(data.products) ? data.products : [];
+      };
+
+      const fetchPick = async () => {
+        params.set("pick", "1");
+        const res = await fetch(
+          `/api/free-shipping-fillers?${params.toString()}`
+        );
+        const data = (await res.json()) as { products?: WooProduct[] };
+        return Array.isArray(data.products) ? data.products : [];
+      };
+
+      try {
+        let next: WooProduct[] = [];
+
+        if (cachedIds?.length) {
+          next = await fetchByIds(cachedIds);
+          if (next.length === 0) {
+            clearCartFillerSessionIds();
+            next = await fetchPick();
+            if (next.length > 0) {
+              writeCartFillerSessionIds(next.map((p) => p.id));
+            }
+          }
+        } else {
+          next = await fetchPick();
+          if (next.length > 0) {
+            writeCartFillerSessionIds(next.map((p) => p.id));
+          }
+        }
+
+        if (!cancelled) {
+          setProducts(next);
+        }
+      } catch {
+        if (!cancelled) setProducts([]);
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    }
+
+    void loadFillers();
+    return () => {
+      cancelled = true;
+    };
+  }, [intersecting, eligible, excludeIdsKey]);
 
   const remaining = getRemainingAmount(totalPrice);
   const pct = getProgressPercent(totalPrice);
@@ -273,17 +346,13 @@ export function FreeShippingTrigger({
       </p>
 
       {(fetching || products.length > 0) && (
-        <div
-          className={`flex flex-wrap gap-2 px-3 pb-3 ${
-            compact ? "justify-center" : "justify-start"
-          }`}
-        >
+        <div className="grid grid-cols-2 gap-3 px-3 pb-3">
           {fetching && products.length === 0
             ? Array.from({ length: SUGGESTION_COUNT }).map((_, i) => (
                 <div
                   key={i}
-                  className={`animate-pulse rounded-none border border-[#222] bg-[#141414] ${
-                    compact ? "h-[140px] w-[108px]" : "h-[168px] w-[132px]"
+                  className={`animate-pulse border border-[#222] bg-[#141414] ${
+                    compact ? "h-[140px]" : "h-[168px]"
                   }`}
                 />
               ))

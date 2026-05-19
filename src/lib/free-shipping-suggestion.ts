@@ -3,11 +3,8 @@ export const FREE_SHIPPING_THRESHOLD_EUR = 100;
 
 export const SUGGESTION_COUNTRIES = new Set(["DE", "AT"]);
 
-/** Max unit price (gross) for filler suggestions (B2C). */
-export const MAX_FILLER_PRICE_EUR = 15;
-
-/** How many filler cards to show in the UI. */
-export const SUGGESTION_COUNT = 3;
+/** How many filler cards to show in the UI (2×2 grid). */
+export const SUGGESTION_COUNT = 4;
 
 /** Below this cart subtotal the nudge is hidden (avoids discouraging “€70+ to go”). */
 export const MIN_CART_FOR_SUGGESTION_EUR = 50;
