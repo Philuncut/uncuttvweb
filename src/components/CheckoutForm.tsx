@@ -8,10 +8,11 @@ import {
   useRef,
   type FormEvent,
 } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { loadStripe, type StripeExpressCheckoutElementConfirmEvent } from "@stripe/stripe-js";
 import {
   Elements,
   CardElement,
+  ExpressCheckoutElement,
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
@@ -892,7 +893,26 @@ function PayPalButtonWrapper({
   );
 }
 
-function CheckoutInner() {
+const expressCheckoutOptions = {
+  buttonType: {
+    applePay: "buy" as const,
+    googlePay: "buy" as const,
+  },
+  paymentMethods: {
+    applePay: "always" as const,
+    googlePay: "always" as const,
+    paypal: "never" as const,
+    link: "never" as const,
+  },
+};
+
+function CheckoutInner({
+  clientSecret,
+  setClientSecret,
+}: {
+  clientSecret: string;
+  setClientSecret: (value: string) => void;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -1107,8 +1127,9 @@ function CheckoutInner() {
   const [couponName, setCouponName] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState<string | null>(null);
 
-  const [clientSecret, setClientSecret] = useState("");
   const [paymentIntentError, setPaymentIntentError] = useState("");
+  const clientSecretRef = useRef(clientSecret);
+  clientSecretRef.current = clientSecret;
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
@@ -1432,46 +1453,95 @@ function CheckoutInner() {
     [isWholesale, vat, country]
   );
 
-  // Create PaymentIntent for card payments
-  useEffect(() => {
-    if (!sessionReady) return;
-    if (items.length === 0 || (paymentMethod !== "card" && paymentMethod !== "klarna" && paymentMethod !== "eps")) return;
-    if (!isWholesale && stripeShipCents === null) return;
+  const piCheckoutReady = useMemo(() => {
+    if (items.length === 0) return false;
+    if (!sessionReady) return false;
+    if (countryBlocksCheckout) return false;
+    if (isWholesale) return true;
+    if (!shipResolved || shipFetchLoading) return false;
+    if (shipError || shipNoZone || shipRate === null) return false;
+    if (stripeShipCents === null) return false;
+    return true;
+  }, [
+    items.length,
+    sessionReady,
+    countryBlocksCheckout,
+    isWholesale,
+    shipResolved,
+    shipFetchLoading,
+    shipError,
+    shipNoZone,
+    shipRate,
+    stripeShipCents,
+  ]);
 
-    async function createPI() {
+  const paymentIntentRequestBody = useMemo(
+    () => ({
+      items,
+      couponId: isWholesale ? undefined : couponId || undefined,
+      shippingCents: isWholesale ? 1000 : (stripeShipCents ?? 0),
+      isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
+      ...(isWholesale
+        ? { isWholesale: true, taxCountry: country }
+        : {
+            shippingForStripe: {
+              name: `${firstName} ${lastName}`.trim(),
+              line1: street.trim(),
+              city: city.trim(),
+              postal_code: zip.trim(),
+              country: country.trim().toUpperCase(),
+              ...(state.trim() ? { state: state.trim() } : {}),
+            },
+            shippingMethodTitle: shipLabel.trim() || undefined,
+          }),
+      ...videoUtmRequestField(),
+    }),
+    [
+      items,
+      couponId,
+      isWholesale,
+      stripeShipCents,
+      wholesaleReverseCharge,
+      country,
+      firstName,
+      lastName,
+      street,
+      city,
+      zip,
+      state,
+      shipLabel,
+    ]
+  );
+
+  // PaymentIntent for Stripe (card, Klarna, EPS, Express wallets) — create once, then update
+  useEffect(() => {
+    if (!piCheckoutReady) return;
+
+    let cancelled = false;
+
+    async function ensurePI() {
       setPaymentIntentError("");
-      const shipCents = isWholesale ? 1000 : (stripeShipCents ?? 0);
-      const res = await fetch("/api/create-payment-intent", {
+      const piId = parsePiIdFromClientSecret(clientSecretRef.current);
+      const endpoint = piId
+        ? "/api/update-payment-intent"
+        : "/api/create-payment-intent";
+      const payload = piId
+        ? { ...paymentIntentRequestBody, paymentIntentId: piId }
+        : paymentIntentRequestBody;
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          couponId:
-            isWholesale ? undefined : couponId || undefined,
-          shippingCents: shipCents,
-          isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
-          ...(isWholesale
-            ? { isWholesale: true, taxCountry: country }
-            : {
-                shippingForStripe: {
-                  name: `${firstName} ${lastName}`.trim(),
-                  line1: street.trim(),
-                  city: city.trim(),
-                  postal_code: zip.trim(),
-                  country: country.trim().toUpperCase(),
-                  ...(state.trim() ? { state: state.trim() } : {}),
-                },
-                shippingMethodTitle: shipLabel.trim() || undefined,
-              }),
-          ...videoUtmRequestField(),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as {
         clientSecret?: string;
         error?: string;
       };
+      if (cancelled) return;
+
       if (!res.ok) {
-        setClientSecret("");
+        if (!piId) setClientSecret("");
         if (res.status === 403 && data.error === "country_blocked") {
           setPaymentIntentError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
         } else if (res.status === 403 && data.error === "wholesale_eu_only") {
@@ -1494,25 +1564,12 @@ function CheckoutInner() {
         setClientSecret(data.clientSecret);
       }
     }
-    createPI();
-  }, [
-    items,
-    couponId,
-    paymentMethod,
-    isWholesale,
-    sessionReady,
-    stripeShipCents,
-    wholesaleReverseCharge,
-    country,
-    firstName,
-    lastName,
-    street,
-    city,
-    zip,
-    state,
-    shipLabel,
-    t,
-  ]);
+
+    ensurePI();
+    return () => {
+      cancelled = true;
+    };
+  }, [piCheckoutReady, paymentIntentRequestBody, setClientSecret, t]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -1652,6 +1709,152 @@ function CheckoutInner() {
     ((!sessionReady && !isWholesale) ||
       shipFetchLoading ||
       (!isWholesale && provinceListLoading));
+
+  const runWholesalePiPreflight = useCallback(
+    async (piId: string | null): Promise<boolean> => {
+      if (!isWholesale || !piId) return true;
+      try {
+        const piRes = await fetch("/api/payment-intent-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentIntentId: piId,
+            isReverseCharge: wholesaleReverseCharge,
+          }),
+        });
+        return piRes.ok;
+      } catch {
+        return false;
+      }
+    },
+    [isWholesale, wholesaleReverseCharge]
+  );
+
+  const handleExpressWalletConfirm = useCallback(
+    async (event: StripeExpressCheckoutElementConfirmEvent) => {
+      if (!stripe || !elements || !clientSecret) return;
+
+      setProcessing(true);
+      setError("");
+
+      if (isWholesale) {
+        if (!company.trim()) {
+          setError(t("CHECKOUT_ERROR_COMPANY_REQUIRED"));
+          setProcessing(false);
+          return;
+        }
+        if (!vat.trim() || !validateEuVatFormat(vat)) {
+          setError(t("CHECKOUT_ERROR_UID_REQUIRED"));
+          setVatFieldError(t("CHECKOUT_VALIDATION_UID_FORMAT"));
+          setProcessing(false);
+          return;
+        }
+      }
+
+      if (shippingBlocksCheckout) {
+        setError(t("CHECKOUT_ERROR_SHIPPING_BLOCKED"));
+        setProcessing(false);
+        return;
+      }
+
+      const piId = parsePiIdFromClientSecret(clientSecret);
+      if (!(await runWholesalePiPreflight(piId))) {
+        setError(t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED"));
+        setProcessing(false);
+        return;
+      }
+
+      const { error: submitError } = await elements.submit();
+      if (submitError) {
+        const msg =
+          submitError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED");
+        setError(msg);
+        event.paymentFailed?.({ reason: "fail", message: msg });
+        setProcessing(false);
+        return;
+      }
+
+      if (piId) {
+        persistCheckoutSyncPayload(piId, {
+          ...customerData,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...(checkoutShippingForWoo
+            ? { checkoutShipping: checkoutShippingForWoo }
+            : {}),
+          isReverseCharge: wholesaleReverseCharge,
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+        });
+      }
+
+      const returnUrl = `${window.location.origin}/bestellung/erfolg?method=wallet`;
+
+      const { error: confirmError, paymentIntent } =
+        await stripe.confirmPayment({
+          elements,
+          clientSecret,
+          confirmParams: { return_url: returnUrl },
+          redirect: "if_required",
+        });
+
+      if (confirmError) {
+        const msg =
+          confirmError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED");
+        setError(msg);
+        event.paymentFailed?.({ reason: "fail", message: msg });
+        setProcessing(false);
+        return;
+      }
+
+      if (paymentIntent?.status === "succeeded") {
+        try {
+          const syncBody = {
+            paymentIntentId: paymentIntent.id,
+            customer: customerData,
+            items: cartMeta,
+            ...buildCheckoutOrderExtras(company, vat),
+            ...buildCheckoutShippingBody(checkoutShippingForWoo),
+            ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+            ...(isWholesale ? { isWholesale: true } : {}),
+            ...videoUtmRequestField(),
+          };
+          await fetch("/api/sync-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(syncBody),
+          });
+          markCheckoutPiSynced(paymentIntent.id);
+        } catch {
+          // non-blocking
+        }
+        clearCart();
+        clearVideoUtmStorage();
+        router.push(
+          "/bestellung/erfolg?payment_intent=" + paymentIntent.id
+        );
+        return;
+      }
+
+      setProcessing(false);
+    },
+    [
+      stripe,
+      elements,
+      clientSecret,
+      isWholesale,
+      company,
+      vat,
+      shippingBlocksCheckout,
+      runWholesalePiPreflight,
+      customerData,
+      cartMeta,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      clearCart,
+      router,
+      t,
+    ]
+  );
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -2505,6 +2708,28 @@ function CheckoutInner() {
               {t("ZAHLUNG")}
             </h2>
 
+            {clientSecret && !paymentIntentError.trim() && (
+              <div className="mt-4">
+                <ExpressCheckoutElement
+                  options={expressCheckoutOptions}
+                  onConfirm={handleExpressWalletConfirm}
+                />
+              </div>
+            )}
+
+            {clientSecret && !paymentIntentError.trim() && (
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-[#333]" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase tracking-[0.15em]">
+                  <span className="bg-[#0a0a0a] px-3 text-white/40">
+                    {language === "de" ? "oder" : "or"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Payment method selector */}
             <div className="mt-4 space-y-2">
               <PaymentOption
@@ -2672,12 +2897,25 @@ function CheckoutInner() {
 /* ── Wrapper with Stripe Elements ── */
 
 export default function CheckoutForm() {
+  const [clientSecret, setClientSecret] = useState("");
+
+  const elementsOptions = useMemo(
+    () =>
+      clientSecret
+        ? {
+            clientSecret,
+            appearance: stripeElementsAppearance,
+          }
+        : { appearance: stripeElementsAppearance },
+    [clientSecret]
+  );
+
   return (
-    <Elements
-      stripe={stripePromise}
-      options={{ appearance: stripeElementsAppearance }}
-    >
-      <CheckoutInner />
+    <Elements stripe={stripePromise} options={elementsOptions}>
+      <CheckoutInner
+        clientSecret={clientSecret}
+        setClientSecret={setClientSecret}
+      />
     </Elements>
   );
 }
