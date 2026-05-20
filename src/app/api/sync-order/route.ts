@@ -8,8 +8,10 @@ import {
   type CartMeta,
   type CustomerInfo,
   type CheckoutShippingInput,
+  type CreateWooOrderResult,
 } from "@/lib/wc-order-from-payment";
 import type { OrderMetaEntry } from "@/lib/video-utm-server";
+import { sendOrderConfirmationEmails } from "@/lib/order-confirmation-email";
 
 interface SyncBody {
   sessionId?: string;
@@ -50,6 +52,14 @@ function asString(value: unknown): string {
   return String(value).trim();
 }
 
+async function trySendOrderConfirmation(result: CreateWooOrderResult): Promise<void> {
+  try {
+    await sendOrderConfirmationEmails(result.orderId, result.wooOrder);
+  } catch (mailError) {
+    console.error("[OrderMail] Failed to send confirmation:", mailError);
+  }
+}
+
 export async function POST(request: Request) {
   let body: SyncBody | undefined;
   try {
@@ -71,6 +81,7 @@ export async function POST(request: Request) {
           videoUtm: body.videoUtm,
         },
       });
+      await trySendOrderConfirmation(result);
       return NextResponse.json({
         success: true,
         orderId: result.orderId,
@@ -183,6 +194,8 @@ export async function POST(request: Request) {
       videoUtm: body.videoUtm,
       stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
     });
+
+    await trySendOrderConfirmation(result);
 
     return NextResponse.json({
       success: true,

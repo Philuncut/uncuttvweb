@@ -479,6 +479,7 @@ export async function createWooOrderFromCheckoutSync(
     payment_method: "stripe",
     payment_method_title: "Stripe",
     set_paid: true,
+    send_email: false,
     prices_include_tax: true,
     billing: mergedBilling,
     shipping,
