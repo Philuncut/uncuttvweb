@@ -5,7 +5,7 @@ import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
 import { getVatRateForCountry } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
-import { formatPrice } from "@/lib/format-price";
+import { applyCouponToSubtotalCents } from "@/lib/apply-coupon-to-pi";
 import {
   buildVideoUtmOrderMeta,
   type VideoUtmInput,
@@ -13,7 +13,9 @@ import {
 
 interface Body {
   items: CartItem[];
-  couponId?: string;
+  /** WooCommerce coupon code (plaintext, e.g. welcome10). */
+  couponCode?: string;
+  customerEmail?: string;
   /** Versand in Cent (>= 0), aus Checkout */
   shippingCents?: number;
   /** EU B2B Reverse Charge — echoed in PI metadata when true (optional). */
@@ -40,7 +42,8 @@ export async function POST(request: Request) {
   try {
     const {
       items,
-      couponId,
+      couponCode,
+      customerEmail,
       shippingCents,
       isReverseCharge,
       isWholesale,
@@ -106,24 +109,23 @@ export async function POST(request: Request) {
           return sum + Math.round(parsePrice(item.product.price) * 100) * item.quantity;
         }, 0);
 
-    // Apply coupon discount if provided
-    let discountLabel = "";
-    if (couponId) {
-      try {
-        const coupon = await stripe.coupons.retrieve(couponId);
-        if (coupon.valid) {
-          if (coupon.percent_off) {
-            const discount = Math.round(totalCents * (coupon.percent_off / 100));
-            totalCents -= discount;
-            discountLabel = `-${coupon.percent_off}%`;
-          } else if (coupon.amount_off) {
-            totalCents = Math.max(0, totalCents - coupon.amount_off);
-            discountLabel = `−${formatPrice(coupon.amount_off / 100)}`;
-          }
-        }
-      } catch {
-        // Invalid coupon — ignore silently, charge full price
+    let couponMeta: Record<string, string> = {};
+    const codeTrimmed = couponCode?.trim();
+    if (codeTrimmed && isWholesale !== true) {
+      const applied = await applyCouponToSubtotalCents(
+        codeTrimmed,
+        totalCents,
+        items,
+        customerEmail?.trim()
+      );
+      if (!applied.ok) {
+        return NextResponse.json(
+          { error: "invalid_coupon", message: applied.error },
+          { status: 400 }
+        );
       }
+      totalCents = Math.max(0, totalCents - applied.discountCents);
+      couponMeta = applied.metadata;
     }
 
     const ship =
@@ -197,8 +199,10 @@ export async function POST(request: Request) {
             price: i.product.price,
           }))
         ),
-        coupon: couponId || "",
-        discount: discountLabel,
+        coupon_code: couponMeta.coupon_code ?? "",
+        coupon_wc_id: couponMeta.coupon_wc_id ?? "",
+        discount_amount_cents: couponMeta.discount_amount_cents ?? "",
+        discount_label: couponMeta.discount_label ?? "",
         is_reverse_charge: isReverseCharge === true ? "true" : "false",
         shipping_cents: String(ship),
         is_wholesale: isWholesale === true ? "true" : "false",

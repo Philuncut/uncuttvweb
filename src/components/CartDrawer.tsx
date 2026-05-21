@@ -18,6 +18,7 @@ interface CouponState {
   code: string;
   couponId: string;
   name: string;
+  displayLabel: string;
   percent_off: number | null;
   amount_off: string | null;
 }
@@ -125,17 +126,35 @@ export default function CartDrawer() {
     setCoupon(null);
 
     try {
-      const res = await fetch(
-        `/api/validate-coupon?code=${encodeURIComponent(couponInput.trim())}`
-      );
+      const res = await fetch("/api/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: couponInput.trim(),
+          cartTotal: Math.round(totalPrice * 100),
+          cartItems: items.map((item) => ({
+            product_id: Number(item.product.id),
+            quantity: Math.max(1, item.quantity),
+            price_cents: Math.round(parsePrice(item.product.price) * 100),
+          })),
+        }),
+      });
       const data = await res.json();
       if (data.valid) {
+        const display =
+          data.displayLabel ??
+          (data.percent_off
+            ? `−${data.percent_off}%`
+            : data.amount_off
+              ? `−${data.amount_off}`
+              : "");
         setCoupon({
-          code: couponInput.trim(),
-          couponId: data.couponId,
+          code: data.couponCode ?? couponInput.trim().toLowerCase(),
+          couponId: String(data.couponId),
           name: data.name,
-          percent_off: data.percent_off,
-          amount_off: data.amount_off,
+          displayLabel: display,
+          percent_off: data.percent_off ?? null,
+          amount_off: data.amount_off ?? null,
         });
         setCouponInput("");
       } else {
@@ -146,7 +165,7 @@ export default function CartDrawer() {
     } finally {
       setCouponLoading(false);
     }
-  }, [couponInput]);
+  }, [couponInput, items, totalPrice]);
 
   const handleCheckout = useCallback(async () => {
     let couponCode = "";
@@ -171,18 +190,24 @@ export default function CartDrawer() {
       }
     }
 
+    const drawerCoupon = coupon?.code?.trim();
+    if (drawerCoupon) {
+      couponCode = drawerCoupon;
+    }
+
     closeDrawer();
     window.location.href = couponCode
-      ? `/checkout?coupon=${couponCode}`
+      ? `/checkout?coupon=${encodeURIComponent(couponCode)}`
       : "/checkout";
-  }, [closeDrawer, isB2B, newsletter, newsletterEmail]);
+  }, [closeDrawer, isB2B, newsletter, newsletterEmail, coupon]);
 
   const discountDisplay = coupon
-    ? coupon.percent_off
-      ? `−${coupon.percent_off}%`
-      : coupon.amount_off
-        ? `−${coupon.amount_off}`
-        : ""
+    ? coupon.displayLabel ||
+      (coupon.percent_off
+        ? `−${coupon.percent_off}%`
+        : coupon.amount_off
+          ? `−${coupon.amount_off}`
+          : "")
     : "";
 
   return (
