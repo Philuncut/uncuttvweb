@@ -99,27 +99,19 @@ export async function fetchWooCouponByCode(
     throw new Error("WooCommerce credentials not configured");
   }
 
-  const key = (process.env.WOOCOMMERCE_KEY ?? "").trim();
-  const secret = (process.env.WOOCOMMERCE_SECRET ?? "").trim();
-  if (!key || !secret) {
+  if (!process.env.WOOCOMMERCE_KEY?.trim() || !process.env.WOOCOMMERCE_SECRET?.trim()) {
     throw new Error("WooCommerce credentials not configured");
   }
 
   const url = new URL(`${wooUrl}/wp-json/wc/v3/coupons`);
   url.searchParams.set("code", code);
-  // WC REST: query auth (same keys as coupon-generator Basic Auth) — reliable on GET
-  url.searchParams.set("consumer_key", key);
-  url.searchParams.set("consumer_secret", secret);
 
-  const logUrl = new URL(url.toString());
-  logUrl.searchParams.set("consumer_secret", "***");
-  console.log(`${LOG_PREFIX} Fetching:`, logUrl.toString());
+  console.log(`${LOG_PREFIX} Fetching:`, url.toString());
 
   const res = await fetch(url.toString(), {
     method: "GET",
     headers: {
-      Authorization:
-        "Basic " + Buffer.from(`${key}:${secret}`).toString("base64"),
+      Authorization: wooAuthHeader(),
       "Content-Type": "application/json",
     },
     cache: "no-store",
@@ -167,7 +159,39 @@ export async function fetchWooCouponByCode(
         normalizeCode(row.code) === code
     ) ?? rows[0];
 
+  if (match) {
+    console.log(`${LOG_PREFIX} Found coupon:`, {
+      id: match.id,
+      code: match.code,
+      status: (match as { status?: string }).status,
+      discount_type: match.discount_type,
+      date_expires: match.date_expires,
+      usage_count: match.usage_count,
+      usage_limit: match.usage_limit,
+      product_ids: match.product_ids,
+      minimum_amount: match.minimum_amount,
+    });
+  }
+
   return match ?? null;
+}
+
+/** WC: null / 0 / negative / empty = unlimited uses. */
+function effectiveUsageLimit(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function resolveCouponId(coupon: WooCouponRow): number | null {
+  const id = coupon.id as unknown;
+  if (typeof id === "number" && Number.isFinite(id) && id > 0) return id;
+  if (typeof id === "string" && id.trim()) {
+    const n = Number(id);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
 }
 
 function isExpired(dateExpires: string | null | undefined): boolean {
@@ -193,16 +217,23 @@ function validateCartConstraints(
       restrictions.length > 0 &&
       !restrictions.includes(customerEmail)
     ) {
+      console.log(`${LOG_PREFIX} Cart constraint failed: email_restrictions`);
       return "Ungültiger Code.";
     }
   }
 
   const minCents = parseWooMoneyToCents(coupon.minimum_amount);
+  // Skip min/max when cart total was not supplied (GET) or is zero (not yet loaded)
   if (
     minCents != null &&
     typeof cartTotalCents === "number" &&
+    cartTotalCents > 0 &&
     cartTotalCents < minCents
   ) {
+    console.log(`${LOG_PREFIX} Cart constraint failed: minimum_amount`, {
+      cartTotalCents,
+      minCents,
+    });
     return "Ungültiger Code.";
   }
 
@@ -210,8 +241,13 @@ function validateCartConstraints(
   if (
     maxCents != null &&
     typeof cartTotalCents === "number" &&
+    cartTotalCents > 0 &&
     cartTotalCents > maxCents
   ) {
+    console.log(`${LOG_PREFIX} Cart constraint failed: maximum_amount`, {
+      cartTotalCents,
+      maxCents,
+    });
     return "Ungültiger Code.";
   }
 
@@ -222,14 +258,23 @@ function validateCartConstraints(
     const eligible = cartItems.some((line) =>
       productIds.includes(line.product_id)
     );
-    if (!eligible) return "Ungültiger Code.";
+    if (!eligible) {
+      console.log(`${LOG_PREFIX} Cart constraint failed: product_ids`, productIds);
+      return "Ungültiger Code.";
+    }
   }
 
   if (cartItems.length > 0 && excludedIds.length > 0) {
     const hasExcluded = cartItems.some((line) =>
       excludedIds.includes(line.product_id)
     );
-    if (hasExcluded) return "Ungültiger Code.";
+    if (hasExcluded) {
+      console.log(
+        `${LOG_PREFIX} Cart constraint failed: excluded_product_ids`,
+        excludedIds
+      );
+      return "Ungültiger Code.";
+    }
   }
 
   return null;
@@ -277,25 +322,42 @@ function validateWooCouponRow(
   normalized: string,
   input: CouponValidationInput
 ): CouponValidationResponse {
-  if (!coupon?.id) {
+  const couponId = resolveCouponId(coupon);
+  const status = (coupon as { status?: string }).status;
+  const idCheckPassed = couponId != null;
+  console.log(`${LOG_PREFIX} Check id passed:`, idCheckPassed);
+
+  if (!idCheckPassed) {
     return { valid: false, error: "Ungültiger Code." };
   }
 
-  if (isExpired(coupon.date_expires)) {
+  const expiryPassed = !isExpired(coupon.date_expires);
+  console.log(`${LOG_PREFIX} Check expiry passed:`, expiryPassed, {
+    date_expires: coupon.date_expires,
+  });
+  if (!expiryPassed) {
     return { valid: false, error: "Ungültiger Code." };
   }
 
-  const usageLimit = coupon.usage_limit;
-  const usageCount = coupon.usage_count ?? 0;
-  if (
-    typeof usageLimit === "number" &&
-    usageLimit > 0 &&
-    usageCount >= usageLimit
-  ) {
+  const usageLimit = effectiveUsageLimit(coupon.usage_limit);
+  const usageCount =
+    typeof coupon.usage_count === "number"
+      ? coupon.usage_count
+      : Number(coupon.usage_count) || 0;
+  const usagePassed =
+    usageLimit == null || usageCount < usageLimit;
+  console.log(`${LOG_PREFIX} Check usage_limit passed:`, usagePassed, {
+    usage_count: usageCount,
+    usage_limit: coupon.usage_limit,
+    effective_limit: usageLimit,
+  });
+  if (!usagePassed) {
     return { valid: false, error: "Ungültiger Code." };
   }
 
   const cartError = validateCartConstraints(coupon, input);
+  console.log(`${LOG_PREFIX} Check cart_constraints passed:`, cartError == null);
+
   if (cartError) {
     return { valid: false, error: cartError };
   }
@@ -314,7 +376,7 @@ function validateWooCouponRow(
 
   const result: ValidCouponResult = {
     valid: true,
-    couponId: coupon.id!,
+    couponId: couponId!,
     couponCode,
     name,
     discountType,
@@ -323,10 +385,12 @@ function validateWooCouponRow(
   };
 
   if (discountType === "percent") {
-    result.percent_off = discountAmount;
+    result.percent_off = Math.round(discountAmount);
   } else {
     result.amount_off = displayLabel.replace(/^−/, "");
   }
+
+  console.log(`${LOG_PREFIX} Check status passed:`, true, { status });
 
   return result;
 }
@@ -350,9 +414,9 @@ export async function validateWooCoupon(
     };
   }
 
-  if (!coupon?.id) {
+  if (!coupon || !resolveCouponId(coupon)) {
     console.log(
-      `${LOG_PREFIX} Validation result: invalid — Ungültiger Code (not in WC)`
+      `${LOG_PREFIX} Validation result: invalid — coupon not found after fetch`
     );
     return { valid: false, error: "Ungültiger Code." };
   }
