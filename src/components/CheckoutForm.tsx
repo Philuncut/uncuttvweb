@@ -6,12 +6,15 @@ import {
   useCallback,
   useMemo,
   useRef,
+  forwardRef,
+  useImperativeHandle,
   type FormEvent,
 } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { loadStripe, type StripeExpressCheckoutElementConfirmEvent } from "@stripe/stripe-js";
 import {
   Elements,
   CardElement,
+  ExpressCheckoutElement,
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
@@ -34,6 +37,7 @@ import {
   parsePiIdFromClientSecret,
   persistCheckoutSyncPayload,
   type CheckoutShippingForWoo,
+  type StoredCheckoutSyncPayload,
 } from "@/lib/checkout-order-extras";
 import { clearVideoUtmStorage, videoUtmRequestField } from "@/lib/video-utm";
 import { standardVatFraction } from "@/lib/woo-vat-split";
@@ -86,7 +90,7 @@ const stripeElementsAppearance = {
   theme: "night" as const,
   variables: {
     colorPrimary: "#c0392b",
-    colorBackground: "#111111",
+    colorBackground: "#000000",
     colorText: "#ffffff",
     colorTextPlaceholder: "#666666",
     colorDanger: "#c0392b",
@@ -892,9 +896,213 @@ function PayPalButtonWrapper({
   );
 }
 
-function CheckoutInner() {
+const expressCheckoutOptions = {
+  buttonType: {
+    applePay: "buy" as const,
+    googlePay: "buy" as const,
+  },
+  buttonTheme: {
+    applePay: "black" as const,
+    googlePay: "black" as const,
+  },
+  buttonHeight: 48,
+  paymentMethods: {
+    applePay: "always" as const,
+    googlePay: "always" as const,
+    paypal: "never" as const,
+    link: "never" as const,
+    klarna: "never" as const,
+  },
+};
+
+type StripeCardConfirmResult =
+  | { ok: true; paymentIntentId: string }
+  | { ok: false; errorMessage: string };
+
+export type StripeClientSecretPaymentHandle = {
+  confirmCardPayment: () => Promise<StripeCardConfirmResult>;
+};
+
+type StripeClientSecretPaymentProps = {
+  clientSecret: string;
+  cardBillingDetails: {
+    name: string;
+    email: string;
+    address: {
+      line1: string;
+      postal_code: string;
+      city: string;
+      state?: string;
+      country: string;
+    };
+  };
+  onExpressProcessing: (processing: boolean) => void;
+  onExpressError: (message: string) => void;
+  onExpressSuccess: (paymentIntentId: string) => void;
+  validateBeforeWalletPay: () => string | null;
+  runWholesalePiPreflight: (piId: string | null) => Promise<boolean>;
+  buildWalletSyncPayload: (piId: string) => StoredCheckoutSyncPayload;
+  t: (key: string) => string;
+};
+
+const StripeClientSecretPayment = forwardRef<
+  StripeClientSecretPaymentHandle,
+  StripeClientSecretPaymentProps
+>(function StripeClientSecretPayment(
+  {
+    clientSecret,
+    cardBillingDetails,
+    onExpressProcessing,
+    onExpressError,
+    onExpressSuccess,
+    validateBeforeWalletPay,
+    runWholesalePiPreflight,
+    buildWalletSyncPayload,
+    t,
+  },
+  ref
+) {
   const stripe = useStripe();
   const elements = useElements();
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      confirmCardPayment: async (): Promise<StripeCardConfirmResult> => {
+        if (!stripe || !elements || !clientSecret) {
+          return {
+            ok: false,
+            errorMessage: t("CHECKOUT_ERROR_PAYMENT_SETUP"),
+          };
+        }
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement) {
+          return {
+            ok: false,
+            errorMessage: t("CHECKOUT_ERROR_CARD_ELEMENT"),
+          };
+        }
+        const { error: stripeError, paymentIntent } =
+          await stripe.confirmCardPayment(clientSecret, {
+            payment_method: {
+              card: cardElement,
+              billing_details: cardBillingDetails,
+            },
+          });
+        if (stripeError) {
+          return {
+            ok: false,
+            errorMessage:
+              stripeError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED"),
+          };
+        }
+        if (paymentIntent?.status === "succeeded") {
+          return { ok: true, paymentIntentId: paymentIntent.id };
+        }
+        return {
+          ok: false,
+          errorMessage: t("CHECKOUT_ERROR_PAYMENT_FAILED"),
+        };
+      },
+    }),
+    [stripe, elements, clientSecret, cardBillingDetails, t]
+  );
+
+  const handleExpressWalletConfirm = useCallback(
+    async (event: StripeExpressCheckoutElementConfirmEvent) => {
+      if (!stripe || !elements || !clientSecret) return;
+
+      const validationError = validateBeforeWalletPay();
+      if (validationError) {
+        onExpressError(validationError);
+        event.paymentFailed?.({ reason: "fail", message: validationError });
+        return;
+      }
+
+      onExpressProcessing(true);
+
+      const piId = parsePiIdFromClientSecret(clientSecret);
+      if (!(await runWholesalePiPreflight(piId))) {
+        const msg = t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED");
+        onExpressError(msg);
+        event.paymentFailed?.({ reason: "fail", message: msg });
+        onExpressProcessing(false);
+        return;
+      }
+
+      const { error: submitError } = await elements.submit();
+      if (submitError) {
+        const msg =
+          submitError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED");
+        onExpressError(msg);
+        event.paymentFailed?.({ reason: "fail", message: msg });
+        onExpressProcessing(false);
+        return;
+      }
+
+      if (piId) {
+        persistCheckoutSyncPayload(piId, buildWalletSyncPayload(piId));
+      }
+
+      const returnUrl = `${window.location.origin}/bestellung/erfolg?method=wallet`;
+
+      const { error: confirmError, paymentIntent } =
+        await stripe.confirmPayment({
+          elements,
+          clientSecret,
+          confirmParams: { return_url: returnUrl },
+          redirect: "if_required",
+        });
+
+      if (confirmError) {
+        const msg =
+          confirmError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED");
+        onExpressError(msg);
+        event.paymentFailed?.({ reason: "fail", message: msg });
+        onExpressProcessing(false);
+        return;
+      }
+
+      if (paymentIntent?.status === "succeeded") {
+        onExpressSuccess(paymentIntent.id);
+        return;
+      }
+
+      onExpressProcessing(false);
+    },
+    [
+      stripe,
+      elements,
+      clientSecret,
+      validateBeforeWalletPay,
+      runWholesalePiPreflight,
+      buildWalletSyncPayload,
+      onExpressProcessing,
+      onExpressError,
+      onExpressSuccess,
+      t,
+    ]
+  );
+
+  return (
+    <>
+      <div style={{ padding: 0, background: "transparent" }}>
+        <ExpressCheckoutElement
+          options={expressCheckoutOptions}
+          onConfirm={handleExpressWalletConfirm}
+        />
+      </div>
+      <div
+        style={{
+          borderBottom: "1px solid rgba(255,255,255,0.1)",
+          margin: "24px 0",
+        }}
+      />
+    </>
+  );
+});
+
+function CheckoutInner() {
   const router = useRouter();
   const { items, totalPrice, clearCart } = useCart();
   const { language } = useLanguage();
@@ -1109,6 +1317,9 @@ function CheckoutInner() {
 
   const [clientSecret, setClientSecret] = useState("");
   const [paymentIntentError, setPaymentIntentError] = useState("");
+  const clientSecretRef = useRef(clientSecret);
+  clientSecretRef.current = clientSecret;
+  const stripePiPaymentRef = useRef<StripeClientSecretPaymentHandle>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
@@ -1432,46 +1643,97 @@ function CheckoutInner() {
     [isWholesale, vat, country]
   );
 
-  // Create PaymentIntent for card payments
-  useEffect(() => {
-    if (!sessionReady) return;
-    if (items.length === 0 || (paymentMethod !== "card" && paymentMethod !== "klarna" && paymentMethod !== "eps")) return;
-    if (!isWholesale && stripeShipCents === null) return;
+  const piCheckoutReady = useMemo(() => {
+    if (items.length === 0) return false;
+    if (!sessionReady) return false;
+    if (countryBlocksCheckout) return false;
+    if (isWholesale) return true;
+    if (!shipResolved || shipFetchLoading) return false;
+    if (shipError || shipNoZone || shipRate === null) return false;
+    if (stripeShipCents === null) return false;
+    return true;
+  }, [
+    items.length,
+    sessionReady,
+    countryBlocksCheckout,
+    isWholesale,
+    shipResolved,
+    shipFetchLoading,
+    shipError,
+    shipNoZone,
+    shipRate,
+    stripeShipCents,
+  ]);
 
-    async function createPI() {
+  const paymentIntentRequestBody = useMemo(
+    () => ({
+      items,
+      couponId: isWholesale ? undefined : couponId || undefined,
+      shippingCents: isWholesale ? 1000 : (stripeShipCents ?? 0),
+      isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
+      ...(isWholesale
+        ? { isWholesale: true, taxCountry: country }
+        : {
+            shippingForStripe: {
+              name: `${firstName} ${lastName}`.trim(),
+              line1: street.trim(),
+              city: city.trim(),
+              postal_code: zip.trim(),
+              country: country.trim().toUpperCase(),
+              ...(state.trim() ? { state: state.trim() } : {}),
+            },
+            shippingMethodTitle: shipLabel.trim() || undefined,
+          }),
+      ...videoUtmRequestField(),
+    }),
+    [
+      items,
+      couponId,
+      isWholesale,
+      stripeShipCents,
+      wholesaleReverseCharge,
+      country,
+      firstName,
+      lastName,
+      street,
+      city,
+      zip,
+      state,
+      shipLabel,
+    ]
+  );
+
+  // PaymentIntent for Stripe (card, Klarna, EPS, Express wallets) — create once, then update
+  useEffect(() => {
+    if (!piCheckoutReady) return;
+
+    let cancelled = false;
+
+    async function ensurePI() {
       setPaymentIntentError("");
-      const shipCents = isWholesale ? 1000 : (stripeShipCents ?? 0);
-      const res = await fetch("/api/create-payment-intent", {
+      const secret = clientSecretRef.current.trim();
+      const piId = secret ? parsePiIdFromClientSecret(secret) : null;
+      const useUpdate = Boolean(piId && secret);
+      const endpoint = useUpdate
+        ? "/api/update-payment-intent"
+        : "/api/create-payment-intent";
+      const payload = useUpdate
+        ? { ...paymentIntentRequestBody, paymentIntentId: piId }
+        : paymentIntentRequestBody;
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items,
-          couponId:
-            isWholesale ? undefined : couponId || undefined,
-          shippingCents: shipCents,
-          isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
-          ...(isWholesale
-            ? { isWholesale: true, taxCountry: country }
-            : {
-                shippingForStripe: {
-                  name: `${firstName} ${lastName}`.trim(),
-                  line1: street.trim(),
-                  city: city.trim(),
-                  postal_code: zip.trim(),
-                  country: country.trim().toUpperCase(),
-                  ...(state.trim() ? { state: state.trim() } : {}),
-                },
-                shippingMethodTitle: shipLabel.trim() || undefined,
-              }),
-          ...videoUtmRequestField(),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as {
         clientSecret?: string;
         error?: string;
       };
+      if (cancelled) return;
+
       if (!res.ok) {
-        setClientSecret("");
+        if (!piId) setClientSecret("");
         if (res.status === 403 && data.error === "country_blocked") {
           setPaymentIntentError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
         } else if (res.status === 403 && data.error === "wholesale_eu_only") {
@@ -1494,25 +1756,12 @@ function CheckoutInner() {
         setClientSecret(data.clientSecret);
       }
     }
-    createPI();
-  }, [
-    items,
-    couponId,
-    paymentMethod,
-    isWholesale,
-    sessionReady,
-    stripeShipCents,
-    wholesaleReverseCharge,
-    country,
-    firstName,
-    lastName,
-    street,
-    city,
-    zip,
-    state,
-    shipLabel,
-    t,
-  ]);
+
+    ensurePI();
+    return () => {
+      cancelled = true;
+    };
+  }, [piCheckoutReady, paymentIntentRequestBody, setClientSecret, t]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -1653,6 +1902,112 @@ function CheckoutInner() {
       shipFetchLoading ||
       (!isWholesale && provinceListLoading));
 
+  const runWholesalePiPreflight = useCallback(
+    async (piId: string | null): Promise<boolean> => {
+      if (!isWholesale || !piId) return true;
+      try {
+        const piRes = await fetch("/api/payment-intent-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentIntentId: piId,
+            isReverseCharge: wholesaleReverseCharge,
+          }),
+        });
+        return piRes.ok;
+      } catch {
+        return false;
+      }
+    },
+    [isWholesale, wholesaleReverseCharge]
+  );
+
+  const validateBeforeWalletPay = useCallback((): string | null => {
+    if (isWholesale) {
+      if (!company.trim()) return t("CHECKOUT_ERROR_COMPANY_REQUIRED");
+      if (!vat.trim() || !validateEuVatFormat(vat)) {
+        return t("CHECKOUT_ERROR_UID_REQUIRED");
+      }
+    }
+    if (shippingBlocksCheckout) return t("CHECKOUT_ERROR_SHIPPING_BLOCKED");
+    return null;
+  }, [isWholesale, company, vat, shippingBlocksCheckout, t]);
+
+  const buildWalletSyncPayload = useCallback(
+    (_piId: string): StoredCheckoutSyncPayload => ({
+      ...customerData,
+      ...buildCheckoutOrderExtras(company, vat),
+      ...(checkoutShippingForWoo
+        ? { checkoutShipping: checkoutShippingForWoo }
+        : {}),
+      isReverseCharge: wholesaleReverseCharge,
+      ...(isWholesale ? { isWholesale: true } : {}),
+      ...videoUtmRequestField(),
+    }),
+    [
+      customerData,
+      company,
+      vat,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      isWholesale,
+    ]
+  );
+
+  const handleExpressSuccess = useCallback(
+    async (paymentIntentId: string) => {
+      try {
+        const syncBody = {
+          paymentIntentId,
+          customer: customerData,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...buildCheckoutShippingBody(checkoutShippingForWoo),
+          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+        };
+        await fetch("/api/sync-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(syncBody),
+        });
+        markCheckoutPiSynced(paymentIntentId);
+      } catch {
+        // non-blocking
+      }
+      clearCart();
+      clearVideoUtmStorage();
+      router.push("/bestellung/erfolg?payment_intent=" + paymentIntentId);
+    },
+    [
+      customerData,
+      cartMeta,
+      company,
+      vat,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      isWholesale,
+      clearCart,
+      router,
+    ]
+  );
+
+  const cardBillingDetails = useMemo(
+    () => ({
+      name: `${firstName} ${lastName}`,
+      email,
+      address: {
+        line1: street,
+        postal_code: zip,
+        city,
+        state: state.trim() || undefined,
+        country,
+      },
+    }),
+    [firstName, lastName, email, street, zip, city, state, country]
+  );
+
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
@@ -1680,100 +2035,53 @@ function CheckoutInner() {
       }
 
       if (paymentMethod === "card") {
-        if (!stripe || !elements || !clientSecret) {
-          setProcessing(false);
-          return;
-        }
-
-        const cardElement = elements.getElement(CardElement);
-        if (!cardElement) {
-          setError(t("CHECKOUT_ERROR_CARD_ELEMENT"));
+        if (!clientSecret) {
           setProcessing(false);
           return;
         }
 
         const piId = parsePiIdFromClientSecret(clientSecret);
-        if (isWholesale && piId) {
-          try {
-            const piRes = await fetch("/api/payment-intent-meta", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                paymentIntentId: piId,
-                isReverseCharge: wholesaleReverseCharge,
-              }),
-            });
-            if (!piRes.ok) {
-              setError(
-                t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
-              );
-              setProcessing(false);
-              return;
-            }
-          } catch {
-            setError(
-              t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED")
-            );
-            setProcessing(false);
-            return;
-          }
-        } else if (isWholesale && !piId) {
-          setError(t("CHECKOUT_ERROR_PAYMENT_SETUP"));
+        if (!(await runWholesalePiPreflight(piId))) {
+          setError(t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED"));
           setProcessing(false);
           return;
         }
 
-        const { error: stripeError, paymentIntent } =
-          await stripe.confirmCardPayment(clientSecret, {
-            payment_method: {
-              card: cardElement,
-              billing_details: {
-                name: `${firstName} ${lastName}`,
-                email,
-                address: {
-                  line1: street,
-                  postal_code: zip,
-                  city,
-                  state: state.trim() || undefined,
-                  country,
-                },
-              },
-            },
-          });
-
-        if (stripeError) {
-          setError(stripeError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED"));
-          setProcessing(false);
-          return;
-        }
-
-        if (paymentIntent?.status === "succeeded") {
-          try {
-            const syncBody = {
-              paymentIntentId: paymentIntent.id,
-              customer: customerData,
-              items: cartMeta,
-              ...buildCheckoutOrderExtras(company, vat),
-              ...buildCheckoutShippingBody(checkoutShippingForWoo),
-              ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
-              ...(isWholesale ? { isWholesale: true } : {}),
-              ...videoUtmRequestField(),
-            };
-            await fetch("/api/sync-order", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(syncBody),
-            });
-            markCheckoutPiSynced(paymentIntent.id);
-          } catch {
-            // non-blocking
-          }
-          clearCart();
-          clearVideoUtmStorage();
-          router.push(
-            "/bestellung/erfolg?payment_intent=" + paymentIntent.id
+        const cardResult =
+          await stripePiPaymentRef.current?.confirmCardPayment();
+        if (!cardResult?.ok) {
+          setError(
+            cardResult?.errorMessage || t("CHECKOUT_ERROR_PAYMENT_FAILED")
           );
+          setProcessing(false);
+          return;
         }
+
+        try {
+          const syncBody = {
+            paymentIntentId: cardResult.paymentIntentId,
+            customer: customerData,
+            items: cartMeta,
+            ...buildCheckoutOrderExtras(company, vat),
+            ...buildCheckoutShippingBody(checkoutShippingForWoo),
+            ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+            ...(isWholesale ? { isWholesale: true } : {}),
+            ...videoUtmRequestField(),
+          };
+          await fetch("/api/sync-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(syncBody),
+          });
+          markCheckoutPiSynced(cardResult.paymentIntentId);
+        } catch {
+          // non-blocking
+        }
+        clearCart();
+        clearVideoUtmStorage();
+        router.push(
+          "/bestellung/erfolg?payment_intent=" + cardResult.paymentIntentId
+        );
       } else if (paymentMethod === "bank") {
         try {
           const bankBody = {
@@ -1815,6 +2123,7 @@ function CheckoutInner() {
           setProcessing(false);
         }
       } else if (paymentMethod === "klarna" || paymentMethod === "eps") {
+        const stripe = await stripePromise;
         if (!stripe || !clientSecret) {
           setProcessing(false);
           return;
@@ -1895,10 +2204,9 @@ function CheckoutInner() {
       }
     },
     [
-      stripe,
-      elements,
       clientSecret,
       paymentMethod,
+      runWholesalePiPreflight,
       firstName,
       lastName,
       email,
@@ -1983,7 +2291,7 @@ function CheckoutInner() {
   const needsStripe = paymentMethod === "card" || paymentMethod === "klarna" || paymentMethod === "eps";
   const isStripeDisabled =
     needsStripe &&
-    (!stripe || !clientSecret || Boolean(paymentIntentError.trim()));
+    (!clientSecret || Boolean(paymentIntentError.trim()));
 
   const orderSummaryProps: OrderSummaryProps = {
     couponId,
@@ -2505,8 +2813,33 @@ function CheckoutInner() {
               {t("ZAHLUNG")}
             </h2>
 
-            {/* Payment method selector */}
-            <div className="mt-4 space-y-2">
+            {clientSecret && !paymentIntentError.trim() ? (
+              <Elements
+                key={clientSecret}
+                stripe={stripePromise}
+                options={{
+                  clientSecret,
+                  appearance: stripeElementsAppearance,
+                }}
+              >
+                <StripeClientSecretPayment
+                  ref={stripePiPaymentRef}
+                  clientSecret={clientSecret}
+                  cardBillingDetails={cardBillingDetails}
+                  onExpressProcessing={setProcessing}
+                  onExpressError={(msg) => {
+                    setError(msg);
+                    if (isWholesale && msg === t("CHECKOUT_ERROR_UID_REQUIRED")) {
+                      setVatFieldError(t("CHECKOUT_VALIDATION_UID_FORMAT"));
+                    }
+                  }}
+                  onExpressSuccess={handleExpressSuccess}
+                  validateBeforeWalletPay={validateBeforeWalletPay}
+                  runWholesalePiPreflight={runWholesalePiPreflight}
+                  buildWalletSyncPayload={buildWalletSyncPayload}
+                  t={t}
+                />
+                <div className="mt-4 space-y-2">
               <PaymentOption
                 selected={paymentMethod === "card"}
                 onClick={() => setPaymentMethod("card")}
@@ -2537,10 +2870,10 @@ function CheckoutInner() {
                 label={t("CHECKOUT_EPS_TRANSFER")}
                 icon={<EpsIcon />}
               />
-            </div>
+                </div>
 
-            {/* Payment method content */}
-            <div className="mt-4">
+                {/* Payment method content */}
+                <div className="mt-4">
               {paymentMethod === "card" && (
                 <div className="border border-[#333] bg-[#111] p-4">
                   <CardElement
@@ -2625,7 +2958,128 @@ function CheckoutInner() {
                   </p>
                 </div>
               )}
-            </div>
+                </div>
+              </Elements>
+            ) : (
+              <>
+                <div className="mt-4 space-y-2">
+                  <PaymentOption
+                    selected={paymentMethod === "card"}
+                    onClick={() => setPaymentMethod("card")}
+                    label={t("KREDITKARTE")}
+                    icon={<CardIcons />}
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === "bank"}
+                    onClick={() => setPaymentMethod("bank")}
+                    label={t("UEBERWEISUNG")}
+                    icon={<BankIcon />}
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === "paypal"}
+                    onClick={() => setPaymentMethod("paypal")}
+                    label="PAYPAL"
+                    icon={<PayPalIcon />}
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === "klarna"}
+                    onClick={() => setPaymentMethod("klarna")}
+                    label="KLARNA"
+                    icon={<KlarnaIcon />}
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === "eps"}
+                    onClick={() => setPaymentMethod("eps")}
+                    label={t("CHECKOUT_EPS_TRANSFER")}
+                    icon={<EpsIcon />}
+                  />
+                </div>
+                <div className="mt-4">
+                  {paymentMethod === "card" && (
+                    <div className="border border-[#333] bg-[#111] p-4">
+                      <p className="text-xs text-white/50">
+                        {paymentIntentError.trim() ||
+                          (piCheckoutReady
+                            ? t("CHECKOUT_ERROR_PAYMENT_INTENT")
+                            : t("CHECKOUT_ERROR_SHIPPING_BLOCKED"))}
+                      </p>
+                    </div>
+                  )}
+                  {paymentMethod === "bank" && (
+                    <div className="border border-[#333] bg-[#111] p-4">
+                      <p className="text-xs leading-relaxed text-white/50">
+                        {bankPaymentText}
+                        <br /><br />
+                        <strong style={{ color: "rgba(255,255,255,0.8)" }}>
+                          UncutTV GmbH<br />
+                          Raiffeisen Landesbank Tirol AG<br />
+                          IBAN: AT52 3600 0000 0083 4978<br />
+                          BIC: RZTIAT22
+                        </strong>
+                      </p>
+                      {isWholesale && (
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            color: "#888",
+                            marginTop: "12px",
+                            lineHeight: "1.5",
+                          }}
+                        >
+                          {t("BANK_HINT_WHOLESALE")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {paymentMethod === "paypal" && (
+                    <div className="border border-[#333] bg-[#111] p-4">
+                      {process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? (
+                        <PayPalButtonWrapper
+                          totalPrice={totalPrice}
+                          couponDiscount={paypalCouponDiscount}
+                          shippingAmount={orderSummaryShippingAmount}
+                          resolvedOrderTotalEuro={
+                            wholesaleNonRcTotals?.grossTotal ?? null
+                          }
+                          onApprove={handlePayPalApprove}
+                          disabled={
+                            wholesaleCheckoutBlocked || shippingBlocksCheckout
+                          }
+                          onError={() =>
+                            setError(t("CHECKOUT_PAYPAL_FAILED"))
+                          }
+                          onBeforePayPalCreateOrder={async () => {
+                            if (wholesaleCheckoutBlocked) {
+                              throw new Error(
+                                t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED")
+                              );
+                            }
+                          }}
+                        />
+                      ) : (
+                        <p className="text-xs text-white/30">
+                          {t("CHECKOUT_PAYPAL_UNAVAILABLE")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {paymentMethod === "klarna" && (
+                    <div className="border border-[#333] bg-[#111] p-4">
+                      <p className="text-xs leading-relaxed text-white/50">
+                        {t("CHECKOUT_KLARNA_REDIRECT")}
+                      </p>
+                    </div>
+                  )}
+                  {paymentMethod === "eps" && (
+                    <div className="border border-[#333] bg-[#111] p-4">
+                      <p className="text-xs leading-relaxed text-white/50">
+                        {t("CHECKOUT_EPS_REDIRECT")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </section>
 
           {/* Error */}
@@ -2669,15 +3123,6 @@ function CheckoutInner() {
   );
 }
 
-/* ── Wrapper with Stripe Elements ── */
-
 export default function CheckoutForm() {
-  return (
-    <Elements
-      stripe={stripePromise}
-      options={{ appearance: stripeElementsAppearance }}
-    >
-      <CheckoutInner />
-    </Elements>
-  );
+  return <CheckoutInner />;
 }

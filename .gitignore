@@ -46,3 +46,9 @@ herovideoae.mp4
 
 # PSD files
 pics/
+
+# Local-only root assets (not for repo)
+händlerzugänge.txt
+/*.pdf
+/*.jpg
+/*.png
