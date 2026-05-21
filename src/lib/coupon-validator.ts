@@ -57,9 +57,13 @@ type WooCouponRow = {
   free_shipping?: boolean;
 };
 
+/** Same credential pattern as `coupon-generator.ts` (trimmed keys). */
 function wooAuthHeader(): string {
-  const key = process.env.WOOCOMMERCE_KEY!;
-  const secret = process.env.WOOCOMMERCE_SECRET!;
+  const key = (process.env.WOOCOMMERCE_KEY ?? "").trim();
+  const secret = (process.env.WOOCOMMERCE_SECRET ?? "").trim();
+  if (!key || !secret) {
+    throw new Error("WooCommerce credentials not configured");
+  }
   return "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
 }
 
@@ -90,35 +94,71 @@ export async function fetchWooCouponByCode(
   const code = normalizeCode(rawCode);
   if (!code) return null;
 
-  const wooUrl = process.env.WOOCOMMERCE_URL?.replace(/\/$/, "");
-  if (!wooUrl || !process.env.WOOCOMMERCE_KEY || !process.env.WOOCOMMERCE_SECRET) {
+  const wooUrl = (process.env.WOOCOMMERCE_URL ?? "").replace(/\/$/, "");
+  if (!wooUrl) {
+    throw new Error("WooCommerce credentials not configured");
+  }
+
+  const key = (process.env.WOOCOMMERCE_KEY ?? "").trim();
+  const secret = (process.env.WOOCOMMERCE_SECRET ?? "").trim();
+  if (!key || !secret) {
     throw new Error("WooCommerce credentials not configured");
   }
 
   const url = new URL(`${wooUrl}/wp-json/wc/v3/coupons`);
   url.searchParams.set("code", code);
+  // WC REST: query auth (same keys as coupon-generator Basic Auth) — reliable on GET
+  url.searchParams.set("consumer_key", key);
+  url.searchParams.set("consumer_secret", secret);
+
+  const logUrl = new URL(url.toString());
+  logUrl.searchParams.set("consumer_secret", "***");
+  console.log(`${LOG_PREFIX} Fetching:`, logUrl.toString());
 
   const res = await fetch(url.toString(), {
+    method: "GET",
     headers: {
-      Authorization: wooAuthHeader(),
+      Authorization:
+        "Basic " + Buffer.from(`${key}:${secret}`).toString("base64"),
       "Content-Type": "application/json",
     },
     cache: "no-store",
   });
 
+  const bodyText = await res.text().catch(() => "");
+
+  console.log(`${LOG_PREFIX} WC response status:`, res.status);
+  console.log(`${LOG_PREFIX} WC response body:`, bodyText.slice(0, 400));
+
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    console.error(
-      LOG_PREFIX,
-      "WooCommerce coupon lookup failed:",
-      res.status,
-      text.slice(0, 200)
-    );
     throw new Error(`WooCommerce API error: ${res.status}`);
   }
 
-  const rows = (await res.json()) as WooCouponRow[];
-  if (!Array.isArray(rows) || rows.length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = bodyText ? JSON.parse(bodyText) : [];
+  } catch {
+    throw new Error("WooCommerce API error: invalid JSON");
+  }
+
+  if (!Array.isArray(parsed)) {
+    const errCode =
+      parsed &&
+      typeof parsed === "object" &&
+      "code" in parsed &&
+      typeof (parsed as { code?: unknown }).code === "string"
+        ? (parsed as { code: string }).code
+        : "unexpected_response";
+    throw new Error(`WooCommerce API error: ${errCode}`);
+  }
+
+  const rows = parsed as WooCouponRow[];
+  if (rows.length === 0) {
+    console.log(
+      `${LOG_PREFIX} Validation result: invalid — coupon not found (empty WC list)`
+    );
+    return null;
+  }
 
   const match =
     rows.find(
@@ -310,7 +350,27 @@ export async function validateWooCoupon(
     };
   }
 
-  return validateWooCouponRow(coupon ?? {}, normalized, input);
+  if (!coupon?.id) {
+    console.log(
+      `${LOG_PREFIX} Validation result: invalid — Ungültiger Code (not in WC)`
+    );
+    return { valid: false, error: "Ungültiger Code." };
+  }
+
+  const result = validateWooCouponRow(coupon, normalized, input);
+  if (result.valid) {
+    console.log(
+      `${LOG_PREFIX} Validation result: valid —`,
+      result.couponCode,
+      result.displayLabel
+    );
+  } else {
+    console.log(
+      `${LOG_PREFIX} Validation result: invalid —`,
+      result.error
+    );
+  }
+  return result;
 }
 
 export type ApplyCouponResult = {
