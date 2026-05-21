@@ -90,7 +90,7 @@ const stripeElementsAppearance = {
   theme: "night" as const,
   variables: {
     colorPrimary: "#c0392b",
-    colorBackground: "#111111",
+    colorBackground: "#000000",
     colorText: "#ffffff",
     colorTextPlaceholder: "#666666",
     colorDanger: "#c0392b",
@@ -901,11 +901,17 @@ const expressCheckoutOptions = {
     applePay: "buy" as const,
     googlePay: "buy" as const,
   },
+  buttonTheme: {
+    applePay: "black" as const,
+    googlePay: "black" as const,
+  },
+  buttonHeight: 48,
   paymentMethods: {
     applePay: "always" as const,
     googlePay: "always" as const,
     paypal: "never" as const,
     link: "never" as const,
+    klarna: "never" as const,
   },
 };
 
@@ -919,7 +925,6 @@ export type StripeClientSecretPaymentHandle = {
 
 type StripeClientSecretPaymentProps = {
   clientSecret: string;
-  paymentOrLabel: string;
   cardBillingDetails: {
     name: string;
     email: string;
@@ -946,7 +951,6 @@ const StripeClientSecretPayment = forwardRef<
 >(function StripeClientSecretPayment(
   {
     clientSecret,
-    paymentOrLabel,
     cardBillingDetails,
     onExpressProcessing,
     onExpressError,
@@ -1082,22 +1086,18 @@ const StripeClientSecretPayment = forwardRef<
 
   return (
     <>
-      <div className="mt-4">
+      <div style={{ padding: 0, background: "transparent" }}>
         <ExpressCheckoutElement
           options={expressCheckoutOptions}
           onConfirm={handleExpressWalletConfirm}
         />
       </div>
-      <div className="relative my-6">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-[#333]" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase tracking-[0.15em]">
-          <span className="bg-[#0a0a0a] px-3 text-white/40">
-            {paymentOrLabel}
-          </span>
-        </div>
-      </div>
+      <div
+        style={{
+          borderBottom: "1px solid rgba(255,255,255,0.1)",
+          margin: "24px 0",
+        }}
+      />
     </>
   );
 });
@@ -2825,7 +2825,6 @@ function CheckoutInner() {
                 <StripeClientSecretPayment
                   ref={stripePiPaymentRef}
                   clientSecret={clientSecret}
-                  paymentOrLabel={language === "de" ? "oder" : "or"}
                   cardBillingDetails={cardBillingDetails}
                   onExpressProcessing={setProcessing}
                   onExpressError={(msg) => {
