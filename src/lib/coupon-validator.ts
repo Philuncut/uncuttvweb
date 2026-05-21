@@ -78,6 +78,13 @@ function parseWooMoneyToCents(value: string | undefined): number | null {
   return Math.round(euros * 100);
 }
 
+/** WC min/max: null, empty, or "0.00" means no limit (not zero euros). */
+function effectiveMoneyLimitCents(value: string | undefined): number | null {
+  const cents = parseWooMoneyToCents(value);
+  if (cents == null || cents <= 0) return null;
+  return cents;
+}
+
 function buildDisplayLabel(
   discountType: CouponDiscountType,
   amount: number
@@ -222,10 +229,10 @@ function validateCartConstraints(
     }
   }
 
-  const minCents = parseWooMoneyToCents(coupon.minimum_amount);
-  // Skip min/max when cart total was not supplied (GET) or is zero (not yet loaded)
-  if (
-    minCents != null &&
+  const minCents = effectiveMoneyLimitCents(coupon.minimum_amount);
+  if (minCents == null) {
+    console.log(`${LOG_PREFIX} Check min_amount skipped (no minimum)`);
+  } else if (
     typeof cartTotalCents === "number" &&
     cartTotalCents > 0 &&
     cartTotalCents < minCents
@@ -237,9 +244,10 @@ function validateCartConstraints(
     return "Ungültiger Code.";
   }
 
-  const maxCents = parseWooMoneyToCents(coupon.maximum_amount);
-  if (
-    maxCents != null &&
+  const maxCents = effectiveMoneyLimitCents(coupon.maximum_amount);
+  if (maxCents == null) {
+    console.log(`${LOG_PREFIX} Check max_amount skipped (no limit)`);
+  } else if (
     typeof cartTotalCents === "number" &&
     cartTotalCents > 0 &&
     cartTotalCents > maxCents
@@ -339,6 +347,7 @@ function validateWooCouponRow(
     return { valid: false, error: "Ungültiger Code." };
   }
 
+  // usage_limit_per_user: not enforced yet; would use effectiveUsageLimit() if added
   const usageLimit = effectiveUsageLimit(coupon.usage_limit);
   const usageCount =
     typeof coupon.usage_count === "number"
