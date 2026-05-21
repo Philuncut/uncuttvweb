@@ -397,6 +397,10 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   videoUtm?: VideoUtmInput;
   stripePiId?: string;
   stripeChargeId?: string;
+  /** WooCommerce coupon code from PaymentIntent metadata. */
+  couponCode?: string;
+  /** Stripe PI amount in cents (for post-create total check). */
+  stripeAmountCents?: number;
 };
 
 export async function createWooOrderFromCheckoutSync(
@@ -415,6 +419,8 @@ export async function createWooOrderFromCheckoutSync(
     videoUtm,
     stripePiId,
     stripeChargeId,
+    couponCode,
+    stripeAmountCents,
   } = input;
 
   if (cartItems.length === 0) {
@@ -512,6 +518,11 @@ export async function createWooOrderFromCheckoutSync(
     }),
     transaction_id: transactionId,
   };
+
+  const normalizedCoupon = couponCode?.trim().toLowerCase();
+  if (normalizedCoupon) {
+    orderData.coupon_lines = [{ code: normalizedCoupon }];
+  }
 
   if (isReverseCharge) {
     orderData.tax_lines = [];
@@ -622,12 +633,31 @@ export async function createWooOrderFromCheckoutSync(
     throw new Error(`WooCommerce order creation failed: ${errText}`);
   }
 
-  const created = (await res.json()) as WooOrderRow;
+  const created = (await res.json()) as WooOrderRow & { total?: string };
 
   console.log("[wc-order] Woo POST response", {
     orderId: created.id,
     orderNumber: created.number,
   });
+
+  if (
+    typeof stripeAmountCents === "number" &&
+    Number.isFinite(stripeAmountCents) &&
+    created.total != null
+  ) {
+    const wooTotalCents = Math.round(parsePrice(String(created.total)) * 100);
+    const diff = Math.abs(wooTotalCents - stripeAmountCents);
+    if (diff > 1) {
+      console.warn(
+        "[WC-Order] Total mismatch: WC=",
+        wooTotalCents,
+        "Stripe=",
+        stripeAmountCents,
+        "orderId=",
+        created.id
+      );
+    }
+  }
 
   const mergedVatForNotify =
     asString(vatFromFrontendMeta) || asString(profileVat);
@@ -787,6 +817,11 @@ export async function createWooOrderFromPayment(
     syncContext
   );
 
+  const couponFromMeta =
+    (typeof pi.metadata?.coupon_code === "string" &&
+      pi.metadata.coupon_code.trim()) ||
+    undefined;
+
   return createWooOrderFromCheckoutSync({
     cartItems,
     billing,
@@ -803,5 +838,8 @@ export async function createWooOrderFromPayment(
     },
     stripePiId: paymentIntentId,
     stripeChargeId: chargeId,
+    couponCode: couponFromMeta,
+    stripeAmountCents:
+      typeof pi.amount === "number" ? pi.amount : undefined,
   });
 }

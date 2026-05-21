@@ -151,6 +151,8 @@ function resolveCheckoutApiError(
       return t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY");
     case "shipping_unavailable":
       return t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE");
+    case "invalid_coupon":
+      return t("CHECKOUT_INVALID_COUPON");
     default:
       return error;
   }
@@ -388,7 +390,12 @@ type OrderSummaryProps = {
   couponId: string | null;
   couponName: string | null;
   couponDiscount: string | null;
-  onCouponApplied: (id: string, name: string, display: string) => void;
+  onCouponApplied: (
+    wcId: string,
+    code: string,
+    name: string,
+    display: string
+  ) => void;
   onCouponRemoved: () => void;
   subtotal: number;
   /** Wholesale: hide coupon input and applied-coupon UI (B2C unchanged). */
@@ -558,27 +565,48 @@ function OrderSummary({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(
-        `/api/validate-coupon?code=${encodeURIComponent(code.trim())}`
-      );
+      const res = await fetch("/api/validate-coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: code.trim(),
+          cartTotal: Math.round(subtotal * 100),
+          cartItems: items.map((item) => ({
+            product_id: Number(item.product.id),
+            quantity: Math.max(1, item.quantity),
+            price_cents: Math.round(parsePrice(item.product.price) * 100),
+          })),
+        }),
+      });
       const data = await res.json();
       if (data.valid) {
-        const display = data.percent_off
-          ? `−${data.percent_off}%`
-          : data.amount_off
-            ? `−${data.amount_off}`
-            : "";
-        onCouponApplied(data.couponId, data.name, display);
+        const display =
+          data.displayLabel ??
+          (data.percent_off
+            ? `−${data.percent_off}%`
+            : data.amount_off
+              ? `−${data.amount_off}`
+              : "");
+        onCouponApplied(
+          String(data.couponId),
+          data.couponCode ?? code.trim().toLowerCase(),
+          data.name,
+          display
+        );
         setCode("");
       } else {
-        setError(data.error || t("CHECKOUT_INVALID_COUPON"));
+        setError(
+          data.error === "Coupon-Service nicht erreichbar"
+            ? t("CHECKOUT_COUPON_SERVICE_ERROR")
+            : data.error || t("CHECKOUT_INVALID_COUPON")
+        );
       }
     } catch {
       setError(t("CHECKOUT_COUPON_VALIDATE_ERROR"));
     } finally {
       setLoading(false);
     }
-  }, [code, onCouponApplied, t]);
+  }, [code, items, subtotal, onCouponApplied, t]);
 
   const embedded = variant === "embedded";
 
@@ -1312,8 +1340,10 @@ function CheckoutInner() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
 
   const [couponId, setCouponId] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponName, setCouponName] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState<string | null>(null);
+  const [couponNotice, setCouponNotice] = useState<string | null>(null);
 
   const [clientSecret, setClientSecret] = useState("");
   const [paymentIntentError, setPaymentIntentError] = useState("");
@@ -1345,57 +1375,104 @@ function CheckoutInner() {
   useEffect(() => {
     if (!isWholesale) return;
     setCouponId(null);
+    setCouponCode(null);
     setCouponName(null);
     setCouponDiscount(null);
     setAutoCouponApplied(false);
+    setCouponNotice(null);
   }, [isWholesale]);
 
   useEffect(() => {
     if (isWholesale && couponId) {
       setCouponId(null);
+      setCouponCode(null);
       setCouponName(null);
       setCouponDiscount(null);
       setAutoCouponApplied(false);
+      setCouponNotice(null);
     }
   }, [isWholesale, couponId]);
+
+  const applyValidatedCoupon = useCallback(
+    (
+      data: {
+        couponId: number | string;
+        couponCode?: string;
+        name?: string;
+        displayLabel?: string;
+        percent_off?: number;
+        amount_off?: string;
+      },
+      fallbackCode: string
+    ) => {
+      const display =
+        data.displayLabel ??
+        (data.percent_off
+          ? `−${data.percent_off}%`
+          : data.amount_off
+            ? `−${data.amount_off}`
+            : "");
+      setCouponId(String(data.couponId));
+      setCouponCode(
+        (data.couponCode ?? fallbackCode).trim().toLowerCase()
+      );
+      setCouponName(data.name || fallbackCode);
+      setCouponDiscount(display);
+      setAutoCouponApplied(true);
+      setCouponNotice(null);
+    },
+    []
+  );
 
   // Read ?coupon= from URL and auto-apply (B2C / guest only)
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!sessionReady) return;
     if (isWholesale) return;
+    if (items.length === 0) return;
     const params = new URLSearchParams(window.location.search);
     const urlCoupon = params.get("coupon");
-    if (!urlCoupon) return;
+    if (!urlCoupon?.trim()) return;
+    const couponFromUrl = urlCoupon.trim();
 
     async function applyCoupon() {
       try {
-        const res = await fetch(
-          `/api/validate-coupon?code=${encodeURIComponent(urlCoupon!)}`
-        );
+        const res = await fetch("/api/validate-coupon", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: couponFromUrl,
+            cartTotal: Math.round(totalPrice * 100),
+            cartItems: items.map((item) => ({
+              product_id: Number(item.product.id),
+              quantity: Math.max(1, item.quantity),
+              price_cents: Math.round(parsePrice(item.product.price) * 100),
+            })),
+            customerEmail: email.trim() || undefined,
+          }),
+        });
         const data = await res.json();
 
         if (data.valid) {
-          const display = data.percent_off
-            ? `−${data.percent_off}%`
-            : data.amount_off
-              ? `−${data.amount_off}`
-              : "−10%";
-          setCouponId(data.couponId);
-          setCouponName(data.name || urlCoupon);
-          setCouponDiscount(display);
-          setAutoCouponApplied(true);
+          applyValidatedCoupon(data, couponFromUrl);
         } else {
-          setCouponName(urlCoupon!);
-          setCouponDiscount("−10%");
-          setAutoCouponApplied(true);
+          setCouponNotice(t("CHECKOUT_COUPON_URL_INVALID"));
+          setAutoCouponApplied(false);
         }
       } catch {
-        /* ignore */
+        setCouponNotice(t("CHECKOUT_COUPON_VALIDATE_ERROR"));
       }
     }
     void applyCoupon();
-  }, [sessionReady, isWholesale]);
+  }, [
+    sessionReady,
+    isWholesale,
+    items,
+    totalPrice,
+    email,
+    applyValidatedCoupon,
+    t,
+  ]);
 
   const itemsKey = items.map((i) => `${i.product.id}:${i.quantity}`).join(",");
 
@@ -1668,7 +1745,8 @@ function CheckoutInner() {
   const paymentIntentRequestBody = useMemo(
     () => ({
       items,
-      couponId: isWholesale ? undefined : couponId || undefined,
+      couponCode: isWholesale ? undefined : couponCode || undefined,
+      customerEmail: isWholesale ? undefined : email.trim() || undefined,
       shippingCents: isWholesale ? 1000 : (stripeShipCents ?? 0),
       isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
       ...(isWholesale
@@ -1688,7 +1766,8 @@ function CheckoutInner() {
     }),
     [
       items,
-      couponId,
+      couponCode,
+      email,
       isWholesale,
       stripeShipCents,
       wholesaleReverseCharge,
@@ -1738,6 +1817,13 @@ function CheckoutInner() {
           setPaymentIntentError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
         } else if (res.status === 403 && data.error === "wholesale_eu_only") {
           setPaymentIntentError(t("CHECKOUT_ERROR_WHOLESALE_EU_ONLY"));
+        } else if (data.error === "invalid_coupon") {
+          setCouponId(null);
+          setCouponCode(null);
+          setCouponName(null);
+          setCouponDiscount(null);
+          setAutoCouponApplied(false);
+          setPaymentIntentError(t("CHECKOUT_INVALID_COUPON"));
         } else if (typeof data.error === "string" && data.error) {
           setPaymentIntentError(
             resolveCheckoutApiError(
@@ -2297,15 +2383,21 @@ function CheckoutInner() {
     couponId,
     couponName,
     couponDiscount,
-    onCouponApplied: (id, name, display) => {
-      setCouponId(id);
+    onCouponApplied: (wcId, code, name, display) => {
+      setCouponId(wcId);
+      setCouponCode(code);
       setCouponName(name);
       setCouponDiscount(display);
+      setAutoCouponApplied(true);
+      setCouponNotice(null);
     },
     onCouponRemoved: () => {
       setCouponId(null);
+      setCouponCode(null);
       setCouponName(null);
       setCouponDiscount(null);
+      setAutoCouponApplied(false);
+      setCouponNotice(null);
     },
     subtotal: totalPrice,
     hideCoupon: isWholesale,
@@ -2507,7 +2599,16 @@ function CheckoutInner() {
             <>
 
           {/* Auto-applied coupon banner (B2C / guest only — wholesale must not stack discounts) */}
-          {!isWholesale && autoCouponApplied && (
+          {couponNotice && (
+            <div
+              role="status"
+              className="mb-4 border border-[#c0392b]/40 bg-[#c0392b]/10 px-4 py-3 text-sm text-[#e74c3c]"
+            >
+              {couponNotice}
+            </div>
+          )}
+
+          {!isWholesale && autoCouponApplied && couponCode && couponId && (
             <div
               style={{
                 background: "rgba(39, 174, 96, 0.08)",
@@ -2774,26 +2875,48 @@ function CheckoutInner() {
             >
               <Checkbox checked={newsletter} onChange={(v) => {
                 setNewsletter(v);
-                if (v && email && !couponId) {
-                  // Subscribe + get unique coupon code
-                  fetch("/api/newsletter/subscribe", {
+                if (!v || !email.trim()) return;
+
+                void fetch("/api/newsletter/subscribe", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ email: email.trim() }),
+                })
+                  .then((r) => r.json())
+                  .then((data) => {
+                    if (data.alreadySubscribed) {
+                      setIsNewsletterSubscribed(true);
+                      setError(t("CHECKOUT_NEWSLETTER_ALREADY"));
+                      setNewsletter(false);
+                      return;
+                    }
+                    if (data.success) {
+                      setIsNewsletterSubscribed(true);
+                    }
+                  })
+                  .catch(() => {});
+
+                if (!couponCode && items.length > 0) {
+                  void fetch("/api/validate-coupon", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email }),
+                    body: JSON.stringify({
+                      code: "WELCOME10",
+                      cartTotal: Math.round(totalPrice * 100),
+                      cartItems: items.map((item) => ({
+                        product_id: Number(item.product.id),
+                        quantity: Math.max(1, item.quantity),
+                        price_cents: Math.round(
+                          parsePrice(item.product.price) * 100
+                        ),
+                      })),
+                      customerEmail: email.trim(),
+                    }),
                   })
                     .then((r) => r.json())
                     .then((data) => {
-                      if (data.alreadySubscribed) {
-                        setIsNewsletterSubscribed(true);
-                        setError(t("CHECKOUT_NEWSLETTER_ALREADY"));
-                        setNewsletter(false);
-                        return;
-                      }
-                      if (data.success) {
-                        setIsNewsletterSubscribed(true);
-                        setCouponName("WELCOME10");
-                        setCouponDiscount("−10%");
-                        setAutoCouponApplied(true);
+                      if (data.valid) {
+                        applyValidatedCoupon(data, "WELCOME10");
                       }
                     })
                     .catch(() => {});

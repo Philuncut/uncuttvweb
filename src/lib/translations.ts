@@ -427,6 +427,14 @@ const translations: Record<string, Record<string, string>> = {
     de: "Fehler bei der Überprüfung.",
     en: "Could not validate code.",
   },
+  CHECKOUT_COUPON_URL_INVALID: {
+    de: "Code nicht (mehr) gültig.",
+    en: "This code is not valid (anymore).",
+  },
+  CHECKOUT_COUPON_SERVICE_ERROR: {
+    de: "Coupon-Service nicht erreichbar.",
+    en: "Coupon service unavailable.",
+  },
   CHECKOUT_SUBTOTAL_NET: { de: "Zwischensumme (netto)", en: "Subtotal (net)" },
   CHECKOUT_SHIPPING_NET: { de: "Versand (netto)", en: "Shipping (net)" },
   CHECKOUT_VAT: { de: "USt.", en: "VAT" },

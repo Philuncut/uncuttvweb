@@ -15,6 +15,10 @@ function metadataSummary(
 ): Record<string, string> {
   if (!metadata) return {};
   const keys = [
+    "coupon_code",
+    "coupon_wc_id",
+    "discount_amount_cents",
+    "discount_label",
     "coupon",
     "discount",
     "is_wholesale",
