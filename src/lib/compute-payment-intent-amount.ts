@@ -4,7 +4,7 @@ import { parsePrice } from "@/lib/parse-price";
 import {
   applyCouponToSubtotalCents,
   type CouponPiMetadata,
-} from "@/lib/apply-coupon-to-pi";
+} from "@/lib/coupon-helpers";
 
 export type ComputePiAmountInput = {
   items: CartItem[];
