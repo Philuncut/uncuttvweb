@@ -2187,6 +2187,12 @@ function CheckoutInner() {
             ...(isWholesale ? { isWholesale: true } : {}),
             locale: language,
             ...videoUtmRequestField(),
+            ...(!isWholesale
+              ? {
+                  couponCode: couponCode ?? "",
+                  customerEmail: email.trim() || undefined,
+                }
+              : {}),
           };
           const res = await fetch("/api/create-bank-order", {
             method: "POST",

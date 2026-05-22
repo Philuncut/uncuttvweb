@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import type { CartItem } from "@/lib/CartContext";
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
+import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { cookies } from "next/headers";
 import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import {
@@ -24,15 +26,13 @@ import {
   mergeVideoUtmIntoMeta,
   type VideoUtmInput,
 } from "@/lib/video-utm-server";
+import type { CartMeta } from "@/lib/wc-order-from-payment";
+import {
+  allocateDiscountCentsToLines,
+  buildLineItemWithCouponDiscount,
+} from "@/lib/woo-coupon-line-discount";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-
-interface CartMeta {
-  id: number;
-  name: string;
-  qty: number;
-  price: string;
-}
 
 interface Body {
   customer: {
@@ -60,6 +60,30 @@ interface Body {
   isWholesale?: boolean;
   locale?: "de" | "en";
   videoUtm?: VideoUtmInput;
+  couponCode?: string;
+  customerEmail?: string;
+}
+
+function cartMetaToCartItems(items: CartMeta[]): CartItem[] {
+  return items.map((item) => ({
+    product: {
+      id: Number(item.id),
+      name: item.name,
+      slug: "",
+      price: item.price,
+      regular_price: item.price,
+      sale_price: "",
+      on_sale: false,
+      stock_status: "instock" as const,
+      sku: "",
+      images: [],
+      categories: [],
+      short_description: "",
+      description: "",
+      related_ids: [],
+    },
+    quantity: Math.max(1, Number(item.qty) || 1),
+  }));
 }
 
 async function sendBankTransferEmail(
@@ -68,14 +92,19 @@ async function sendBankTransferEmail(
   orderNumber: string,
   items: CartMeta[],
   total: string,
-  options: { isWholesale: boolean; locale: "de" | "en" }
+  options: {
+    isWholesale: boolean;
+    locale: "de" | "en";
+    discountEur?: number;
+    couponCode?: string;
+  }
 ) {
   if (!RESEND_API_KEY || RESEND_API_KEY === "your_resend_api_key") {
     console.log("[BankOrder] No Resend API key, skipping email");
     return;
   }
 
-  const { isWholesale, locale } = options;
+  const { isWholesale, locale, discountEur = 0, couponCode = "" } = options;
   const bankPaymentText = getTranslation(
     isWholesale ? "BANK_TEXT_WHOLESALE" : "BANK_TEXT_B2C",
     locale
@@ -109,6 +138,14 @@ async function sendBankTransferEmail(
         </tr>`;
     })
     .join("");
+
+  const discountRow =
+    discountEur > 0
+      ? `<tr>
+          <td style="padding:8px 0;color:#888;border-bottom:1px solid #222;">Rabatt${couponCode ? ` (${couponCode})` : ""}</td>
+          <td style="padding:8px 0;color:#c0392b;border-bottom:1px solid #222;text-align:right;">−${formatPrice(discountEur)}</td>
+        </tr>`
+      : "";
 
   const html = `
     <div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#fff;padding:40px 32px;">
@@ -157,6 +194,7 @@ async function sendBankTransferEmail(
       <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 12px;">${orderOverviewTitle}</h3>
       <table style="width:100%;border-collapse:collapse;font-size:14px;">
         ${itemRows}
+        ${discountRow}
         <tr>
           <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">${totalLabel}</td>
           <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">${formatPrice(parsePrice(total))}</td>
@@ -213,6 +251,8 @@ export async function POST(request: Request) {
       meta_data: bodyMeta,
       checkoutShipping,
       isReverseCharge: bodyIsRC,
+      couponCode,
+      customerEmail,
     } = body;
 
     const isReverseCharge = bodyIsRC === true;
@@ -299,6 +339,39 @@ export async function POST(request: Request) {
 
     const taxCountry = billing.country || customer.country || "";
 
+    let discountCents = 0;
+    let couponCodeApplied: string | null = null;
+    const codeTrimmed = couponCode?.trim();
+
+    if (codeTrimmed && !isWholesaleCheckout) {
+      const subtotalCents = items.reduce(
+        (sum, item) =>
+          sum +
+          Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty),
+        0
+      );
+      const applied = await applyCouponToSubtotalCents(
+        codeTrimmed,
+        subtotalCents,
+        cartMetaToCartItems(items),
+        customerEmail?.trim() || customer.email?.trim()
+      );
+      if (!applied.ok) {
+        return NextResponse.json(
+          { error: "invalid_coupon", message: applied.error },
+          { status: 400 }
+        );
+      }
+      discountCents = applied.discountCents;
+      couponCodeApplied = applied.metadata.coupon_code;
+    }
+
+    const normalizedCoupon = couponCodeApplied?.trim().toLowerCase();
+    const discountByLine =
+      normalizedCoupon && discountCents > 0
+        ? allocateDiscountCentsToLines(items, discountCents)
+        : new Map<number, number>();
+
     const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
     const meta_data = mergeVideoUtmIntoMeta(
       bodyMeta && bodyMeta.length > 0
@@ -328,8 +401,14 @@ export async function POST(request: Request) {
         ...(stateVal ? { state: stateVal } : {}),
       },
       line_items: items.map((item) => {
+        const lineDiscountEur = (discountByLine.get(item.id) ?? 0) / 100;
+
         if (isReverseCharge) {
-          const lineTotal = (parsePrice(item.price) * item.qty).toFixed(2);
+          const lineGross = Math.max(
+            0,
+            parsePrice(item.price) * item.qty - lineDiscountEur
+          );
+          const lineTotal = lineGross.toFixed(2);
           return {
             product_id: Number(item.id),
             quantity: item.qty,
@@ -344,10 +423,24 @@ export async function POST(request: Request) {
           return buildWholesaleNonRcLineItem(item, taxCountry);
         }
         if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-          return buildEuB2cNonAtLineItem(item, taxCountry);
+          return lineDiscountEur > 0
+            ? buildLineItemWithCouponDiscount(
+                item,
+                taxCountry,
+                "eu_b2c",
+                lineDiscountEur
+              )
+            : buildEuB2cNonAtLineItem(item, taxCountry);
         }
         if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-          return buildNonEuB2cLineItem(item);
+          return lineDiscountEur > 0
+            ? buildLineItemWithCouponDiscount(
+                item,
+                taxCountry,
+                "non_eu",
+                lineDiscountEur
+              )
+            : buildNonEuB2cLineItem(item);
         }
         return {
           product_id: Number(item.id),
@@ -355,6 +448,10 @@ export async function POST(request: Request) {
         };
       }),
     };
+
+    if (normalizedCoupon) {
+      orderData.coupon_lines = [{ code: normalizedCoupon }];
+    }
 
     if (isReverseCharge) {
       orderData.tax_lines = [];
@@ -477,6 +574,13 @@ export async function POST(request: Request) {
 
     const order = await res.json();
 
+    const orderTotalCents = Math.round(
+      parsePrice(String((order as { total?: string }).total ?? "0")) * 100
+    );
+    console.log(
+      `[BankTransfer] order=${order.id}, wcTotal=${orderTotalCents}, discount=-${discountCents}, coupon=${normalizedCoupon ?? "none"}`
+    );
+
     enqueueWholesaleOfficeNotification({
       orderId: Number(order.id),
       orderNumber: String((order as { number?: string | number }).number ?? order.id),
@@ -519,6 +623,7 @@ export async function POST(request: Request) {
       !(checkoutShipping.method_id === "none" && checkoutShipping.rate === 0)
         ? checkoutShipping.rate
         : 0;
+    const discountEur = discountCents / 100;
     const total =
       isWholesaleCheckout && !isReverseCharge
         ? (() => {
@@ -531,7 +636,7 @@ export async function POST(request: Request) {
             }, 0) + Math.round(shipNetAmt * (1 + r) * 100);
             return (grossCents / 100).toFixed(2);
           })()
-        : (itemsNetSum + shipNetAmt).toFixed(2);
+        : Math.max(0, itemsNetSum - discountEur + shipNetAmt).toFixed(2);
 
     await sendBankTransferEmail(
       customer.email,
@@ -539,7 +644,12 @@ export async function POST(request: Request) {
       order.number,
       items,
       total,
-      { isWholesale: isWholesaleCheckout, locale }
+      {
+        isWholesale: isWholesaleCheckout,
+        locale,
+        discountEur,
+        couponCode: normalizedCoupon ?? undefined,
+      }
     );
 
     return NextResponse.json({
