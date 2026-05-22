@@ -2347,6 +2347,12 @@ function CheckoutInner() {
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          ...(!isWholesale
+            ? {
+                couponCode: couponCode ?? "",
+                customerEmail: email.trim() || undefined,
+              }
+            : {}),
         };
         const syncRes = await fetch("/api/sync-order", {
           method: "POST",
@@ -2370,7 +2376,19 @@ function CheckoutInner() {
         `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
       );
     },
-    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge, isWholesale]
+    [
+      customerData,
+      cartMeta,
+      clearCart,
+      router,
+      company,
+      vat,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      isWholesale,
+      couponCode,
+      email,
+    ]
   );
 
   if (items.length === 0) {
