@@ -1,10 +1,9 @@
 import type { CartItem } from "@/lib/CartContext";
 import { getVatRateForCountry } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
-import {
-  applyCouponToSubtotalCents,
-  type CouponPiMetadata,
-} from "@/lib/coupon-helpers";
+import type { CouponPiMetadata } from "@/lib/coupon-helpers";
+import { COUPON_ERROR_ALREADY_USED } from "@/lib/coupon-validator";
+import { applyCouponForPaymentIntent } from "@/lib/apply-coupon-to-pi";
 
 /** Client sends this to explicitly clear coupon metadata on the PI. */
 export const COUPON_REMOVE_SENTINEL = "__REMOVE__";
@@ -28,6 +27,8 @@ export type PiAmountBreakdown = {
   totalCents: number;
   couponMeta: CouponPiMetadata | Record<string, never>;
   couponCodeApplied: string | null;
+  /** Coupon was dropped because this email already redeemed it (usage_limit_per_user). */
+  couponRejected?: typeof COUPON_ERROR_ALREADY_USED | null;
 };
 
 function sumCartSubtotalCents(
@@ -83,9 +84,10 @@ export async function computePaymentIntentAmount(
       : (input.fallbackCouponCode?.trim() ?? "");
 
   let couponCodeApplied: string | null = null;
+  let couponRejected: typeof COUPON_ERROR_ALREADY_USED | null = null;
 
   if (resolvedCoupon && input.isWholesale !== true) {
-    const applied = await applyCouponToSubtotalCents(
+    const applied = await applyCouponForPaymentIntent(
       resolvedCoupon,
       subtotalCents,
       input.items,
@@ -94,9 +96,10 @@ export async function computePaymentIntentAmount(
     if (!applied.ok) {
       throw new Error(applied.error);
     }
-    discountCents = applied.discountCents;
-    couponMeta = applied.metadata;
-    couponCodeApplied = applied.metadata.coupon_code;
+    discountCents = applied.data.discountCents;
+    couponMeta = applied.data.couponMeta;
+    couponCodeApplied = applied.data.couponCodeApplied;
+    couponRejected = applied.data.couponRejected;
   }
 
   let totalCents = Math.max(0, subtotalCents - discountCents);
@@ -122,6 +125,7 @@ export async function computePaymentIntentAmount(
     totalCents,
     couponMeta,
     couponCodeApplied,
+    couponRejected,
   };
 }
 

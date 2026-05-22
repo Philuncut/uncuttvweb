@@ -162,6 +162,19 @@ function resolveCheckoutApiError(
   }
 }
 
+function resolveValidateCouponError(
+  data: { error?: string; errorCode?: string },
+  t: (key: string) => string
+): string {
+  if (data.errorCode === "already_used") {
+    return t("CHECKOUT_COUPON_ALREADY_USED");
+  }
+  if (data.error === "Coupon-Service nicht erreichbar") {
+    return t("CHECKOUT_COUPON_SERVICE_ERROR");
+  }
+  return data.error || t("CHECKOUT_INVALID_COUPON");
+}
+
 type ClientShipRate = {
   rate_id: string;
   method_id: string;
@@ -422,6 +435,8 @@ type OrderSummaryProps = {
   } | null;
   /** Mobile accordion body: no duplicate title/chrome. */
   variant?: "default" | "embedded";
+  /** For usage_limit_per_user pre-check before payment. */
+  customerEmail?: string;
 };
 
 function computeOrderGrandTotal(
@@ -540,6 +555,7 @@ function OrderSummary({
   shippingNoZone,
   wholesaleNonRcTotals = null,
   variant = "default",
+  customerEmail,
 }: OrderSummaryProps) {
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
@@ -584,6 +600,7 @@ function OrderSummary({
             quantity: Math.max(1, item.quantity),
             price_cents: Math.round(parsePrice(item.product.price) * 100),
           })),
+          customerEmail: customerEmail?.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -603,18 +620,14 @@ function OrderSummary({
         );
         setCode("");
       } else {
-        setError(
-          data.error === "Coupon-Service nicht erreichbar"
-            ? t("CHECKOUT_COUPON_SERVICE_ERROR")
-            : data.error || t("CHECKOUT_INVALID_COUPON")
-        );
+        setError(resolveValidateCouponError(data, t));
       }
     } catch {
       setError(t("CHECKOUT_COUPON_VALIDATE_ERROR"));
     } finally {
       setLoading(false);
     }
-  }, [code, items, subtotal, onCouponApplied, t]);
+  }, [code, items, subtotal, onCouponApplied, customerEmail, t]);
 
   const embedded = variant === "embedded";
 
@@ -1469,6 +1482,9 @@ function CheckoutInner() {
 
         if (data.valid) {
           applyValidatedCoupon(data, couponFromUrl);
+        } else if (data.errorCode === "already_used") {
+          setCouponNotice(t("CHECKOUT_COUPON_ALREADY_USED"));
+          setAutoCouponApplied(false);
         } else {
           setCouponNotice(t("CHECKOUT_COUPON_URL_INVALID"));
           setAutoCouponApplied(false);
@@ -1856,6 +1872,7 @@ function CheckoutInner() {
         error?: string;
         stale?: boolean;
         couponCodeApplied?: string | null;
+        couponRejected?: "already_used" | null;
       };
       if (cancelled || seq !== piUpdateSeqRef.current) return;
 
@@ -1888,8 +1905,21 @@ function CheckoutInner() {
       }
       setPaymentIntentError("");
       if (data.stale) return;
+      if (data.couponRejected === "already_used") {
+        setCouponRemovePending(false);
+        setCouponId(null);
+        setCouponCode(null);
+        setCouponName(null);
+        setCouponDiscount(null);
+        setAutoCouponApplied(false);
+        setCouponNotice(t("CHECKOUT_COUPON_ALREADY_USED"));
+        setPiCouponSynced(true);
+      }
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
+      }
+      if (data.couponRejected === "already_used") {
+        return;
       }
       if (
         piCouponMatchesUi(
@@ -2580,6 +2610,7 @@ function CheckoutInner() {
     shippingError: shipError,
     shippingNoZone: shipNoZone,
     wholesaleNonRcTotals,
+    customerEmail: email.trim() || undefined,
   };
 
   return (
@@ -3090,6 +3121,9 @@ function CheckoutInner() {
                     .then((data) => {
                       if (data.valid) {
                         applyValidatedCoupon(data, "WELCOME10");
+                      } else if (data.errorCode === "already_used") {
+                        setCouponNotice(t("CHECKOUT_COUPON_ALREADY_USED"));
+                        setNewsletter(false);
                       }
                     })
                     .catch(() => {});

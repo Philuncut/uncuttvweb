@@ -18,7 +18,11 @@ export async function applyCouponToSubtotalCents(
   customerEmail?: string
 ): Promise<
   | { ok: true; discountCents: number; metadata: CouponPiMetadata }
-  | { ok: false; error: string }
+  | {
+      ok: false;
+      error: string;
+      errorCode?: "already_used" | "invalid" | "service_unavailable";
+    }
 > {
   const applied = await validateAndComputeCouponDiscount({
     code: couponCode,
@@ -28,7 +32,11 @@ export async function applyCouponToSubtotalCents(
   });
 
   if (!applied.ok) {
-    return { ok: false, error: applied.error };
+    return {
+      ok: false,
+      error: applied.error,
+      errorCode: applied.errorCode,
+    };
   }
 
   const { validation, discountCents } = applied.data;

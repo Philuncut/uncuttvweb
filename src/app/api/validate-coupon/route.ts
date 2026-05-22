@@ -72,7 +72,10 @@ async function handleValidation(input: CouponValidationInput) {
   const result = await validateWooCoupon(input);
   if (!result.valid) {
     const status =
-      result.error === "Coupon-Service nicht erreichbar" ? 503 : 200;
+      result.error === "Coupon-Service nicht erreichbar" ||
+      result.errorCode === "service_unavailable"
+        ? 503
+        : 200;
     return NextResponse.json(result, { status });
   }
 

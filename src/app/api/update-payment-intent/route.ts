@@ -248,6 +248,7 @@ export async function POST(request: Request) {
       amount: totalCents,
       couponCodeApplied: breakdown.couponCodeApplied,
       discountCents: breakdown.discountCents,
+      couponRejected: breakdown.couponRejected ?? null,
     });
   } catch (error) {
     const message =

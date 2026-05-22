@@ -435,6 +435,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Code nicht (mehr) gültig.",
     en: "This code is not valid (anymore).",
   },
+  CHECKOUT_COUPON_ALREADY_USED: {
+    de: "Dieser Code wurde bereits eingelöst.",
+    en: "This code has already been redeemed.",
+  },
   CHECKOUT_COUPON_SERVICE_ERROR: {
     de: "Coupon-Service nicht erreichbar.",
     en: "Coupon service unavailable.",

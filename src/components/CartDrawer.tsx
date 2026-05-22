@@ -137,6 +137,7 @@ export default function CartDrawer() {
             quantity: Math.max(1, item.quantity),
             price_cents: Math.round(parsePrice(item.product.price) * 100),
           })),
+          customerEmail: newsletterEmail.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -158,14 +159,18 @@ export default function CartDrawer() {
         });
         setCouponInput("");
       } else {
-        setCouponError(data.error || "Ungültiger Code.");
+        setCouponError(
+          data.errorCode === "already_used"
+            ? "Dieser Code wurde bereits eingelöst."
+            : data.error || "Ungültiger Code."
+        );
       }
     } catch {
       setCouponError("Fehler bei der Überprüfung.");
     } finally {
       setCouponLoading(false);
     }
-  }, [couponInput, items, totalPrice]);
+  }, [couponInput, items, totalPrice, newsletterEmail]);
 
   const handleCheckout = useCallback(async () => {
     let couponCode = "";

@@ -3,6 +3,31 @@ import { parsePrice } from "@/lib/parse-price";
 
 const LOG_PREFIX = "[Coupon]";
 
+/** Shown in API + checkout when usage_limit_per_user is exceeded for this email. */
+export const COUPON_ALREADY_USED_MESSAGE =
+  "Dieser Code wurde bereits eingelöst.";
+
+export const COUPON_ERROR_ALREADY_USED = "already_used" as const;
+
+type UsageLimitCacheEntry = { count: number; expiresAt: number };
+const usageLimitCache = new Map<string, UsageLimitCacheEntry>();
+const USAGE_LIMIT_CACHE_MS = 60_000;
+
+const COUNTABLE_ORDER_STATUSES = new Set([
+  "pending",
+  "processing",
+  "on-hold",
+  "completed",
+]);
+
+type WooOrderCouponLine = { code?: string };
+type WooOrderListRow = {
+  id?: number;
+  status?: string;
+  billing?: { email?: string };
+  coupon_lines?: WooOrderCouponLine[];
+};
+
 export type CartCouponLine = {
   product_id: number;
   quantity: number;
@@ -35,6 +60,7 @@ export type ValidCouponResult = {
 export type CouponValidationFailure = {
   valid: false;
   error: string;
+  errorCode?: typeof COUPON_ERROR_ALREADY_USED | "invalid" | "service_unavailable";
 };
 
 export type CouponValidationResponse = ValidCouponResult | CouponValidationFailure;
@@ -189,6 +215,139 @@ function effectiveUsageLimit(raw: unknown): number | null {
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.floor(n);
+}
+
+function usageLimitCacheKey(email: string, couponCode: string): string {
+  return `${email}:${normalizeCode(couponCode)}`;
+}
+
+function orderUsedCoupon(order: WooOrderListRow, couponCode: string): boolean {
+  const status = (order.status ?? "").trim().toLowerCase();
+  if (status && !COUNTABLE_ORDER_STATUSES.has(status)) return false;
+
+  const billEmail = order.billing?.email?.trim().toLowerCase();
+  if (!billEmail) return false;
+
+  const lines = order.coupon_lines ?? [];
+  return lines.some(
+    (line) =>
+      typeof line.code === "string" &&
+      normalizeCode(line.code) === couponCode
+  );
+}
+
+/**
+ * Count prior Woo orders for this billing email that redeemed the coupon (case-insensitive).
+ */
+export async function countCustomerCouponRedemptions(
+  couponCode: string,
+  customerEmail: string
+): Promise<number> {
+  const email = customerEmail.trim().toLowerCase();
+  const code = normalizeCode(couponCode);
+  if (!email || !code) return 0;
+
+  const cacheKey = usageLimitCacheKey(email, code);
+  const cached = usageLimitCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.count;
+  }
+
+  const wooUrl = (process.env.WOOCOMMERCE_URL ?? "").replace(/\/$/, "");
+  if (!wooUrl || !process.env.WOOCOMMERCE_KEY?.trim() || !process.env.WOOCOMMERCE_SECRET?.trim()) {
+    throw new Error("WooCommerce credentials not configured");
+  }
+
+  const url = new URL(`${wooUrl}/wp-json/wc/v3/orders`);
+  url.searchParams.set("search", email);
+  url.searchParams.set("per_page", "100");
+  url.searchParams.set("orderby", "date");
+  url.searchParams.set("order", "desc");
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: wooAuthHeader(),
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`WooCommerce API error: ${res.status}`);
+  }
+
+  const rows = (await res.json()) as WooOrderListRow[];
+  if (!Array.isArray(rows)) {
+    throw new Error("WooCommerce API error: invalid orders response");
+  }
+
+  let count = 0;
+  for (const order of rows) {
+    const billEmail = order.billing?.email?.trim().toLowerCase();
+    if (billEmail !== email) continue;
+    if (orderUsedCoupon(order, code)) count++;
+  }
+
+  usageLimitCache.set(cacheKey, {
+    count,
+    expiresAt: Date.now() + USAGE_LIMIT_CACHE_MS,
+  });
+
+  console.log(`${LOG_PREFIX} usage_limit_per_user lookup`, {
+    email,
+    code,
+    priorUses: count,
+  });
+
+  return count;
+}
+
+export async function hasCustomerExceededUsageLimit(
+  coupon: WooCouponRow,
+  customerEmail: string | undefined,
+  couponCode: string
+): Promise<boolean> {
+  const limit = effectiveUsageLimit(coupon.usage_limit_per_user);
+  if (limit == null) return false;
+
+  const email = customerEmail?.trim().toLowerCase();
+  if (!email) return false;
+
+  const priorUses = await countCustomerCouponRedemptions(couponCode, email);
+  return priorUses >= limit;
+}
+
+async function usageLimitPerUserFailure(
+  coupon: WooCouponRow,
+  input: CouponValidationInput,
+  normalizedCode: string
+): Promise<CouponValidationFailure | null> {
+  try {
+    const exceeded = await hasCustomerExceededUsageLimit(
+      coupon,
+      input.customerEmail,
+      normalizedCode
+    );
+    if (!exceeded) return null;
+    console.log(
+      `${LOG_PREFIX} usage_limit_per_user exceeded:`,
+      normalizedCode,
+      input.customerEmail
+    );
+    return {
+      valid: false,
+      error: COUPON_ALREADY_USED_MESSAGE,
+      errorCode: COUPON_ERROR_ALREADY_USED,
+    };
+  } catch (err) {
+    console.error(LOG_PREFIX, "usage_limit_per_user check failed:", err);
+    return {
+      valid: false,
+      error: "Coupon-Service nicht erreichbar",
+      errorCode: "service_unavailable",
+    };
+  }
 }
 
 function resolveCouponId(coupon: WooCouponRow): number | null {
@@ -347,7 +506,6 @@ function validateWooCouponRow(
     return { valid: false, error: "Ungültiger Code." };
   }
 
-  // usage_limit_per_user: not enforced yet; would use effectiveUsageLimit() if added
   const usageLimit = effectiveUsageLimit(coupon.usage_limit);
   const usageCount =
     typeof coupon.usage_count === "number"
@@ -431,18 +589,24 @@ export async function validateWooCoupon(
   }
 
   const result = validateWooCouponRow(coupon, normalized, input);
-  if (result.valid) {
-    console.log(
-      `${LOG_PREFIX} Validation result: valid —`,
-      result.couponCode,
-      result.displayLabel
-    );
-  } else {
+  if (!result.valid) {
     console.log(
       `${LOG_PREFIX} Validation result: invalid —`,
       result.error
     );
+    return result;
   }
+
+  const usageFailure = await usageLimitPerUserFailure(coupon, input, normalized);
+  if (usageFailure) {
+    return usageFailure;
+  }
+
+  console.log(
+    `${LOG_PREFIX} Validation result: valid —`,
+    result.couponCode,
+    result.displayLabel
+  );
   return result;
 }
 
@@ -458,7 +622,11 @@ export async function validateAndComputeCouponDiscount(
   input: CouponValidationInput & { cartSubtotalCents: number }
 ): Promise<
   | { ok: true; data: ApplyCouponResult }
-  | { ok: false; error: string }
+  | {
+      ok: false;
+      error: string;
+      errorCode?: CouponValidationFailure["errorCode"];
+    }
 > {
   const normalized = normalizeCode(input.code);
   if (!normalized) {
@@ -480,6 +648,24 @@ export async function validateAndComputeCouponDiscount(
 
   if (!validation.valid) {
     return { ok: false, error: validation.error };
+  }
+
+  const usageFailure = await usageLimitPerUserFailure(
+    coupon!,
+    {
+      code: input.code,
+      cartTotalCents: input.cartSubtotalCents,
+      cartItems: input.cartItems,
+      customerEmail: input.customerEmail,
+    },
+    normalized
+  );
+  if (usageFailure) {
+    return {
+      ok: false,
+      error: usageFailure.error,
+      errorCode: usageFailure.errorCode,
+    };
   }
 
   const discountCents = computeDiscountCents(
