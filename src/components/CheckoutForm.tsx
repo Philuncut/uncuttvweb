@@ -1353,6 +1353,7 @@ function CheckoutInner() {
   const [paymentIntentError, setPaymentIntentError] = useState("");
   const clientSecretRef = useRef(clientSecret);
   clientSecretRef.current = clientSecret;
+  const piUpdateSeqRef = useRef(0);
   const stripePiPaymentRef = useRef<StripeClientSecretPaymentHandle>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
@@ -1749,7 +1750,7 @@ function CheckoutInner() {
   const paymentIntentRequestBody = useMemo(
     () => ({
       items,
-      couponCode: isWholesale ? undefined : couponCode || undefined,
+      couponCode: isWholesale ? undefined : (couponCode ?? ""),
       customerEmail: isWholesale ? undefined : email.trim() || undefined,
       shippingCents: isWholesale ? 1000 : (stripeShipCents ?? 0),
       isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
@@ -1800,9 +1801,10 @@ function CheckoutInner() {
       const endpoint = useUpdate
         ? "/api/update-payment-intent"
         : "/api/create-payment-intent";
+      const seq = ++piUpdateSeqRef.current;
       const payload = useUpdate
-        ? { ...paymentIntentRequestBody, paymentIntentId: piId }
-        : paymentIntentRequestBody;
+        ? { ...paymentIntentRequestBody, paymentIntentId: piId, piUpdateSeq: seq }
+        : { ...paymentIntentRequestBody, piUpdateSeq: seq };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -1812,8 +1814,9 @@ function CheckoutInner() {
       const data = (await res.json()) as {
         clientSecret?: string;
         error?: string;
+        stale?: boolean;
       };
-      if (cancelled) return;
+      if (cancelled || seq !== piUpdateSeqRef.current) return;
 
       if (!res.ok) {
         if (!piId) setClientSecret("");
@@ -1842,6 +1845,7 @@ function CheckoutInner() {
         return;
       }
       setPaymentIntentError("");
+      if (data.stale) return;
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
       }
@@ -2183,6 +2187,12 @@ function CheckoutInner() {
             ...(isWholesale ? { isWholesale: true } : {}),
             locale: language,
             ...videoUtmRequestField(),
+            ...(!isWholesale
+              ? {
+                  couponCode: couponCode ?? "",
+                  customerEmail: email.trim() || undefined,
+                }
+              : {}),
           };
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
@@ -2337,6 +2347,12 @@ function CheckoutInner() {
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          ...(!isWholesale
+            ? {
+                couponCode: couponCode ?? "",
+                customerEmail: email.trim() || undefined,
+              }
+            : {}),
         };
         const syncRes = await fetch("/api/sync-order", {
           method: "POST",
@@ -2360,7 +2376,19 @@ function CheckoutInner() {
         `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
       );
     },
-    [customerData, cartMeta, clearCart, router, company, vat, checkoutShippingForWoo, wholesaleReverseCharge, isWholesale]
+    [
+      customerData,
+      cartMeta,
+      clearCart,
+      router,
+      company,
+      vat,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      isWholesale,
+      couponCode,
+      email,
+    ]
   );
 
   if (items.length === 0) {

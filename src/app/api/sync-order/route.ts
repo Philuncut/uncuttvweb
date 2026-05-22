@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import type { CartItem } from "@/lib/CartContext";
+import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
+import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
 import type { VideoUtmInput } from "@/lib/video-utm-server";
 import {
@@ -24,6 +27,30 @@ interface SyncBody {
   isWholesale?: boolean;
   checkoutShipping?: CheckoutShippingInput;
   videoUtm?: VideoUtmInput;
+  couponCode?: string;
+  customerEmail?: string;
+}
+
+function cartMetaToCartItems(items: CartMeta[]): CartItem[] {
+  return items.map((item) => ({
+    product: {
+      id: Number(item.id),
+      name: item.name,
+      slug: "",
+      price: item.price,
+      regular_price: item.price,
+      sale_price: "",
+      on_sale: false,
+      stock_status: "instock" as const,
+      sku: "",
+      images: [],
+      categories: [],
+      short_description: "",
+      description: "",
+      related_ids: [],
+    },
+    quantity: Math.max(1, Number(item.qty) || 1),
+  }));
 }
 
 async function reverseChargeFromStripePaymentIntent(
@@ -211,6 +238,33 @@ export async function POST(request: Request) {
       );
     }
 
+    let couponCodeResolved: string | undefined;
+    let stripeDiscountCents: number | undefined;
+    const codeTrimmed = body.couponCode?.trim();
+
+    if (codeTrimmed && !isWholesaleCheckout) {
+      const subtotalCents = cartItems.reduce(
+        (sum, item) =>
+          sum +
+          Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty),
+        0
+      );
+      const applied = await applyCouponToSubtotalCents(
+        codeTrimmed,
+        subtotalCents,
+        cartMetaToCartItems(cartItems),
+        body.customerEmail?.trim() || body.customer?.email?.trim()
+      );
+      if (!applied.ok) {
+        return NextResponse.json(
+          { error: "invalid_coupon", message: applied.error },
+          { status: 400 }
+        );
+      }
+      couponCodeResolved = applied.metadata.coupon_code;
+      stripeDiscountCents = applied.discountCents;
+    }
+
     const result = await createWooOrderFromCheckoutSync({
       cartItems,
       billing,
@@ -223,7 +277,20 @@ export async function POST(request: Request) {
       checkoutShipping: body.checkoutShipping,
       videoUtm: body.videoUtm,
       stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
+      couponCode: couponCodeResolved,
+      stripeDiscountCents,
     });
+
+    if (transactionId.startsWith("paypal_")) {
+      const wooTotal = (result.wooOrder as { total?: string } | undefined)
+        ?.total;
+      const wooTotalCents = wooTotal
+        ? Math.round(parsePrice(String(wooTotal)) * 100)
+        : 0;
+      console.log(
+        `[PayPal] order=${result.orderId}, wcTotal=${wooTotalCents}, discount=-${stripeDiscountCents ?? 0}, coupon=${couponCodeResolved ?? "none"}`
+      );
+    }
 
     await trySendOrderConfirmation(result);
 
