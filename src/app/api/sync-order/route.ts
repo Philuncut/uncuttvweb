@@ -19,7 +19,7 @@ import {
   type CreateWooOrderResult,
 } from "@/lib/wc-order-from-payment";
 import type { OrderMetaEntry } from "@/lib/video-utm-server";
-import { sendOrderConfirmationEmails } from "@/lib/order-confirmation-email";
+import { sendOrderConfirmationWithPdf } from "@/lib/send-order-confirmation-with-pdf";
 
 interface SyncBody {
   sessionId?: string;
@@ -84,9 +84,18 @@ function asString(value: unknown): string {
   return String(value).trim();
 }
 
-async function trySendOrderConfirmation(result: CreateWooOrderResult): Promise<void> {
+function paymentTypeFromTransaction(transactionId: string): "paypal" | "stripe" {
+  return transactionId.startsWith("paypal_") ? "paypal" : "stripe";
+}
+
+async function trySendOrderConfirmation(
+  result: CreateWooOrderResult,
+  transactionId = ""
+): Promise<void> {
   try {
-    await sendOrderConfirmationEmails(result.orderId, result.wooOrder);
+    await sendOrderConfirmationWithPdf(result.orderId, {
+      paymentType: paymentTypeFromTransaction(transactionId),
+    });
   } catch (mailError) {
     console.error("[OrderMail] Failed to send confirmation:", mailError);
   }
@@ -145,7 +154,10 @@ export async function POST(request: Request) {
           videoUtm: body.videoUtm,
         },
       });
-      await trySendOrderConfirmation(result);
+      await trySendOrderConfirmation(
+        result,
+        body.paymentIntentId ?? ""
+      );
       return NextResponse.json({
         success: true,
         orderId: result.orderId,
@@ -329,7 +341,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await trySendOrderConfirmation(result);
+    await trySendOrderConfirmation(result, transactionId);
 
     return NextResponse.json({
       success: true,

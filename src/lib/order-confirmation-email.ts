@@ -1,5 +1,10 @@
-import { Resend } from "resend";
+/**
+ * Shared order-confirmation email helpers (HTML, PDF retry, Woo meta).
+ * Entry point for sending: @/lib/send-order-confirmation-with-pdf
+ */
 import { WHOLESALE_ROLE } from "@/lib/auth-constants";
+import { formatTranslation, getTranslation } from "@/lib/translations";
+import type { CartMeta } from "@/lib/wc-order-from-payment";
 import {
   fetchWooInvoicePdf,
   WooInvoiceFetchError,
@@ -10,14 +15,18 @@ import { stripe } from "@/lib/stripe";
 import { wooFetch } from "@/lib/woocommerce";
 
 export const CONFIRMATION_EMAIL_META_KEY = "_uncuttv_confirmation_email_sent";
+export const PDF_PENDING_META_KEY = "_uncuttv_pdf_pending";
+
+export const PDF_RETRY_ATTEMPTS_DEFAULT = 5;
+export const PDF_RETRY_DELAY_MS_DEFAULT = 3000;
 
 const CUSTOMER_FROM = "UncutTV <noreply@uncuttv.at>";
+const BANK_CUSTOMER_FROM = "UncutTV <office@uncuttv.at>";
 const OFFICE_FROM = "UncutTV System <noreply@uncuttv.at>";
 const OFFICE_TO = "office@uncuttv.at";
 const SHOP_KONTO_URL = "https://uncuttv.at/konto";
 
-const PDF_RETRY_ATTEMPTS = 3;
-const PDF_RETRY_DELAY_MS = 2000;
+export { CUSTOMER_FROM, BANK_CUSTOMER_FROM, OFFICE_FROM, OFFICE_TO };
 
 type WooAddress = {
   first_name?: string;
@@ -103,7 +112,7 @@ function customerIsWholesale(c: WooCustomerRole): boolean {
  * Resolves wholesale checkout from persisted order data — mirrors
  * wc-order-from-payment isWholesaleCheckout (PI metadata + wholesale customer).
  */
-async function resolveIsWholesaleOrder(
+export async function resolveIsWholesaleOrder(
   order: OrderConfirmationWooOrder
 ): Promise<boolean> {
   if (hasMetaYes(order, "_uncuttv_is_wholesale")) {
@@ -183,15 +192,28 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function confirmationAlreadySent(order: OrderConfirmationWooOrder): boolean {
-  const entry = order.meta_data?.find(
-    (m) => m.key === CONFIRMATION_EMAIL_META_KEY
-  );
+export function metaFlagYes(
+  order: OrderConfirmationWooOrder,
+  key: string
+): boolean {
+  const entry = order.meta_data?.find((m) => m.key === key);
   const val = asString(entry?.value).toLowerCase();
   return val === "yes" || val === "true" || val === "1";
 }
 
-async function fetchOrder(orderId: number): Promise<OrderConfirmationWooOrder> {
+/** Idempotency: fully done, or initial mail sent and PDF follow-up pending. */
+export function confirmationSendBlocked(
+  order: OrderConfirmationWooOrder
+): boolean {
+  return (
+    metaFlagYes(order, CONFIRMATION_EMAIL_META_KEY) ||
+    metaFlagYes(order, PDF_PENDING_META_KEY)
+  );
+}
+
+export async function fetchOrder(
+  orderId: number
+): Promise<OrderConfirmationWooOrder> {
   return wooFetch<OrderConfirmationWooOrder>(
     `/orders/${encodeURIComponent(String(orderId))}`,
     {},
@@ -199,7 +221,10 @@ async function fetchOrder(orderId: number): Promise<OrderConfirmationWooOrder> {
   );
 }
 
-async function markConfirmationEmailSent(orderId: number): Promise<void> {
+export async function updateOrderMeta(
+  orderId: number,
+  entries: Array<{ key: string; value: string }>
+): Promise<void> {
   const res = await fetch(
     `${process.env.WOOCOMMERCE_URL!.replace(/\/$/, "")}/wp-json/wc/v3/orders/${encodeURIComponent(String(orderId))}`,
     {
@@ -213,7 +238,7 @@ async function markConfirmationEmailSent(orderId: number): Promise<void> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        meta_data: [{ key: CONFIRMATION_EMAIL_META_KEY, value: "yes" }],
+        meta_data: entries.map((e) => ({ key: e.key, value: e.value })),
       }),
     }
   );
@@ -227,29 +252,48 @@ async function markConfirmationEmailSent(orderId: number): Promise<void> {
   }
 }
 
-async function fetchInvoicePdfWithRetry(
+function pdfFetchFailureReason(err: unknown): string {
+  if (err instanceof WooInvoiceFetchError) {
+    return String(err.status);
+  }
+  if (err instanceof Error) {
+    return err.message.slice(0, 80) || "error";
+  }
+  return "unknown";
+}
+
+export type PdfRetryOptions = {
+  attempts?: number;
+  delayMs?: number;
+  logPrefix?: string;
+};
+
+export async function fetchInvoicePdfWithRetry(
   orderId: number,
-  orderNumber: string
+  orderNumber: string,
+  options?: PdfRetryOptions
 ): Promise<{ buffer: ArrayBuffer; filename: string } | null> {
-  for (let attempt = 1; attempt <= PDF_RETRY_ATTEMPTS; attempt++) {
+  const attempts = options?.attempts ?? PDF_RETRY_ATTEMPTS_DEFAULT;
+  const delayMs = options?.delayMs ?? PDF_RETRY_DELAY_MS_DEFAULT;
+  const logPrefix = options?.logPrefix ?? "[OrderMail]";
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       const pdf = await fetchWooInvoicePdf(orderId, { orderNumber });
       return pdf;
     } catch (err) {
-      const retryable =
-        err instanceof WooInvoiceFetchError &&
-        (err.status === 404 || err.status === 502);
-      if (!retryable || attempt === PDF_RETRY_ATTEMPTS) {
+      const reason = pdfFetchFailureReason(err);
+      if (attempt >= attempts) {
         console.warn(
-          `[OrderMail] PDF fetch failed for order ${orderId} (attempt ${attempt}/${PDF_RETRY_ATTEMPTS}):`,
+          `${logPrefix} PDF fetch failed for order ${orderId} (final attempt ${attempt}/${attempts}, reason: ${reason}):`,
           err instanceof Error ? err.message : String(err)
         );
         return null;
       }
       console.log(
-        `[OrderMail] PDF not ready for order ${orderId}, retry in ${PDF_RETRY_DELAY_MS}ms (${attempt}/${PDF_RETRY_ATTEMPTS})`
+        `${logPrefix} PDF retry ${attempt}/${attempts} for order ${orderId} (reason: ${reason}), next in ${delayMs}ms`
       );
-      await sleep(PDF_RETRY_DELAY_MS);
+      await sleep(delayMs);
     }
   }
   return null;
@@ -295,7 +339,7 @@ function invoiceDownloadHint(orderId: number): string {
   return `https://uncuttv.at/api/orders/invoice?order_id=${orderId}`;
 }
 
-function buildCustomerEmailHtml(
+export function buildCustomerEmailHtml(
   order: OrderConfirmationWooOrder,
   opts: { pdfAttached: boolean; orderId: number }
 ): string {
@@ -421,7 +465,7 @@ function buildCustomerEmailHtml(
   `;
 }
 
-function buildOfficeEmailHtml(
+export function buildOfficeEmailHtml(
   order: OrderConfirmationWooOrder,
   orderId: number
 ): string {
@@ -498,110 +542,183 @@ function buildOfficeEmailHtml(
   `;
 }
 
-/**
- * Sends customer + office order confirmation emails via Resend.
- * Idempotent via WooCommerce order meta. Never throws — errors are logged only.
- */
-export async function sendOrderConfirmationEmails(
-  orderId: number,
-  _orderData?: OrderConfirmationWooOrder | unknown
-): Promise<void> {
-  try {
-    if (!resendConfigured()) {
-      console.warn("[OrderMail] RESEND_API_KEY missing, skipping order", orderId);
-      return;
-    }
+export type BankTransferEmailDetails = {
+  customerName: string;
+  items: CartMeta[];
+  total: string;
+  isWholesale: boolean;
+  locale: "de" | "en";
+  discountEur?: number;
+  couponCode?: string;
+};
 
-    const order = await fetchOrder(orderId);
+export function buildBankTransferEmailHtml(
+  orderNumber: string,
+  details: BankTransferEmailDetails,
+  opts: { pdfAttached: boolean; orderId: number }
+): string {
+  const {
+    customerName: name,
+    items,
+    total,
+    isWholesale,
+    locale,
+    discountEur = 0,
+    couponCode = "",
+  } = details;
 
-    if (confirmationAlreadySent(order)) {
-      console.log(
-        `[OrderMail] Confirmation already sent for order ${orderId}, skipping`
-      );
-      return;
-    }
+  const bankPaymentText = getTranslation(
+    isWholesale ? "BANK_TEXT_WHOLESALE" : "BANK_TEXT_B2C",
+    locale
+  );
+  const bankHint = isWholesale
+    ? getTranslation("BANK_HINT_WHOLESALE", locale)
+    : "";
+  const thanksLine = formatTranslation("EMAIL_BANK_GREETING", locale, {
+    name,
+    order: orderNumber,
+  });
+  const orderOverviewTitle = getTranslation("EMAIL_ORDER_OVERVIEW", locale);
+  const footerNote = getTranslation("EMAIL_FOOTER_AFTER_PAYMENT", locale);
+  const confirmationLabel = getTranslation("EMAIL_ORDER_CONFIRMATION", locale);
+  const accountHolderLabel = getTranslation("EMAIL_ACCOUNT_HOLDER", locale);
+  const bankLabel = getTranslation("EMAIL_BANK_LABEL", locale);
+  const referenceLabel = getTranslation("EMAIL_PAYMENT_REFERENCE", locale);
+  const referenceValue = formatTranslation("EMAIL_ORDER_REFERENCE_VALUE", locale, {
+    order: orderNumber,
+  });
+  const totalLabel = getTranslation("GESAMT", locale);
 
-    const customerEmail = asString(order.billing?.email);
-    if (!customerEmail || !customerEmail.includes("@")) {
-      console.warn(
-        `[OrderMail] No customer email on order ${orderId}, skipping`
-      );
-      return;
-    }
+  const itemRows = items
+    .map((item) => {
+      const lineTotal = formatPrice(parsePrice(item.price) * item.qty);
+      return `
+        <tr>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;">${item.qty}× ${escapeHtml(item.name)}</td>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;">${lineTotal}</td>
+        </tr>`;
+    })
+    .join("");
 
-    const orderNumber = asString(order.number) || String(orderId);
-    const currency = (asString(order.currency) || "EUR").toUpperCase();
-    const totalFormatted = formatPrice(
-      parsePrice(String(order.total ?? "0")),
-      currency
-    );
-    const customerDisplayName = customerName(order) || customerEmail;
+  const discountRow =
+    discountEur > 0
+      ? `<tr>
+          <td style="padding:8px 0;color:#888;border-bottom:1px solid #222;">Rabatt${couponCode ? ` (${escapeHtml(couponCode)})` : ""}</td>
+          <td style="padding:8px 0;color:#c0392b;border-bottom:1px solid #222;text-align:right;">−${formatPrice(discountEur)}</td>
+        </tr>`
+      : "";
 
-    const pdf = await fetchInvoicePdfWithRetry(orderId, orderNumber);
-    const isWholesale = await resolveIsWholesaleOrder(order);
+  const invoiceNote = opts.pdfAttached
+    ? `<p style="font-size:14px;line-height:1.6;color:#888;margin:16px 0 0;">
+         Deine Rechnung findest du im Anhang dieser E-Mail.
+       </p>`
+    : `<p style="font-size:14px;line-height:1.6;color:#888;margin:16px 0 0;">
+         Die Rechnung folgt in Kürze per separater E-Mail. Du kannst sie auch jederzeit in deinem
+         <a href="${SHOP_KONTO_URL}" style="color:#c0392b;">Kundenkonto</a> herunterladen
+         (${escapeHtml(invoiceDownloadHint(opts.orderId))} — Anmeldung erforderlich).
+       </p>`;
 
-    const resend = new Resend(process.env.RESEND_API_KEY);
+  return `
+    <div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#fff;padding:40px 32px;">
+      <h1 style="font-size:28px;font-weight:900;letter-spacing:0.05em;margin:0;">
+        <span style="color:#fff;">UNCUT</span><span style="color:#c0392b;">TV</span>
+      </h1>
+      <p style="color:#888;font-size:14px;margin-top:8px;">${confirmationLabel}</p>
 
-    const customerPayload: Parameters<typeof resend.emails.send>[0] = {
-      from: CUSTOMER_FROM,
-      to: customerEmail,
-      subject: `Deine UncutTV-Bestellung #${orderNumber} ist eingegangen`,
-      html: buildCustomerEmailHtml(order, {
-        pdfAttached: !!pdf,
-        orderId,
-      }),
-    };
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
 
-    if (pdf) {
-      customerPayload.attachments = [
-        {
-          filename: pdf.filename,
-          content: Buffer.from(pdf.buffer),
-        },
-      ];
-    }
+      <p style="font-size:16px;line-height:1.6;color:#ccc;">
+        ${thanksLine}
+        ${bankPaymentText}
+      </p>
 
-    const customerResult = await resend.emails.send(customerPayload);
-
-    if (customerResult.error) {
-      console.error(
-        `[OrderMail] Customer email failed for order ${orderId}:`,
-        customerResult.error
-      );
-      return;
-    }
-
-    if (isWholesale) {
-      console.log(
-        `[OrderMail] Office mail skipped for wholesale order #${orderId} — handled by notify-wholesale-order`
-      );
-    } else {
-      const officeResult = await resend.emails.send({
-        from: OFFICE_FROM,
-        to: OFFICE_TO,
-        subject: `Neue Bestellung #${orderNumber} — ${customerDisplayName} — ${totalFormatted}`,
-        html: buildOfficeEmailHtml(order, orderId),
-      });
-
-      if (officeResult.error) {
-        console.error(
-          `[OrderMail] Office email failed for order ${orderId}:`,
-          officeResult.error
-        );
-      } else {
-        console.log(
-          `[OrderMail] Office confirmation sent for order ${orderId} → ${OFFICE_TO}`
-        );
+      <div style="margin:24px 0;padding:20px;border:1px solid #222;background:#111;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <tr>
+            <td style="padding:4px 0;color:#888;">${accountHolderLabel}</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;font-weight:bold;">UncutTV GmbH</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">${bankLabel}</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;">Raiffeisen Landesbank Tirol AG</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">IBAN:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;font-weight:bold;">AT52 3600 0000 0083 4978</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">BIC:</td>
+            <td style="padding:4px 0;color:#fff;text-align:right;">RZTIAT22</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#888;">${referenceLabel}</td>
+            <td style="padding:4px 0;color:#c0392b;text-align:right;font-weight:bold;">${referenceValue}</td>
+          </tr>
+        </table>
+      </div>
+      ${
+        bankHint
+          ? `<p style="font-size:12px;color:#888;margin-top:12px;line-height:1.5;">${bankHint}</p>`
+          : ""
       }
-    }
 
-    console.log(
-      `[OrderMail] Customer confirmation sent for order ${orderId} → ${customerEmail}${pdf ? " (PDF attached)" : " (no PDF)"}`
-    );
+      <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 12px;">${orderOverviewTitle}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        ${itemRows}
+        ${discountRow}
+        <tr>
+          <td style="padding:12px 0;color:#fff;font-weight:bold;font-size:16px;">${totalLabel}</td>
+          <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">${formatPrice(parsePrice(total))}</td>
+        </tr>
+      </table>
 
-    await markConfirmationEmailSent(orderId);
-    console.log(`[OrderMail] Meta ${CONFIRMATION_EMAIL_META_KEY} set on order ${orderId}`);
-  } catch (err) {
-    console.error(`[OrderMail] Unexpected error for order ${orderId}:`, err);
-  }
+      ${invoiceNote}
+
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+
+      <p style="font-size:13px;color:#888;line-height:1.5;">
+        ${footerNote} <a href="mailto:office@uncuttv.at" style="color:#c0392b;">office@uncuttv.at</a>.
+      </p>
+
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+
+      <p style="font-size:11px;color:#555;line-height:1.5;">
+        UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich
+      </p>
+    </div>
+  `;
+}
+
+export function buildInvoiceResendEmailHtml(
+  order: OrderConfirmationWooOrder,
+  orderId: number
+): string {
+  const orderNumber = asString(order.number) || String(orderId);
+  const name = customerName(order) || "Kunde";
+  return `
+    <div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#fff;padding:40px 32px;">
+      <h1 style="font-size:28px;font-weight:900;letter-spacing:0.05em;margin:0;">
+        <span style="color:#fff;">UNCUT</span><span style="color:#c0392b;">TV</span>
+      </h1>
+      <p style="color:#888;font-size:14px;margin-top:8px;">Rechnung</p>
+      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
+      <p style="font-size:16px;line-height:1.6;color:#ccc;">
+        Hallo ${escapeHtml(name)},<br/><br/>
+        anbei findest du die Rechnung zu deiner Bestellung
+        <strong style="color:#fff;">#${escapeHtml(orderNumber)}</strong>.
+      </p>
+      <p style="font-size:11px;color:#555;line-height:1.5;margin-top:24px;">
+        UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich
+      </p>
+    </div>
+  `;
+}
+
+export function isResendConfigured(): boolean {
+  return resendConfigured();
+}
+
+export function getCustomerDisplayName(order: OrderConfirmationWooOrder): string {
+  const email = asString(order.billing?.email);
+  return customerName(order) || email;
 }

@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/sync-vimeo-videos",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/resend-pending-invoices",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
