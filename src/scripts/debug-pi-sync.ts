@@ -30,6 +30,9 @@ async function main() {
   }
 
   const env = { ...loadEnvFile(".env"), ...loadEnvFile(".env.local") };
+  for (const [key, value] of Object.entries(env)) {
+    if (!process.env[key]) process.env[key] = value;
+  }
   const stripe = new Stripe(env.STRIPE_SECRET_KEY ?? "");
   const pi = await stripe.paymentIntents.retrieve(piId, {
     expand: ["latest_charge"],

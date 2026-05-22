@@ -243,37 +243,44 @@ function orderMatchesStripePaymentIntent(
 export async function findWooOrderByStripePaymentIntentId(
   paymentIntentId: string
 ): Promise<WooOrderRow | null> {
-  const byMeta = await wooFetch<WooOrderListRow[]>(
-    "/orders",
-    {
-      meta_key: "_stripe_pi_id",
-      meta_value: paymentIntentId,
-      per_page: "20",
-      orderby: "date",
-      order: "desc",
-    },
-    { cache: "no-store" }
-  );
-  for (const order of byMeta ?? []) {
-    if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
-      return order;
+  try {
+    const byMeta = await wooFetch<WooOrderListRow[]>(
+      "/orders",
+      {
+        meta_key: "_stripe_pi_id",
+        meta_value: paymentIntentId,
+        per_page: "20",
+        orderby: "date",
+        order: "desc",
+      },
+      { cache: "no-store" }
+    );
+    for (const order of byMeta ?? []) {
+      if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
+        return order;
+      }
     }
-  }
 
-  const bySearch = await wooFetch<WooOrderListRow[]>(
-    "/orders",
-    {
-      search: paymentIntentId,
-      per_page: "20",
-      orderby: "date",
-      order: "desc",
-    },
-    { cache: "no-store" }
-  );
-  for (const order of bySearch ?? []) {
-    if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
-      return order;
+    const bySearch = await wooFetch<WooOrderListRow[]>(
+      "/orders",
+      {
+        search: paymentIntentId,
+        per_page: "20",
+        orderby: "date",
+        order: "desc",
+      },
+      { cache: "no-store" }
+    );
+    for (const order of bySearch ?? []) {
+      if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
+        return order;
+      }
     }
+  } catch (lookupErr) {
+    console.warn(
+      "[wc-order] PI idempotency lookup failed, will attempt create:",
+      lookupErr instanceof Error ? lookupErr.message : lookupErr
+    );
   }
 
   return null;
