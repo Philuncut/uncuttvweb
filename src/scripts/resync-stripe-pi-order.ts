@@ -13,7 +13,10 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { normalizeCartMetaItems } from "@/lib/cart-items-from-context";
+import {
+  normalizeCartMetaItems,
+  parseCartItemsFromPiMetadata,
+} from "@/lib/cart-items-from-context";
 import { createWooOrderFromPayment } from "@/lib/wc-order-from-payment";
 import type { CartMeta, CheckoutShippingInput, CustomerInfo } from "@/lib/wc-order-from-payment";
 import Stripe from "stripe";
@@ -70,19 +73,23 @@ async function main() {
       process.exit(1);
     }
   }
-  if (items.length === 0) {
-    console.error(
-      "No cart items. Pass --items with product id, name, qty, price (see script header)."
-    );
-    process.exit(1);
-  }
-
   const stripe = new Stripe(stripeKey);
   const pi = await stripe.paymentIntents.retrieve(piId, {
     expand: ["latest_charge"],
   });
 
+  if (items.length === 0) {
+    items = parseCartItemsFromPiMetadata(pi.metadata ?? undefined);
+  }
+
   console.log("PI status:", pi.status, "amount:", pi.amount, "metadata:", pi.metadata);
+
+  if (items.length === 0) {
+    console.error(
+      "No cart items (no --items and no cart_snapshot in PI metadata). Pass --items JSON."
+    );
+    process.exit(1);
+  }
 
   if (pi.status !== "succeeded") {
     console.error("PaymentIntent is not succeeded — aborting.");

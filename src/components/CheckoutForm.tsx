@@ -2256,12 +2256,12 @@ function CheckoutInner() {
         const syncBody = {
           paymentIntentId: paidPiId,
           customer: customerData,
-          items: cartMeta,
           ...buildCheckoutOrderExtras(company, vat),
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          items: cartMeta,
         };
 
         try {

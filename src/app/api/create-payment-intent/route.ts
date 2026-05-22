@@ -3,6 +3,7 @@ import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
+import { buildCartSnapshotMetadata } from "@/lib/cart-items-from-context";
 import {
   computePaymentIntentAmount,
   formatPiAmountLog,
@@ -157,6 +158,7 @@ export async function POST(request: Request) {
         : undefined;
 
     const couponMetaRecord = couponMeta as Record<string, string>;
+    const cartSnapshotMeta = buildCartSnapshotMetadata(items);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalCents,
@@ -165,6 +167,7 @@ export async function POST(request: Request) {
       ...(stripeShipping ? { shipping: stripeShipping } : {}),
       metadata: {
         cart_items_count: String(items.length),
+        ...cartSnapshotMeta,
         coupon_code: couponMetaRecord.coupon_code ?? "",
         coupon_wc_id: couponMetaRecord.coupon_wc_id ?? "",
         discount_amount_cents: couponMetaRecord.discount_amount_cents ?? "",

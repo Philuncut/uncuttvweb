@@ -98,11 +98,9 @@ export async function POST(request: Request) {
     if (body.paymentIntentId?.startsWith("pi_")) {
       const piId = body.paymentIntentId.trim();
       const normalizedItems = normalizeCartMetaItems(body.items);
-      console.log("[sync-order] Stripe card sync", {
-        pi: piId,
-        itemsInBody: body.items?.length ?? 0,
-        itemsNormalized: normalizedItems.length,
-      });
+      console.log(
+        `[sync-order] Stripe card sync pi=${piId} inBody=${body.items?.length ?? 0} normalized=${normalizedItems.length} raw0=${JSON.stringify(body.items?.[0] ?? null)}`
+      );
 
       const result = await createWooOrderFromPayment({
         paymentIntentId: piId,
@@ -349,12 +347,10 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("[sync-order] FAILED:", {
-      pi: body?.paymentIntentId,
-      message: err instanceof Error ? err.message : String(err),
-      itemsInBody: body?.items?.length ?? 0,
-      customerEmail: body?.customer?.email,
-    });
+    const failMsg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[sync-order] FAILED pi=${body?.paymentIntentId ?? "?"} msg=${failMsg} itemsInBody=${body?.items?.length ?? 0} email=${body?.customer?.email ?? ""}`
+    );
     return NextResponse.json(
       {
         error: "sync-order-failed",
