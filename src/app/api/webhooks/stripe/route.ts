@@ -36,17 +36,6 @@ function metadataSummary(
       out[key] = val;
     }
   }
-  const cartRaw = metadata.cart_items;
-  if (typeof cartRaw === "string" && cartRaw) {
-    try {
-      const parsed = JSON.parse(cartRaw) as unknown;
-      if (Array.isArray(parsed)) {
-        out.cart_items_count = String(parsed.length);
-      }
-    } catch {
-      out.cart_items = "(unparseable)";
-    }
-  }
   return out;
 }
 

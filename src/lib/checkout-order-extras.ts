@@ -58,8 +58,16 @@ export type VideoUtmCheckoutPayload = {
   videoId: string;
 };
 
+export type StoredCheckoutCartItem = {
+  id: number;
+  name: string;
+  qty: number;
+  price: string;
+};
+
 export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
   ReturnType<typeof buildCheckoutOrderExtras> & {
+    items?: StoredCheckoutCartItem[];
     checkoutShipping?: CheckoutShippingForWoo;
     isReverseCharge?: boolean;
     isWholesale?: boolean;

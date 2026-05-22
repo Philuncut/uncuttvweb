@@ -108,7 +108,37 @@ export async function POST(request: Request) {
         );
       }
 
-      cartItems = JSON.parse(session.metadata?.cart_items || "[]");
+      const stripeLineItems = await stripe.checkout.sessions.listLineItems(
+        body.sessionId,
+        { limit: 100 }
+      );
+      cartItems = stripeLineItems.data.map((line) => {
+        const qty = Math.max(1, line.quantity ?? 1);
+        const totalCents = line.amount_total ?? 0;
+        const productId =
+          typeof line.price?.product === "string"
+            ? parseInt(line.price.product.replace(/\D/g, ""), 10) || 0
+            : typeof line.price?.product === "object" &&
+                line.price.product &&
+                "id" in line.price.product
+              ? Number((line.price.product as { id: string | number }).id) || 0
+              : 0;
+        return {
+          id: productId,
+          name: line.description || "Artikel",
+          qty,
+          price: (totalCents / 100 / qty).toFixed(2),
+        };
+      });
+      if (cartItems.length === 0) {
+        return NextResponse.json(
+          {
+            error: "legacy_session_empty",
+            message: "Legacy Checkout Session enthält keine Line Items.",
+          },
+          { status: 400 }
+        );
+      }
       const piField = session.payment_intent;
       transactionId =
         typeof piField === "string"

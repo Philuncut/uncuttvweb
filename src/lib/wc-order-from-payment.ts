@@ -23,6 +23,7 @@ import {
   type OrderMetaEntry,
   type VideoUtmInput,
 } from "@/lib/video-utm-server";
+import { getCartItemsForSync } from "@/lib/cart-items-from-context";
 import { wooFetch } from "@/lib/woocommerce";
 
 export type CartMeta = {
@@ -181,15 +182,6 @@ function appendThirdCountryExportMeta(
   base.push({ key: "_uncuttv_third_country", value: "yes" });
   base.push({ key: "_uncuttv_tax_free_export", value: "yes" });
   return base;
-}
-
-function parseCartMeta(raw: string | undefined): CartMeta[] {
-  try {
-    const parsed = JSON.parse(raw || "[]") as CartMeta[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 function splitName(fullName: string | null | undefined): {
@@ -796,14 +788,7 @@ export async function createWooOrderFromPayment(
     (typeof pi.latest_charge === "string" ? pi.latest_charge : undefined);
 
   const syncContext = input.syncContext;
-  const cartItems =
-    syncContext?.items && syncContext.items.length > 0
-      ? syncContext.items
-      : parseCartMeta(pi.metadata?.cart_items);
-
-  if (cartItems.length === 0) {
-    throw new Error("Keine Artikel in Payment Intent Metadata.");
-  }
+  const cartItems = getCartItemsForSync(syncContext);
 
   const isReverseCharge =
     syncContext?.isReverseCharge === true ||

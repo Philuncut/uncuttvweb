@@ -3,6 +3,8 @@ import { parsePrice } from "@/lib/parse-price";
 import { wooFetch } from "@/lib/woocommerce";
 import {
   findWooOrderByPaymentReference,
+  mapWooOrderToOrderDetailsPayload,
+  type OrderDetailsApiPayload,
   type WooOrderForDetails,
 } from "@/lib/wc-order-from-payment";
 
@@ -137,4 +139,39 @@ export async function lookupOrderByPaymentReference(
   const result = mapWooOrderToLookupResult(full);
   console.log("[OrderLookup] hit wcOrderId:", result.wcOrderId);
   return result;
+}
+
+/** Full Woo order mapped to the order-details API shape (PI / PayPal / legacy session). */
+export async function fetchOrderDetailsPayloadByReference(
+  reference: string
+): Promise<OrderDetailsApiPayload | null> {
+  const ref = reference.trim();
+  if (!ref) return null;
+
+  let paymentRef = ref;
+  if (ref.startsWith("cs_")) {
+    try {
+      const session = await stripe.checkout.sessions.retrieve(ref, {
+        expand: ["payment_intent"],
+      });
+      const piField = session.payment_intent;
+      paymentRef =
+        typeof piField === "string"
+          ? piField
+          : piField && typeof piField === "object" && "id" in piField
+            ? String((piField as { id: string }).id)
+            : "";
+      if (!paymentRef.startsWith("pi_")) return null;
+    } catch {
+      return null;
+    }
+  }
+
+  const row = await findWooOrderByPaymentReference(paymentRef);
+  if (!row?.id) return null;
+
+  const full = await fetchWooOrderById(Number(row.id));
+  if (!full?.id) return null;
+
+  return mapWooOrderToOrderDetailsPayload(full);
 }
