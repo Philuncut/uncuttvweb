@@ -189,21 +189,15 @@ export async function POST(request: Request) {
         : undefined;
 
     const existing = await stripe.paymentIntents.retrieve(paymentIntentId);
-    const prev = existing.metadata ?? {};
+    const prev = { ...(existing.metadata ?? {}) };
+    delete prev.cart_items;
 
     const paymentIntent = await stripe.paymentIntents.update(paymentIntentId, {
       amount: totalCents,
       ...(stripeShipping ? { shipping: stripeShipping } : {}),
       metadata: {
         ...prev,
-        cart_items: JSON.stringify(
-          items.map((i) => ({
-            id: i.product.id,
-            name: i.product.name,
-            qty: i.quantity,
-            price: i.product.price,
-          }))
-        ),
+        cart_items_count: String(items.length),
         coupon_code: couponMeta.coupon_code ?? "",
         coupon_wc_id: couponMeta.coupon_wc_id ?? "",
         discount_amount_cents: couponMeta.discount_amount_cents ?? "",
@@ -224,6 +218,11 @@ export async function POST(request: Request) {
           : {}),
       },
     });
+
+    const couponLog = codeTrimmed || couponMeta.coupon_code || "none";
+    console.log(
+      `[PI] Updated ${paymentIntentId}, amount=${totalCents}, items=${items.length}, coupon=${couponLog}`
+    );
 
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,

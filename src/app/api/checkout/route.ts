@@ -45,14 +45,7 @@ export async function POST(request: Request) {
           allowed_countries: ["AT", "DE", "CH"],
         },
         metadata: {
-          cart_items: JSON.stringify(
-            items.map((i) => ({
-              id: i.product.id,
-              name: i.product.name,
-              qty: i.quantity,
-              price: i.product.price,
-            }))
-          ),
+          cart_items_count: String(items.length),
         },
       };
 
