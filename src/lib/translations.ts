@@ -248,6 +248,10 @@ const translations: Record<string, Record<string, string>> = {
   LIEFERADRESSE: { de: "LIEFERADRESSE", en: "SHIPPING ADDRESS" },
   ZAHLUNG: { de: "ZAHLUNG", en: "PAYMENT" },
   JETZT_KAUFEN: { de: "JETZT KAUFEN", en: "BUY NOW" },
+  CHECKOUT_COUPON_SYNCING: {
+    de: "Coupon wird angewendet…",
+    en: "Applying coupon…",
+  },
   BESTELLUNG: { de: "BESTELLUNG", en: "ORDER" },
   CHECKOUT_ORDER_SUMMARY_CLOSE: {
     de: "— schließen —",

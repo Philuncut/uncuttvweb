@@ -54,6 +54,10 @@ import {
   cartHasMixedPreOrder,
   cartItemsFingerprint,
 } from "@/lib/cart-preorder-mixed";
+import {
+  COUPON_REMOVE_SENTINEL,
+  piCouponMatchesUi,
+} from "@/lib/compute-payment-intent-amount";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -1358,6 +1362,9 @@ function CheckoutInner() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
   const [autoCouponApplied, setAutoCouponApplied] = useState(false);
+  const [piCouponSynced, setPiCouponSynced] = useState(true);
+  const [couponRemovePending, setCouponRemovePending] = useState(false);
+  const [urlCouponPending, setUrlCouponPending] = useState(false);
 
   const [shipFetchLoading, setShipFetchLoading] = useState(false);
   const [shipResolved, setShipResolved] = useState(false);
@@ -1425,6 +1432,7 @@ function CheckoutInner() {
       setCouponDiscount(display);
       setAutoCouponApplied(true);
       setCouponNotice(null);
+      setCouponRemovePending(false);
     },
     []
   );
@@ -1439,6 +1447,7 @@ function CheckoutInner() {
     const urlCoupon = params.get("coupon");
     if (!urlCoupon?.trim()) return;
     const couponFromUrl = urlCoupon.trim();
+    setUrlCouponPending(true);
 
     async function applyCoupon() {
       try {
@@ -1466,6 +1475,8 @@ function CheckoutInner() {
         }
       } catch {
         setCouponNotice(t("CHECKOUT_COUPON_VALIDATE_ERROR"));
+      } finally {
+        setUrlCouponPending(false);
       }
     }
     void applyCoupon();
@@ -1478,6 +1489,20 @@ function CheckoutInner() {
     applyValidatedCoupon,
     t,
   ]);
+
+  const couponSyncRequired = useMemo(() => {
+    if (isWholesale) return false;
+    if (couponRemovePending || urlCouponPending) return true;
+    return Boolean(couponCode?.trim());
+  }, [isWholesale, couponRemovePending, urlCouponPending, couponCode]);
+
+  useEffect(() => {
+    if (!couponSyncRequired) {
+      setPiCouponSynced(true);
+      return;
+    }
+    setPiCouponSynced(false);
+  }, [couponSyncRequired, couponCode]);
 
   const itemsKey = items.map((i) => `${i.product.id}:${i.quantity}`).join(",");
 
@@ -1725,7 +1750,7 @@ function CheckoutInner() {
     [isWholesale, vat, country]
   );
 
-  const piCheckoutReady = useMemo(() => {
+  const piShippingReady = useMemo(() => {
     if (items.length === 0) return false;
     if (!sessionReady) return false;
     if (countryBlocksCheckout) return false;
@@ -1747,10 +1772,22 @@ function CheckoutInner() {
     stripeShipCents,
   ]);
 
+  const piCheckoutReady = useMemo(() => {
+    if (!piShippingReady) return false;
+    if (isWholesale) return true;
+    return piCouponSynced;
+  }, [piShippingReady, isWholesale, piCouponSynced]);
+
   const paymentIntentRequestBody = useMemo(
     () => ({
       items,
-      couponCode: isWholesale ? undefined : (couponCode ?? ""),
+      couponCode: isWholesale
+        ? undefined
+        : couponRemovePending
+          ? COUPON_REMOVE_SENTINEL
+          : couponCode?.trim()
+            ? couponCode.trim().toLowerCase()
+            : undefined,
       customerEmail: isWholesale ? undefined : email.trim() || undefined,
       shippingCents: isWholesale ? 1000 : (stripeShipCents ?? 0),
       isReverseCharge: isWholesale ? wholesaleReverseCharge : false,
@@ -1772,6 +1809,7 @@ function CheckoutInner() {
     [
       items,
       couponCode,
+      couponRemovePending,
       email,
       isWholesale,
       stripeShipCents,
@@ -1789,9 +1827,11 @@ function CheckoutInner() {
 
   // PaymentIntent for Stripe (card, Klarna, EPS, Express wallets) — create once, then update
   useEffect(() => {
-    if (!piCheckoutReady) return;
+    if (!piShippingReady) return;
 
     let cancelled = false;
+    const removePendingAtRequest = couponRemovePending;
+    const expectedUiCoupon = removePendingAtRequest ? null : couponCode;
 
     async function ensurePI() {
       setPaymentIntentError("");
@@ -1815,6 +1855,7 @@ function CheckoutInner() {
         clientSecret?: string;
         error?: string;
         stale?: boolean;
+        couponCodeApplied?: string | null;
       };
       if (cancelled || seq !== piUpdateSeqRef.current) return;
 
@@ -1830,6 +1871,7 @@ function CheckoutInner() {
           setCouponName(null);
           setCouponDiscount(null);
           setAutoCouponApplied(false);
+          setCouponRemovePending(false);
           setPaymentIntentError(t("CHECKOUT_INVALID_COUPON"));
         } else if (typeof data.error === "string" && data.error) {
           setPaymentIntentError(
@@ -1849,13 +1891,32 @@ function CheckoutInner() {
       if (data.clientSecret) {
         setClientSecret(data.clientSecret);
       }
+      if (
+        piCouponMatchesUi(
+          expectedUiCoupon,
+          data.couponCodeApplied,
+          removePendingAtRequest
+        )
+      ) {
+        setPiCouponSynced(true);
+        if (removePendingAtRequest) {
+          setCouponRemovePending(false);
+        }
+      }
     }
 
     ensurePI();
     return () => {
       cancelled = true;
     };
-  }, [piCheckoutReady, paymentIntentRequestBody, setClientSecret, t]);
+  }, [
+    piShippingReady,
+    paymentIntentRequestBody,
+    couponCode,
+    couponRemovePending,
+    setClientSecret,
+    t,
+  ]);
 
   const cartMeta = items.map((i) => ({
     id: i.product.id,
@@ -2024,8 +2085,19 @@ function CheckoutInner() {
       }
     }
     if (shippingBlocksCheckout) return t("CHECKOUT_ERROR_SHIPPING_BLOCKED");
+    if (couponSyncRequired && !piCouponSynced) {
+      return t("CHECKOUT_COUPON_SYNCING");
+    }
     return null;
-  }, [isWholesale, company, vat, shippingBlocksCheckout, t]);
+  }, [
+    isWholesale,
+    company,
+    vat,
+    shippingBlocksCheckout,
+    couponSyncRequired,
+    piCouponSynced,
+    t,
+  ]);
 
   const buildWalletSyncPayload = useCallback(
     (_piId: string): StoredCheckoutSyncPayload => ({
@@ -2124,6 +2196,18 @@ function CheckoutInner() {
 
       if (shippingBlocksCheckout) {
         setError(t("CHECKOUT_ERROR_SHIPPING_BLOCKED"));
+        setProcessing(false);
+        return;
+      }
+
+      if (
+        (paymentMethod === "card" ||
+          paymentMethod === "klarna" ||
+          paymentMethod === "eps") &&
+        couponSyncRequired &&
+        !piCouponSynced
+      ) {
+        setError(t("CHECKOUT_COUPON_SYNCING"));
         setProcessing(false);
         return;
       }
@@ -2410,13 +2494,19 @@ function CheckoutInner() {
   const needsStripe = paymentMethod === "card" || paymentMethod === "klarna" || paymentMethod === "eps";
   const isStripeDisabled =
     needsStripe &&
-    (!clientSecret || Boolean(paymentIntentError.trim()));
+    (!clientSecret ||
+      Boolean(paymentIntentError.trim()) ||
+      !piCouponSynced);
+
+  const couponSyncBlocking =
+    needsStripe && couponSyncRequired && !piCouponSynced;
 
   const orderSummaryProps: OrderSummaryProps = {
     couponId,
     couponName,
     couponDiscount,
     onCouponApplied: (wcId, code, name, display) => {
+      setCouponRemovePending(false);
       setCouponId(wcId);
       setCouponCode(code);
       setCouponName(name);
@@ -2425,6 +2515,8 @@ function CheckoutInner() {
       setCouponNotice(null);
     },
     onCouponRemoved: () => {
+      setCouponRemovePending(true);
+      setPiCouponSynced(false);
       setCouponId(null);
       setCouponCode(null);
       setCouponName(null);
@@ -3155,9 +3247,11 @@ function CheckoutInner() {
                     <div className="border border-[#333] bg-[#111] p-4">
                       <p className="text-xs text-white/50">
                         {paymentIntentError.trim() ||
-                          (piCheckoutReady
-                            ? t("CHECKOUT_ERROR_PAYMENT_INTENT")
-                            : t("CHECKOUT_ERROR_SHIPPING_BLOCKED"))}
+                          (couponSyncBlocking
+                            ? t("CHECKOUT_COUPON_SYNCING")
+                            : piShippingReady
+                              ? t("CHECKOUT_ERROR_PAYMENT_INTENT")
+                              : t("CHECKOUT_ERROR_SHIPPING_BLOCKED"))}
                       </p>
                     </div>
                   )}
@@ -3248,22 +3342,29 @@ function CheckoutInner() {
 
           {/* Submit — hide for PayPal (it has its own button) */}
           {paymentMethod !== "paypal" && (
-            <button
-              type="submit"
-              disabled={
-                processing ||
-                isStripeDisabled ||
-                wholesaleCheckoutBlocked ||
-                shippingBlocksCheckout
-              }
-              className="mt-8 flex w-full cursor-pointer items-center justify-center bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:cursor-default disabled:opacity-60"
-            >
-              {processing ? (
-                <div className="h-5 w-5 animate-spin border-2 border-white border-t-transparent" />
-              ) : (
-                t("JETZT_KAUFEN")
+            <>
+              <button
+                type="submit"
+                disabled={
+                  processing ||
+                  isStripeDisabled ||
+                  wholesaleCheckoutBlocked ||
+                  shippingBlocksCheckout
+                }
+                className="mt-8 flex w-full cursor-pointer items-center justify-center bg-[#c0392b] py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)] disabled:cursor-default disabled:opacity-60"
+              >
+                {processing || couponSyncBlocking ? (
+                  <div className="h-5 w-5 animate-spin border-2 border-white border-t-transparent" />
+                ) : (
+                  t("JETZT_KAUFEN")
+                )}
+              </button>
+              {couponSyncBlocking && (
+                <p className="mt-2 text-center text-xs text-white/50">
+                  {t("CHECKOUT_COUPON_SYNCING")}
+                </p>
               )}
-            </button>
+            </>
           )}
 
             </>
