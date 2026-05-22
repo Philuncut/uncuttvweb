@@ -114,6 +114,54 @@ export default function OrderSuccess() {
           return;
         }
 
+        // Klarna/EPS: sync to Woo before order-details (WC is source of truth for line items)
+        if (
+          paymentIntentId &&
+          !sessionId &&
+          !paymentIntentId.startsWith("paypal_")
+        ) {
+          if (wasCheckoutPiSynced(paymentIntentId)) {
+            clearCheckoutPiSynced(paymentIntentId);
+          } else {
+            const stored = consumeCheckoutSyncPayload(paymentIntentId);
+            if (stored?.items?.length) {
+              const customer = {
+                email: stored.email,
+                firstName: stored.firstName,
+                lastName: stored.lastName,
+                street: stored.street,
+                zip: stored.zip,
+                city: stored.city,
+                country: stored.country,
+                ...(stored.state?.trim()
+                  ? { state: stored.state.trim() }
+                  : {}),
+              };
+              await fetch("/api/sync-order", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  paymentIntentId,
+                  customer,
+                  items: stored.items,
+                  ...(stored.billing ? { billing: stored.billing } : {}),
+                  ...(stored.meta_data
+                    ? { meta_data: stored.meta_data }
+                    : {}),
+                  ...(stored.checkoutShipping
+                    ? { checkoutShipping: stored.checkoutShipping }
+                    : {}),
+                  ...(stored.isReverseCharge
+                    ? { isReverseCharge: true }
+                    : {}),
+                  ...(stored.isWholesale ? { isWholesale: true } : {}),
+                  ...(stored.videoUtm ? { videoUtm: stored.videoUtm } : {}),
+                }),
+              });
+            }
+          }
+        }
+
         // Fetch order details for either flow
         const param = sessionId
           ? `session_id=${sessionId}`
@@ -171,88 +219,13 @@ export default function OrderSuccess() {
           }
         }
 
-        // Sync order to WooCommerce
+        // Legacy Stripe Checkout Session → Woo sync
         if (sessionId) {
           await fetch("/api/sync-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sessionId }),
           });
-        }
-        // PaymentIntent flow: sync was already done in CheckoutForm before redirect
-        // but for Klarna/EPS redirects, we need to sync here too
-        if (
-          paymentIntentId &&
-          !sessionId &&
-          !paymentIntentId.startsWith("paypal_")
-        ) {
-          if (wasCheckoutPiSynced(paymentIntentId)) {
-            clearCheckoutPiSynced(paymentIntentId);
-          } else {
-            const stored = consumeCheckoutSyncPayload(paymentIntentId);
-            const pi = await fetch(
-              `/api/order-details?payment_intent=${paymentIntentId}`
-            );
-            if (pi.ok) {
-              const piData = await pi.json();
-              const customer = stored
-                ? {
-                    email: stored.email,
-                    firstName: stored.firstName,
-                    lastName: stored.lastName,
-                    street: stored.street,
-                    zip: stored.zip,
-                    city: stored.city,
-                    country: stored.country,
-                    ...(stored.state?.trim()
-                      ? { state: stored.state.trim() }
-                      : {}),
-                  }
-                : {
-                    email: piData.customerEmail || "",
-                    firstName: piData.customerName?.split(" ")[0] || "",
-                    lastName:
-                      piData.customerName?.split(" ").slice(1).join(" ") || "",
-                    street: "",
-                    zip: "",
-                    city: "",
-                    country: "",
-                  };
-              await fetch("/api/sync-order", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  paymentIntentId,
-                  customer,
-                  items:
-                    piData.items?.map(
-                      (i: {
-                        description: string;
-                        quantity: number;
-                        amount: number;
-                      }) => ({
-                        id: 0,
-                        name: i.description,
-                        qty: i.quantity,
-                        price: (i.amount / 100 / i.quantity).toFixed(2),
-                      })
-                    ) || [],
-                  ...(stored?.billing ? { billing: stored.billing } : {}),
-                  ...(stored?.meta_data
-                    ? { meta_data: stored.meta_data }
-                    : {}),
-                  ...(stored?.checkoutShipping
-                    ? { checkoutShipping: stored.checkoutShipping }
-                    : {}),
-                  ...(stored?.isReverseCharge
-                    ? { isReverseCharge: true }
-                    : {}),
-                  ...(stored?.isWholesale ? { isWholesale: true } : {}),
-                  ...(stored?.videoUtm ? { videoUtm: stored.videoUtm } : {}),
-                }),
-              });
-            }
-          }
         }
 
         clearCart();

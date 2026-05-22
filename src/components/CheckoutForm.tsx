@@ -2260,6 +2260,7 @@ function CheckoutInner() {
         if (piIdForStorage) {
           persistCheckoutSyncPayload(piIdForStorage, {
             ...customerData,
+            items: cartMeta,
             ...buildCheckoutOrderExtras(company, vat),
             ...(checkoutShippingForWoo
               ? { checkoutShipping: checkoutShippingForWoo }
