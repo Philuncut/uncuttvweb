@@ -826,7 +826,7 @@ export async function createWooOrderFromPayment(
     (typeof pi.latest_charge === "string" ? pi.latest_charge : undefined);
 
   const syncContext = input.syncContext;
-  const cartItems = getCartItemsForSync(syncContext);
+  const cartItems = getCartItemsForSync(syncContext, pi.metadata ?? undefined);
 
   const isReverseCharge =
     syncContext?.isReverseCharge === true ||

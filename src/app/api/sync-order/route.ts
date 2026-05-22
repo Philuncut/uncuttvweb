@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { CartItem } from "@/lib/CartContext";
+import { normalizeCartMetaItems } from "@/lib/cart-items-from-context";
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
@@ -95,11 +96,19 @@ export async function POST(request: Request) {
     const isWholesaleCheckout = body.isWholesale === true;
 
     if (body.paymentIntentId?.startsWith("pi_")) {
+      const piId = body.paymentIntentId.trim();
+      const normalizedItems = normalizeCartMetaItems(body.items);
+      console.log("[sync-order] Stripe card sync", {
+        pi: piId,
+        itemsInBody: body.items?.length ?? 0,
+        itemsNormalized: normalizedItems.length,
+      });
+
       const result = await createWooOrderFromPayment({
-        paymentIntentId: body.paymentIntentId,
+        paymentIntentId: piId,
         syncContext: {
           customer: body.customer,
-          items: body.items,
+          items: normalizedItems,
           billing: body.billing,
           meta_data: body.meta_data,
           checkoutShipping: body.checkoutShipping,
@@ -340,7 +349,12 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("[sync-order] failed:", err);
+    console.error("[sync-order] FAILED:", {
+      pi: body?.paymentIntentId,
+      message: err instanceof Error ? err.message : String(err),
+      itemsInBody: body?.items?.length ?? 0,
+      customerEmail: body?.customer?.email,
+    });
     return NextResponse.json(
       {
         error: "sync-order-failed",
@@ -350,6 +364,7 @@ export async function POST(request: Request) {
             ? err.stack?.split("\n").slice(0, 5).join("\n")
             : undefined,
         debug: {
+          paymentIntentId: body?.paymentIntentId,
           isReverseCharge: body?.isReverseCharge,
           isWholesale: body?.isWholesale,
           itemsCount: body?.items?.length,

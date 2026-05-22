@@ -511,6 +511,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Zahlung fehlgeschlagen.",
     en: "Payment failed.",
   },
+  CHECKOUT_ERROR_ORDER_SYNC_FAILED: {
+    de: "Die Zahlung war erfolgreich, aber die Bestellung konnte nicht angelegt werden. Bitte schreib an office@uncuttv.at und nenne die Zahlungsreferenz (Payment Intent).",
+    en: "Payment succeeded but we could not create your order. Please email office@uncuttv.at with your payment reference (Payment Intent).",
+  },
   CHECKOUT_ERROR_ORDER_FAILED: {
     de: "Bestellung fehlgeschlagen.",
     en: "Order failed.",

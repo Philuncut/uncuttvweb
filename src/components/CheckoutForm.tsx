@@ -1918,12 +1918,16 @@ function CheckoutInner() {
     t,
   ]);
 
-  const cartMeta = items.map((i) => ({
-    id: i.product.id,
-    name: i.product.name,
-    qty: i.quantity,
-    price: i.product.price,
-  }));
+  const cartMeta = useMemo(
+    () =>
+      items.map((i) => ({
+        id: Number(i.product.id),
+        name: i.product.name,
+        qty: Math.max(1, i.quantity),
+        price: i.product.price,
+      })),
+    [items]
+  );
 
   const customerData = {
     email,
@@ -2235,31 +2239,71 @@ function CheckoutInner() {
           return;
         }
 
+        const paidPiId = cardResult.paymentIntentId;
+        const cardSyncPayload = {
+          ...customerData,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...(checkoutShippingForWoo
+            ? { checkoutShipping: checkoutShippingForWoo }
+            : {}),
+          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+        };
+        persistCheckoutSyncPayload(paidPiId, cardSyncPayload);
+
+        const syncBody = {
+          paymentIntentId: paidPiId,
+          customer: customerData,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...buildCheckoutShippingBody(checkoutShippingForWoo),
+          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+        };
+
         try {
-          const syncBody = {
-            paymentIntentId: cardResult.paymentIntentId,
-            customer: customerData,
-            items: cartMeta,
-            ...buildCheckoutOrderExtras(company, vat),
-            ...buildCheckoutShippingBody(checkoutShippingForWoo),
-            ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
-            ...(isWholesale ? { isWholesale: true } : {}),
-            ...videoUtmRequestField(),
-          };
-          await fetch("/api/sync-order", {
+          const syncRes = await fetch("/api/sync-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(syncBody),
           });
-          markCheckoutPiSynced(cardResult.paymentIntentId);
-        } catch {
-          // non-blocking
+          const syncData = (await syncRes.json().catch(() => ({}))) as {
+            success?: boolean;
+            orderNumber?: string;
+            message?: string;
+            error?: string;
+          };
+
+          if (!syncRes.ok || !syncData.success) {
+            console.error("[checkout/card] sync-order failed", {
+              status: syncRes.status,
+              pi: paidPiId,
+              items: cartMeta.length,
+              error: syncData.message ?? syncData.error,
+            });
+            setError(
+              `${t("CHECKOUT_ERROR_ORDER_SYNC_FAILED")} (${paidPiId})`
+            );
+            setProcessing(false);
+            return;
+          }
+
+          markCheckoutPiSynced(paidPiId);
+        } catch (syncErr) {
+          console.error("[checkout/card] sync-order error", paidPiId, syncErr);
+          setError(
+            `${t("CHECKOUT_ERROR_ORDER_SYNC_FAILED")} (${paidPiId})`
+          );
+          setProcessing(false);
+          return;
         }
+
         clearCart();
         clearVideoUtmStorage();
-        router.push(
-          "/bestellung/erfolg?payment_intent=" + cardResult.paymentIntentId
-        );
+        router.push("/bestellung/erfolg?payment_intent=" + paidPiId);
       } else if (paymentMethod === "bank") {
         try {
           const bankBody = {
@@ -2411,6 +2455,10 @@ function CheckoutInner() {
       shippingBlocksCheckout,
       checkoutShippingForWoo,
       wholesaleReverseCharge,
+      couponSyncRequired,
+      piCouponSynced,
+      checkoutShippingForWoo,
+      couponCode,
       t,
       language,
     ]
