@@ -3,9 +3,10 @@ import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
-import { getVatRateForCountry } from "@/lib/eu-vat-rates";
-import { parsePrice } from "@/lib/parse-price";
-import { applyCouponToSubtotalCents } from "@/lib/apply-coupon-to-pi";
+import {
+  computePaymentIntentAmount,
+  formatPiAmountLog,
+} from "@/lib/compute-payment-intent-amount";
 import {
   buildVideoUtmOrderMeta,
   type VideoUtmInput,
@@ -36,6 +37,8 @@ interface Body {
   /** Echoed in PI metadata for success page / receipts (e.g. GLS, Post.at). */
   shippingMethodTitle?: string;
   videoUtm?: VideoUtmInput;
+  /** Monotonic client counter — stale responses must not overwrite newer PI amounts. */
+  piUpdateSeq?: number;
 }
 
 export async function POST(request: Request) {
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
       shippingForStripe,
       shippingMethodTitle,
       videoUtm,
+      piUpdateSeq,
     } = (await request.json()) as Body;
 
     const videoUtmMeta = await buildVideoUtmOrderMeta(videoUtm);
@@ -88,59 +92,26 @@ export async function POST(request: Request) {
       );
     }
 
-    const wholesaleNetPricing =
-      isWholesale === true &&
-      isReverseCharge !== true &&
-      Boolean(taxCountry?.trim());
-
-    const wholesaleVatFraction = (() => {
-      const pct = getVatRateForCountry(taxCountry ?? "") ?? 20;
-      return pct / 100;
-    })();
-
-    let totalCents = wholesaleNetPricing
-      ? items.reduce((sum, item) => {
-          const lineNet =
-            Math.max(0, parsePrice(item.product.price)) *
-            Math.max(1, item.quantity);
-          return sum + Math.round(lineNet * (1 + wholesaleVatFraction) * 100);
-        }, 0)
-      : items.reduce((sum, item) => {
-          return sum + Math.round(parsePrice(item.product.price) * 100) * item.quantity;
-        }, 0);
-
-    let couponMeta: Record<string, string> = {};
-    const codeTrimmed = couponCode?.trim();
-    if (codeTrimmed && isWholesale !== true) {
-      const applied = await applyCouponToSubtotalCents(
-        codeTrimmed,
-        totalCents,
+    let breakdown;
+    try {
+      breakdown = await computePaymentIntentAmount({
         items,
-        customerEmail?.trim()
+        couponCode,
+        customerEmail,
+        shippingCents,
+        isWholesale,
+        isReverseCharge,
+        taxCountry,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Ungültiger Gutschein";
+      return NextResponse.json(
+        { error: "invalid_coupon", message },
+        { status: 400 }
       );
-      if (!applied.ok) {
-        return NextResponse.json(
-          { error: "invalid_coupon", message: applied.error },
-          { status: 400 }
-        );
-      }
-      totalCents = Math.max(0, totalCents - applied.discountCents);
-      couponMeta = applied.metadata;
     }
 
-    const ship =
-      typeof shippingCents === "number" &&
-      Number.isFinite(shippingCents) &&
-      shippingCents >= 0
-        ? Math.round(shippingCents)
-        : 0;
-
-    if (wholesaleNetPricing) {
-      const shipNetEuro = ship / 100;
-      totalCents += Math.round(shipNetEuro * (1 + wholesaleVatFraction) * 100);
-    } else {
-      totalCents += ship;
-    }
+    const { totalCents, couponMeta, shippingCents: ship } = breakdown;
 
     if (totalCents < 50) {
       return NextResponse.json(
@@ -185,6 +156,8 @@ export async function POST(request: Request) {
           }
         : undefined;
 
+    const couponMetaRecord = couponMeta as Record<string, string>;
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalCents,
       currency: "eur",
@@ -192,15 +165,18 @@ export async function POST(request: Request) {
       ...(stripeShipping ? { shipping: stripeShipping } : {}),
       metadata: {
         cart_items_count: String(items.length),
-        coupon_code: couponMeta.coupon_code ?? "",
-        coupon_wc_id: couponMeta.coupon_wc_id ?? "",
-        discount_amount_cents: couponMeta.discount_amount_cents ?? "",
-        discount_label: couponMeta.discount_label ?? "",
+        coupon_code: couponMetaRecord.coupon_code ?? "",
+        coupon_wc_id: couponMetaRecord.coupon_wc_id ?? "",
+        discount_amount_cents: couponMetaRecord.discount_amount_cents ?? "",
+        discount_label: couponMetaRecord.discount_label ?? "",
         is_reverse_charge: isReverseCharge === true ? "true" : "false",
         shipping_cents: String(ship),
         is_wholesale: isWholesale === true ? "true" : "false",
         shipping_method_title: metaShipTitle,
         shipping_country: metaShipCountry,
+        ...(piUpdateSeq != null && Number.isFinite(piUpdateSeq)
+          ? { pi_update_seq: String(piUpdateSeq) }
+          : {}),
         ...(videoUtmMeta[0]
           ? { utm_source: String(videoUtmMeta[0].value) }
           : {}),
@@ -213,9 +189,14 @@ export async function POST(request: Request) {
       },
     });
 
-    const couponLog = codeTrimmed || couponMeta.coupon_code || "none";
     console.log(
-      `[PI] Created ${paymentIntent.id}, amount=${totalCents}, items=${items.length}, coupon=${couponLog}`
+      formatPiAmountLog(
+        "Created",
+        paymentIntent.id,
+        breakdown,
+        items.length,
+        piUpdateSeq
+      )
     );
 
     return NextResponse.json({

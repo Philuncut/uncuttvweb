@@ -24,6 +24,10 @@ import {
   type VideoUtmInput,
 } from "@/lib/video-utm-server";
 import { getCartItemsForSync } from "@/lib/cart-items-from-context";
+import {
+  allocateDiscountCentsToLines,
+  buildLineItemWithCouponDiscount,
+} from "@/lib/woo-coupon-line-discount";
 import { wooFetch } from "@/lib/woocommerce";
 
 export type CartMeta = {
@@ -393,6 +397,8 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   couponCode?: string;
   /** Stripe PI amount in cents (for post-create total check). */
   stripeAmountCents?: number;
+  /** Subtotal discount in cents (from PI metadata) — applied to explicit WC line totals. */
+  stripeDiscountCents?: number;
 };
 
 export async function createWooOrderFromCheckoutSync(
@@ -413,6 +419,7 @@ export async function createWooOrderFromCheckoutSync(
     stripeChargeId,
     couponCode,
     stripeAmountCents,
+    stripeDiscountCents,
   } = input;
 
   if (cartItems.length === 0) {
@@ -472,6 +479,18 @@ export async function createWooOrderFromCheckoutSync(
 
   const vatFromFrontendMeta = vatFromOrderMeta(meta_data);
 
+  const normalizedCoupon = couponCode?.trim().toLowerCase();
+  const discountCents =
+    typeof stripeDiscountCents === "number" &&
+    Number.isFinite(stripeDiscountCents) &&
+    stripeDiscountCents > 0
+      ? Math.round(stripeDiscountCents)
+      : 0;
+  const discountByLine =
+    normalizedCoupon && discountCents > 0
+      ? allocateDiscountCentsToLines(cartItems, discountCents)
+      : new Map<number, number>();
+
   const orderData: Record<string, unknown> = {
     status: "processing",
     payment_method: "stripe",
@@ -482,8 +501,14 @@ export async function createWooOrderFromCheckoutSync(
     billing: mergedBilling,
     shipping,
     line_items: cartItems.map((item) => {
+      const lineDiscountEur = (discountByLine.get(item.id) ?? 0) / 100;
+
       if (isReverseCharge) {
-        const lineTotal = (parsePrice(item.price) * item.qty).toFixed(2);
+        const lineGross = Math.max(
+          0,
+          parsePrice(item.price) * item.qty - lineDiscountEur
+        );
+        const lineTotal = lineGross.toFixed(2);
         return {
           product_id: Number(item.id),
           quantity: item.qty,
@@ -498,10 +523,24 @@ export async function createWooOrderFromCheckoutSync(
         return buildWholesaleNonRcLineItem(item, taxCountry);
       }
       if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-        return buildEuB2cNonAtLineItem(item, taxCountry);
+        return lineDiscountEur > 0
+          ? buildLineItemWithCouponDiscount(
+              item,
+              taxCountry,
+              "eu_b2c",
+              lineDiscountEur
+            )
+          : buildEuB2cNonAtLineItem(item, taxCountry);
       }
       if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-        return buildNonEuB2cLineItem(item);
+        return lineDiscountEur > 0
+          ? buildLineItemWithCouponDiscount(
+              item,
+              taxCountry,
+              "non_eu",
+              lineDiscountEur
+            )
+          : buildNonEuB2cLineItem(item);
       }
       return {
         product_id: Number(item.id),
@@ -511,7 +550,6 @@ export async function createWooOrderFromCheckoutSync(
     transaction_id: transactionId,
   };
 
-  const normalizedCoupon = couponCode?.trim().toLowerCase();
   if (normalizedCoupon) {
     orderData.coupon_lines = [{ code: normalizedCoupon }];
   }
@@ -807,6 +845,12 @@ export async function createWooOrderFromPayment(
       pi.metadata.coupon_code.trim()) ||
     undefined;
 
+  const discountCentsFromPi = (() => {
+    const raw = pi.metadata?.discount_amount_cents;
+    const n = parseInt(typeof raw === "string" ? raw : "", 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  })();
+
   return createWooOrderFromCheckoutSync({
     cartItems,
     billing,
@@ -826,5 +870,6 @@ export async function createWooOrderFromPayment(
     couponCode: couponFromMeta,
     stripeAmountCents:
       typeof pi.amount === "number" ? pi.amount : undefined,
+    stripeDiscountCents: discountCentsFromPi,
   });
 }

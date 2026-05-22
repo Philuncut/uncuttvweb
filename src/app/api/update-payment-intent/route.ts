@@ -3,9 +3,10 @@ import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
-import { getVatRateForCountry } from "@/lib/eu-vat-rates";
-import { parsePrice } from "@/lib/parse-price";
-import { applyCouponToSubtotalCents } from "@/lib/apply-coupon-to-pi";
+import {
+  computePaymentIntentAmount,
+  formatPiAmountLog,
+} from "@/lib/compute-payment-intent-amount";
 import {
   buildVideoUtmOrderMeta,
   type VideoUtmInput,
@@ -30,6 +31,7 @@ interface Body {
   };
   shippingMethodTitle?: string;
   videoUtm?: VideoUtmInput;
+  piUpdateSeq?: number;
 }
 
 export async function POST(request: Request) {
@@ -54,6 +56,7 @@ export async function POST(request: Request) {
       shippingForStripe,
       shippingMethodTitle,
       videoUtm,
+      piUpdateSeq,
     } = body;
 
     const videoUtmMeta = await buildVideoUtmOrderMeta(videoUtm);
@@ -91,59 +94,51 @@ export async function POST(request: Request) {
       );
     }
 
-    const wholesaleNetPricing =
-      isWholesale === true &&
-      isReverseCharge !== true &&
-      Boolean(taxCountry?.trim());
+    const existing = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const prev = { ...(existing.metadata ?? {}) };
+    delete prev.cart_items;
 
-    const wholesaleVatFraction = (() => {
-      const pct = getVatRateForCountry(taxCountry ?? "") ?? 20;
-      return pct / 100;
-    })();
-
-    let totalCents = wholesaleNetPricing
-      ? items.reduce((sum, item) => {
-          const lineNet =
-            Math.max(0, parsePrice(item.product.price)) *
-            Math.max(1, item.quantity);
-          return sum + Math.round(lineNet * (1 + wholesaleVatFraction) * 100);
-        }, 0)
-      : items.reduce((sum, item) => {
-          return sum + Math.round(parsePrice(item.product.price) * 100) * item.quantity;
-        }, 0);
-
-    let couponMeta: Record<string, string> = {};
-    const codeTrimmed = couponCode?.trim();
-    if (codeTrimmed && isWholesale !== true) {
-      const applied = await applyCouponToSubtotalCents(
-        codeTrimmed,
-        totalCents,
-        items,
-        customerEmail?.trim()
-      );
-      if (!applied.ok) {
-        return NextResponse.json(
-          { error: "invalid_coupon", message: applied.error },
-          { status: 400 }
+    if (
+      piUpdateSeq != null &&
+      Number.isFinite(piUpdateSeq) &&
+      typeof prev.pi_update_seq === "string" &&
+      prev.pi_update_seq.trim() !== ""
+    ) {
+      const prevSeq = parseInt(prev.pi_update_seq, 10);
+      if (Number.isFinite(prevSeq) && piUpdateSeq < prevSeq) {
+        console.log(
+          `[PI] Skipped stale update ${paymentIntentId}: seq=${piUpdateSeq} < stored=${prevSeq}`
         );
+        return NextResponse.json({
+          clientSecret: existing.client_secret,
+          amount: existing.amount,
+          stale: true,
+        });
       }
-      totalCents = Math.max(0, totalCents - applied.discountCents);
-      couponMeta = applied.metadata;
     }
 
-    const ship =
-      typeof shippingCents === "number" &&
-      Number.isFinite(shippingCents) &&
-      shippingCents >= 0
-        ? Math.round(shippingCents)
-        : 0;
-
-    if (wholesaleNetPricing) {
-      const shipNetEuro = ship / 100;
-      totalCents += Math.round(shipNetEuro * (1 + wholesaleVatFraction) * 100);
-    } else {
-      totalCents += ship;
+    let breakdown;
+    try {
+      breakdown = await computePaymentIntentAmount({
+        items,
+        couponCode,
+        fallbackCouponCode:
+          couponCode === undefined ? prev.coupon_code : undefined,
+        customerEmail,
+        shippingCents,
+        isWholesale,
+        isReverseCharge,
+        taxCountry,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Ungültiger Gutschein";
+      return NextResponse.json(
+        { error: "invalid_coupon", message },
+        { status: 400 }
+      );
     }
+
+    const { totalCents, couponMeta, shippingCents: ship } = breakdown;
 
     if (totalCents < 50) {
       return NextResponse.json(
@@ -188,9 +183,7 @@ export async function POST(request: Request) {
           }
         : undefined;
 
-    const existing = await stripe.paymentIntents.retrieve(paymentIntentId);
-    const prev = { ...(existing.metadata ?? {}) };
-    delete prev.cart_items;
+    const couponMetaRecord = couponMeta as Record<string, string>;
 
     const paymentIntent = await stripe.paymentIntents.update(paymentIntentId, {
       amount: totalCents,
@@ -198,15 +191,18 @@ export async function POST(request: Request) {
       metadata: {
         ...prev,
         cart_items_count: String(items.length),
-        coupon_code: couponMeta.coupon_code ?? "",
-        coupon_wc_id: couponMeta.coupon_wc_id ?? "",
-        discount_amount_cents: couponMeta.discount_amount_cents ?? "",
-        discount_label: couponMeta.discount_label ?? "",
+        coupon_code: couponMetaRecord.coupon_code ?? "",
+        coupon_wc_id: couponMetaRecord.coupon_wc_id ?? "",
+        discount_amount_cents: couponMetaRecord.discount_amount_cents ?? "",
+        discount_label: couponMetaRecord.discount_label ?? "",
         is_reverse_charge: isReverseCharge === true ? "true" : "false",
         shipping_cents: String(ship),
         is_wholesale: isWholesale === true ? "true" : "false",
         shipping_method_title: metaShipTitle,
         shipping_country: metaShipCountry,
+        ...(piUpdateSeq != null && Number.isFinite(piUpdateSeq)
+          ? { pi_update_seq: String(piUpdateSeq) }
+          : {}),
         ...(videoUtmMeta[0]
           ? { utm_source: String(videoUtmMeta[0].value) }
           : {}),
@@ -219,9 +215,14 @@ export async function POST(request: Request) {
       },
     });
 
-    const couponLog = codeTrimmed || couponMeta.coupon_code || "none";
     console.log(
-      `[PI] Updated ${paymentIntentId}, amount=${totalCents}, items=${items.length}, coupon=${couponLog}`
+      formatPiAmountLog(
+        "Updated",
+        paymentIntentId,
+        breakdown,
+        items.length,
+        piUpdateSeq
+      )
     );
 
     return NextResponse.json({
