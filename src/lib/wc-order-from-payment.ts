@@ -446,8 +446,16 @@ export async function createWooOrderFromCheckoutSync(
     throw err;
   }
 
-  const cookieStore = await cookies();
-  const customerIdStr = resolveLoggedInCustomerId(cookieStore);
+  let customerIdStr = "";
+  try {
+    const cookieStore = await cookies();
+    customerIdStr = resolveLoggedInCustomerId(cookieStore) ?? "";
+  } catch (cookieErr) {
+    console.warn(
+      "[wc-order] cookies() unavailable, proceeding without logged-in WC customer:",
+      cookieErr instanceof Error ? cookieErr.message : cookieErr
+    );
+  }
 
   let profileCompany = "";
   let profileVat = "";
@@ -826,7 +834,10 @@ export async function createWooOrderFromPayment(
     (typeof pi.latest_charge === "string" ? pi.latest_charge : undefined);
 
   const syncContext = input.syncContext;
-  const cartItems = getCartItemsForSync(syncContext, pi.metadata ?? undefined);
+  const cartItems = getCartItemsForSync(
+    syncContext,
+    pi.metadata as Record<string, string> | undefined
+  );
 
   const isReverseCharge =
     syncContext?.isReverseCharge === true ||

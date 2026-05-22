@@ -5,6 +5,18 @@ const STRIPE_META_VALUE_MAX = 500;
 
 type LooseCartRow = Record<string, unknown>;
 
+/** Stripe.Metadata → plain string record (serverless-safe). */
+export function coerceStripeMetadata(
+  metadata: Record<string, string> | null | undefined
+): Record<string, string> {
+  if (!metadata) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (typeof value === "string") out[key] = value;
+  }
+  return out;
+}
+
 function rowToCartMeta(row: LooseCartRow): CartMeta | null {
   const id = Number(row.id ?? row.product_id);
   const qty = Math.max(
@@ -60,30 +72,45 @@ export function buildCartSnapshotMetadata(
 export function parseCartItemsFromPiMetadata(
   metadata: Record<string, string> | null | undefined
 ): CartMeta[] {
-  const snapshotRaw = metadata?.cart_snapshot?.trim();
+  const meta = coerceStripeMetadata(metadata);
+  const snapshotRaw = meta.cart_snapshot?.trim();
   if (snapshotRaw) {
     try {
       const parsed = JSON.parse(snapshotRaw) as unknown;
       if (Array.isArray(parsed)) {
-        return normalizeCartMetaItems(
-          parsed.map((row) => {
+        const mapped = parsed
+          .map((row) => {
             if (!row || typeof row !== "object") return null;
             const r = row as LooseCartRow;
-            return {
-              id: Number(r.id),
-              name: String(r.n ?? r.name ?? ""),
-              qty: Number(r.q ?? r.qty ?? r.quantity ?? 1),
-              price: String(r.p ?? r.price ?? "0"),
-            };
-          }) as CartMeta[]
-        );
+            return rowToCartMeta({
+              id: r.id,
+              product_id: r.id,
+              q: r.q,
+              qty: r.qty,
+              quantity: r.quantity,
+              p: r.p,
+              price: r.price,
+              n: r.n,
+              name: r.name,
+            });
+          })
+          .filter((x): x is CartMeta => x != null);
+        if (mapped.length > 0) return mapped;
       }
-    } catch {
-      /* fall through */
+      console.warn(
+        "[cart-items] cart_snapshot JSON is not a non-empty array:",
+        snapshotRaw.slice(0, 200)
+      );
+    } catch (err) {
+      console.error(
+        "[cart-items] cart_snapshot JSON.parse failed:",
+        err instanceof Error ? err.message : err,
+        snapshotRaw.slice(0, 200)
+      );
     }
   }
 
-  const raw = metadata?.cart_items?.trim();
+  const raw = meta.cart_items?.trim();
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -117,12 +144,15 @@ export function getCartItemsForSync(
     return fromContext;
   }
 
-  const fromPi = parseCartItemsFromPiMetadata(piMetadata ?? undefined);
+  const fromPi = parseCartItemsFromPiMetadata(
+    coerceStripeMetadata(piMetadata ?? undefined)
+  );
   if (fromPi.length > 0) {
     return fromPi;
   }
 
-  const countRaw = piMetadata?.cart_items_count?.trim();
+  const meta = coerceStripeMetadata(piMetadata);
+  const countRaw = meta.cart_items_count?.trim();
   const count = countRaw ? parseInt(countRaw, 10) : 0;
   throw new Error(
     count > 0

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type { CartItem } from "@/lib/CartContext";
-import { normalizeCartMetaItems } from "@/lib/cart-items-from-context";
+import {
+  coerceStripeMetadata,
+  normalizeCartMetaItems,
+  parseCartItemsFromPiMetadata,
+} from "@/lib/cart-items-from-context";
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
@@ -97,16 +101,42 @@ export async function POST(request: Request) {
 
     if (body.paymentIntentId?.startsWith("pi_")) {
       const piId = body.paymentIntentId.trim();
-      const normalizedItems = normalizeCartMetaItems(body.items);
+      const pi = await stripe.paymentIntents.retrieve(piId);
+      const piMeta = coerceStripeMetadata(pi.metadata ?? undefined);
+
+      let cartItems = normalizeCartMetaItems(body.items);
+      if (cartItems.length === 0) {
+        cartItems = parseCartItemsFromPiMetadata(piMeta);
+      }
+
       console.log(
-        `[sync-order] Stripe card sync pi=${piId} inBody=${body.items?.length ?? 0} normalized=${normalizedItems.length} raw0=${JSON.stringify(body.items?.[0] ?? null)}`
+        `[sync-order] Stripe card sync pi=${piId} inBody=${body.items?.length ?? 0} ` +
+          `bodyNorm=${normalizeCartMetaItems(body.items).length} ` +
+          `snapshotLen=${piMeta.cart_snapshot?.length ?? 0} ` +
+          `resolved=${cartItems.length} raw0=${JSON.stringify(body.items?.[0] ?? null)}`
       );
+
+      if (cartItems.length === 0) {
+        return NextResponse.json(
+          {
+            error: "no_cart_items",
+            message:
+              "Keine Artikel für WooCommerce-Order (weder Request-Body noch PI cart_snapshot).",
+            debug: {
+              paymentIntentId: piId,
+              cart_items_count: piMeta.cart_items_count,
+              has_cart_snapshot: Boolean(piMeta.cart_snapshot?.trim()),
+            },
+          },
+          { status: 400 }
+        );
+      }
 
       const result = await createWooOrderFromPayment({
         paymentIntentId: piId,
         syncContext: {
           customer: body.customer,
-          items: normalizedItems,
+          items: cartItems,
           billing: body.billing,
           meta_data: body.meta_data,
           checkoutShipping: body.checkoutShipping,
