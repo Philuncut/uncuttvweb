@@ -317,10 +317,14 @@ function Select({
       required={required}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-[#c0392b] disabled:cursor-not-allowed disabled:opacity-50"
+      className="checkout-select w-full border border-[#333] bg-[#111] px-3 py-3 text-sm text-white outline-none focus:border-[#c0392b] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {options.map((o) => (
-        <option key={o.value || "_empty"} value={o.value}>
+        <option
+          key={o.value || "_empty"}
+          value={o.value}
+          className="bg-[#111] text-white"
+        >
           {o.label}
         </option>
       ))}

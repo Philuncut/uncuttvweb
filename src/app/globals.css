@@ -638,3 +638,13 @@ html.intro-ready .intro-progress-fill {
     animation: none !important;
   }
 }
+
+/* Checkout native selects (country, province) — readable on first open (Windows/Firefox) */
+.checkout-select {
+  color-scheme: dark;
+}
+
+.checkout-select option {
+  background-color: #111 !important;
+  color: #fff !important;
+}
