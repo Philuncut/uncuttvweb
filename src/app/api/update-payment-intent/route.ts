@@ -4,6 +4,7 @@ import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
 import {
+  COUPON_REMOVE_SENTINEL,
   computePaymentIntentAmount,
   formatPiAmountLog,
 } from "@/lib/compute-payment-intent-amount";
@@ -117,13 +118,27 @@ export async function POST(request: Request) {
       }
     }
 
+    const explicitRemove = couponCode === COUPON_REMOVE_SENTINEL;
+    const omitCoupon =
+      !explicitRemove &&
+      (couponCode === undefined || couponCode === "");
+    const fallbackCouponCode = explicitRemove
+      ? undefined
+      : omitCoupon
+        ? prev.coupon_code?.trim() || undefined
+        : undefined;
+    const effectiveCouponCode = explicitRemove
+      ? COUPON_REMOVE_SENTINEL
+      : omitCoupon
+        ? undefined
+        : couponCode;
+
     let breakdown;
     try {
       breakdown = await computePaymentIntentAmount({
         items,
-        couponCode,
-        fallbackCouponCode:
-          couponCode === undefined ? prev.coupon_code : undefined,
+        couponCode: effectiveCouponCode,
+        fallbackCouponCode,
         customerEmail,
         shippingCents,
         isWholesale,
@@ -228,6 +243,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,
       amount: totalCents,
+      couponCodeApplied: breakdown.couponCodeApplied,
+      discountCents: breakdown.discountCents,
     });
   } catch (error) {
     const message =

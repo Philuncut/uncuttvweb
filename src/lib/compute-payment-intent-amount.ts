@@ -6,6 +6,9 @@ import {
   type CouponPiMetadata,
 } from "@/lib/coupon-helpers";
 
+/** Client sends this to explicitly clear coupon metadata on the PI. */
+export const COUPON_REMOVE_SENTINEL = "__REMOVE__";
+
 export type ComputePiAmountInput = {
   items: CartItem[];
   couponCode?: string;
@@ -72,10 +75,12 @@ export async function computePaymentIntentAmount(
 
   let discountCents = 0;
   let couponMeta: CouponPiMetadata | Record<string, never> = {};
-  const resolvedCoupon =
-    input.couponCode === undefined
-      ? (input.fallbackCouponCode?.trim() ?? "")
-      : (input.couponCode?.trim() ?? "");
+  const explicitRemove = input.couponCode === COUPON_REMOVE_SENTINEL;
+  const resolvedCoupon = explicitRemove
+    ? ""
+    : input.couponCode?.trim()
+      ? input.couponCode.trim()
+      : (input.fallbackCouponCode?.trim() ?? "");
 
   let couponCodeApplied: string | null = null;
 
@@ -118,6 +123,17 @@ export async function computePaymentIntentAmount(
     couponMeta,
     couponCodeApplied,
   };
+}
+
+/** True when Stripe PI coupon metadata matches the checkout UI coupon state. */
+export function piCouponMatchesUi(
+  uiCouponCode: string | null,
+  applied: string | null | undefined,
+  removePending: boolean
+): boolean {
+  const appliedNorm = (applied ?? "").trim().toLowerCase();
+  if (removePending) return appliedNorm === "";
+  return (uiCouponCode ?? "").trim().toLowerCase() === appliedNorm;
 }
 
 export function formatPiAmountLog(
