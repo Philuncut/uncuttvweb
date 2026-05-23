@@ -3,9 +3,9 @@ import { parseIso8601Duration } from "@/lib/youtube-duration";
 
 export function verifyVideoSyncCronAuth(request: Request): boolean {
   const expected =
-    typeof process.env.YOUTUBE_SYNC_CRON_SECRET === "string" &&
-    process.env.YOUTUBE_SYNC_CRON_SECRET.trim()
-      ? `Bearer ${process.env.YOUTUBE_SYNC_CRON_SECRET.trim()}`
+    typeof process.env.CRON_SECRET === "string" &&
+    process.env.CRON_SECRET.trim()
+      ? `Bearer ${process.env.CRON_SECRET.trim()}`
       : null;
   const authHeaderIn = request.headers.get("authorization");
   return !!expected && authHeaderIn === expected;
