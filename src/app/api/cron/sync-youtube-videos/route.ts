@@ -5,7 +5,6 @@ import {
   formatSyncDurationMs,
   parseIso8601Duration,
   sendVideoSyncSummaryEmail,
-  verifyVideoSyncCronAuth,
 } from "@/lib/video-sync-helpers";
 import type { ShopVideoRow } from "@/lib/video-blog-types";
 import {
@@ -129,7 +128,13 @@ function thumbnailFromSnippet(
 export async function GET(request: Request): Promise<Response> {
   const startedAt = Date.now();
 
-  if (!verifyVideoSyncCronAuth(request)) {
+  const expected =
+    typeof process.env.CRON_SECRET === "string" &&
+    process.env.CRON_SECRET.trim()
+      ? `Bearer ${process.env.CRON_SECRET.trim()}`
+      : null;
+  const authHeaderIn = request.headers.get("authorization");
+  if (!expected || authHeaderIn !== expected) {
     return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

@@ -98,9 +98,9 @@ async function customerHasOrderSinceCartUpdate(
 
 export async function GET(request: Request): Promise<Response> {
   const expected =
-    typeof process.env.ABANDONED_CART_CRON_SECRET === "string" &&
-    process.env.ABANDONED_CART_CRON_SECRET.trim()
-      ? `Bearer ${process.env.ABANDONED_CART_CRON_SECRET.trim()}`
+    typeof process.env.CRON_SECRET === "string" &&
+    process.env.CRON_SECRET.trim()
+      ? `Bearer ${process.env.CRON_SECRET.trim()}`
       : null;
   const authHeaderIn = request.headers.get("authorization");
   if (!expected || authHeaderIn !== expected) {
