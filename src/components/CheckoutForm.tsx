@@ -21,6 +21,7 @@ import {
 import {
   PayPalScriptProvider,
   PayPalButtons,
+  PayPalMessages,
   FUNDING,
 } from "@paypal/react-paypal-js";
 import { useCart } from "@/lib/CartContext";
@@ -846,11 +847,32 @@ function OrderSummary({
 
 /* ── Stable PayPal Button wrapper — prevents re-mount on parent re-renders ── */
 
-const paypalScriptOptions = {
-  clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
-  currency: "EUR",
-  disableFunding: "card,credit,paylater,bancontact,blik,eps,giropay,ideal,mybank,p24,sepa,sofort,venmo",
-};
+function computePayPalOrderTotalEuro({
+  totalPrice,
+  couponDiscount,
+  shippingAmount,
+  resolvedOrderTotalEuro,
+}: {
+  totalPrice: number;
+  couponDiscount: string | null;
+  shippingAmount: number;
+  resolvedOrderTotalEuro?: number | null;
+}): number {
+  if (
+    resolvedOrderTotalEuro != null &&
+    Number.isFinite(resolvedOrderTotalEuro)
+  ) {
+    return resolvedOrderTotalEuro;
+  }
+  let paypalTotal = totalPrice;
+  if (couponDiscount) {
+    const pctMatch = couponDiscount.match(/(\d+)%/);
+    const fixEuros = parseFixedDiscountEuros(couponDiscount);
+    if (pctMatch) paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
+    else if (fixEuros != null) paypalTotal = Math.max(0, totalPrice - fixEuros);
+  }
+  return paypalTotal + shippingAmount;
+}
 
 function PayPalButtonWrapper({
   totalPrice,
@@ -877,6 +899,40 @@ function PayPalButtonWrapper({
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
+  const paypalScriptOptions = useMemo(
+    () => ({
+      clientId: process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
+      currency: "EUR",
+      intent: "capture" as const,
+      enableFunding: "paylater",
+      disableFunding:
+        "credit,card,bancontact,blik,eps,giropay,ideal,mybank,p24,sepa,sofort,venmo",
+      components: "buttons,messages",
+      locale: language === "en" ? "en_US" : "de_DE",
+    }),
+    [language]
+  );
+
+  const paypalOrderTotalEuro = useMemo(
+    () =>
+      computePayPalOrderTotalEuro({
+        totalPrice,
+        couponDiscount,
+        shippingAmount,
+        resolvedOrderTotalEuro,
+      }),
+    [totalPrice, couponDiscount, shippingAmount, resolvedOrderTotalEuro]
+  );
+
+  const paypalButtonForceReRender = [
+    totalPrice,
+    couponDiscount,
+    shippingAmount,
+    resolvedOrderTotalEuro ?? -1,
+    disabled,
+    paypalOrderTotalEuro,
+  ];
+
   // Memoize createOrder so PayPal doesn't reinitialize
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const createOrder = useCallback(
@@ -884,62 +940,57 @@ function PayPalButtonWrapper({
       if (onBeforePayPalCreateOrder) {
         await onBeforePayPalCreateOrder();
       }
-      let paypalTotal: number;
-      if (
-        resolvedOrderTotalEuro != null &&
-        Number.isFinite(resolvedOrderTotalEuro)
-      ) {
-        paypalTotal = resolvedOrderTotalEuro;
-      } else {
-        paypalTotal = totalPrice;
-        if (couponDiscount) {
-          const pctMatch = couponDiscount.match(/(\d+)%/);
-          const fixEuros = parseFixedDiscountEuros(couponDiscount);
-          if (pctMatch)
-            paypalTotal = totalPrice * (1 - parseFloat(pctMatch[1]) / 100);
-          else if (fixEuros != null)
-            paypalTotal = Math.max(0, totalPrice - fixEuros);
-        }
-        paypalTotal += shippingAmount;
-      }
       return await actions.order.create({
         intent: "CAPTURE",
         purchase_units: [
           {
             amount: {
               currency_code: "EUR",
-              value: paypalTotal.toFixed(2),
+              value: paypalOrderTotalEuro.toFixed(2),
             },
             description: t("CHECKOUT_PAYPAL_ORDER_DESCRIPTION"),
           },
         ],
       });
     },
-    [
-      totalPrice,
-      couponDiscount,
-      shippingAmount,
-      resolvedOrderTotalEuro,
-      onBeforePayPalCreateOrder,
-      t,
-    ]
+    [paypalOrderTotalEuro, onBeforePayPalCreateOrder, t]
   );
+
+  const paypalButtonStyle = {
+    shape: "rect" as const,
+    layout: "vertical" as const,
+    height: 48,
+  };
 
   return (
     <PayPalScriptProvider options={paypalScriptOptions}>
+      <PayPalMessages
+        amount={paypalOrderTotalEuro}
+        placement="payment"
+        style={{ layout: "text", logo: { type: "inline" } }}
+        forceReRender={paypalButtonForceReRender}
+      />
       <PayPalButtons
         fundingSource={FUNDING.PAYPAL}
         disabled={disabled}
         style={{
+          ...paypalButtonStyle,
           color: "gold",
-          shape: "rect",
-          layout: "vertical",
           label: "paypal",
         }}
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
-        forceReRender={[totalPrice, couponDiscount, shippingAmount, resolvedOrderTotalEuro ?? -1, disabled]}
+        forceReRender={paypalButtonForceReRender}
+      />
+      <PayPalButtons
+        fundingSource={FUNDING.PAYLATER}
+        disabled={disabled}
+        style={paypalButtonStyle}
+        createOrder={createOrder}
+        onApprove={onApprove}
+        onError={onError}
+        forceReRender={paypalButtonForceReRender}
       />
     </PayPalScriptProvider>
   );
