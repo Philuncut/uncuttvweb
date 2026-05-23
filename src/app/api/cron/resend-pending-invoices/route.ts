@@ -16,6 +16,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Woo `after` filter: only orders from the last 7 days (skip stale list false-positives). */
+function ordersAfterIsoSevenDaysAgo(): string {
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - 7);
+  return cutoff.toISOString();
+}
+
 export async function GET(request: Request): Promise<Response> {
   const expected =
     typeof process.env.CRON_SECRET === "string" &&
@@ -43,7 +50,8 @@ export async function GET(request: Request): Promise<Response> {
         meta_value: "yes",
         per_page: String(MAX_ORDERS_PER_RUN),
         orderby: "date",
-        order: "asc",
+        order: "desc",
+        after: ordersAfterIsoSevenDaysAgo(),
       },
       { cache: "no-store" }
     );
