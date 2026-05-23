@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:favicons": "tsx scripts/generate-favicons.ts"
   },
   "dependencies": {
     "@next/third-parties": "^16.2.6",
@@ -22,6 +23,9 @@
     "stripe": "^22.0.0"
   },
   "devDependencies": {
+    "sharp": "^0.34.5",
+    "to-ico": "^1.1.5",
+    "tsx": "^4.21.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
