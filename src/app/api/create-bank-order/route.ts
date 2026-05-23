@@ -15,7 +15,6 @@ import {
   standardVatFraction,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
-import { formatPrice } from "@/lib/format-price";
 import {
   billingVatFromOrderMeta,
   enqueueWholesaleOfficeNotification,
