@@ -1,4 +1,8 @@
-import { getVatRateForCountry, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
+import {
+  getVatRateForCountry,
+  shouldSendExplicitEuB2cLineAmounts,
+  shouldSendExplicitNonEuLineAmounts,
+} from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
 import { splitGrossForWooRest } from "@/lib/woo-vat-split";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
@@ -23,7 +27,11 @@ export function splitCouponDiscountGrossForWooRest(
 
 /**
  * WooCommerce coupon_lines for REST order create.
- * EU/Non-EU B2C: explicit net + tax on full line_items (Option B).
+ *
+ * EU-B2C (non-AT): full line_items (subtotal = total) + coupon_lines **code only**.
+ * Explicit discount/discount_tax on coupon_lines makes WC also reduce line totals → double deduction.
+ *
+ * Non-EU B2C: full lines + explicit discount on coupon_lines (0 % tax).
  * Reverse charge: code only — line totals already reduced in the RC builder.
  */
 export function buildWooCouponLines(
@@ -36,6 +44,10 @@ export function buildWooCouponLines(
   if (!normalized || discountCents <= 0) return undefined;
 
   if (opts?.isReverseCharge) {
+    return [{ code: normalized }];
+  }
+
+  if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
     return [{ code: normalized }];
   }
 
