@@ -5,7 +5,12 @@ import {
 } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
 import { splitGrossForWooRest } from "@/lib/woo-vat-split";
+import type { OrderMetaEntry } from "@/lib/video-utm-server";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
+
+export const APPLIED_COUPON_META_KEY = "_uncuttv_applied_coupon";
+export const APPLIED_COUPON_DISCOUNT_EUR_META_KEY =
+  "_uncuttv_applied_coupon_discount_eur";
 
 export type WooCouponLine = {
   code: string;
@@ -25,13 +30,41 @@ export function splitCouponDiscountGrossForWooRest(
   return { discount: net, discount_tax: tax };
 }
 
+/** Audit trail when coupon discount is baked into line_items (no coupon_lines). */
+export function appendAppliedCouponOrderMeta(
+  meta: OrderMetaEntry[] | undefined,
+  opts: { code: string; discountCents: number }
+): OrderMetaEntry[] {
+  const normalized = opts.code.trim().toLowerCase();
+  if (!normalized || opts.discountCents <= 0) {
+    return meta ?? [];
+  }
+  const base = [...(meta ?? [])].filter(
+    (m) =>
+      m.key !== APPLIED_COUPON_META_KEY &&
+      m.key !== APPLIED_COUPON_DISCOUNT_EUR_META_KEY
+  );
+  base.push({ key: APPLIED_COUPON_META_KEY, value: normalized });
+  base.push({
+    key: APPLIED_COUPON_DISCOUNT_EUR_META_KEY,
+    value: (opts.discountCents / 100).toFixed(2),
+  });
+  return base;
+}
+
+/** True when coupon discount must be in line_items, not coupon_lines (WC double-deduction). */
+export function shouldBakeCouponIntoLineItems(taxCountry: string): boolean {
+  return (
+    shouldSendExplicitEuB2cLineAmounts(taxCountry) ||
+    shouldSendExplicitNonEuLineAmounts(taxCountry)
+  );
+}
+
 /**
  * WooCommerce coupon_lines for REST order create.
  *
- * EU-B2C (non-AT): full line_items (subtotal = total) + coupon_lines **code only**.
- * Explicit discount/discount_tax on coupon_lines makes WC also reduce line totals → double deduction.
- *
- * Non-EU B2C: full lines + explicit discount on coupon_lines (0 % tax).
+ * EU / Non-EU B2C with explicit line amounts: no coupon_lines (discount baked in).
+ * AT-B2C (implicit lines): explicit discount on coupon_lines.
  * Reverse charge: code only — line totals already reduced in the RC builder.
  */
 export function buildWooCouponLines(
@@ -47,8 +80,8 @@ export function buildWooCouponLines(
     return [{ code: normalized }];
   }
 
-  if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-    return [{ code: normalized }];
+  if (shouldBakeCouponIntoLineItems(taxCountry)) {
+    return undefined;
   }
 
   const gross = discountCents / 100;

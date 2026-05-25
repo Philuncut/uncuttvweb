@@ -70,6 +70,13 @@ Example **DE 19%**, GLS **€7,80**:
 
 Deactivate the WPCode snippet. No DB migration. Next.js `taxes[]` on shipping lines can stay (harmless); the hook is the authoritative fix.
 
+### REST meta keys (WPCode snippet #39)
+
+Add to the `is_protected_meta` allowlist on **wp.uncuttv.at** when baking coupons:
+
+- `_uncuttv_applied_coupon`
+- `_uncuttv_applied_coupon_discount_eur`
+
 ### Related code (uncuttvweb)
 
 - `src/lib/wc-order-from-payment.ts` — Stripe → WC order

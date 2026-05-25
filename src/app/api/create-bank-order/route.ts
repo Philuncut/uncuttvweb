@@ -9,7 +9,9 @@ import {
   splitGrossForWooRest,
   buildWholesaleNonRcLineItem,
   buildEuB2cNonAtLineItem,
+  buildEuB2cNonAtLineItemWithBakedDiscount,
   buildNonEuB2cLineItem,
+  buildNonEuB2cLineItemWithBakedDiscount,
   splitGrossForNonEu,
   addTaxToNet,
   standardVatFraction,
@@ -29,7 +31,9 @@ import {
 import type { CartMeta } from "@/lib/wc-order-from-payment";
 import {
   allocateDiscountCentsToLines,
+  appendAppliedCouponOrderMeta,
   buildWooCouponLines,
+  shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
 
 interface Body {
@@ -266,9 +270,24 @@ export async function POST(request: Request) {
           return buildWholesaleNonRcLineItem(item, taxCountry);
         }
         if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+          const lineDiscountCents = discountByLine.get(item.id) ?? 0;
+          if (lineDiscountCents > 0) {
+            return buildEuB2cNonAtLineItemWithBakedDiscount(
+              item,
+              taxCountry,
+              lineDiscountCents / 100
+            );
+          }
           return buildEuB2cNonAtLineItem(item, taxCountry);
         }
         if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+          const lineDiscountCents = discountByLine.get(item.id) ?? 0;
+          if (lineDiscountCents > 0) {
+            return buildNonEuB2cLineItemWithBakedDiscount(
+              item,
+              lineDiscountCents / 100
+            );
+          }
           return buildNonEuB2cLineItem(item);
         }
         return {
@@ -287,6 +306,11 @@ export async function POST(request: Request) {
     if (couponLines) {
       orderData.coupon_lines = couponLines;
     }
+
+    const bakeCouponIntoLines =
+      Boolean(normalizedCoupon) &&
+      discountCents > 0 &&
+      shouldBakeCouponIntoLineItems(taxCountry);
 
     if (isReverseCharge) {
       orderData.tax_lines = [];
@@ -392,6 +416,13 @@ export async function POST(request: Request) {
         md.push({ key: "_uncuttv_locale", value: locale });
       }
       orderData.meta_data = md;
+    }
+
+    if (bakeCouponIntoLines && normalizedCoupon) {
+      orderData.meta_data = appendAppliedCouponOrderMeta(
+        orderData.meta_data as Array<{ key: string; value: unknown }> | undefined,
+        { code: normalizedCoupon, discountCents }
+      );
     }
 
     const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {

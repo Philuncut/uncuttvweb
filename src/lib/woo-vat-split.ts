@@ -101,6 +101,63 @@ export function buildEuB2cNonAtLineItem(
   };
 }
 
+/**
+ * EU-B2C (non-AT) with coupon: discount in line_items only (no coupon_lines).
+ * WC auto-applies percent coupons when coupon_lines is set → double deduction.
+ */
+export function buildEuB2cNonAtLineItemWithBakedDiscount(
+  item: { id: number; price: string; qty: number },
+  countryIso2: string,
+  itemDiscountGrossEur: number
+) {
+  const qty = Math.max(1, Number(item.qty) || 1);
+  const unitGross = Math.max(0, parseFloat(item.price) || 0);
+  const lineGross = unitGross * qty;
+  const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
+
+  const { net: subtotalNet, tax: subtotalTax } = splitGrossForWooRest(
+    lineGross,
+    countryIso2
+  );
+  const { net: totalNet, tax: totalTax } = splitGrossForWooRest(
+    lineGrossAfterDiscount,
+    countryIso2
+  );
+
+  return {
+    product_id: Number(item.id),
+    quantity: item.qty,
+    subtotal: subtotalNet,
+    subtotal_tax: subtotalTax,
+    total: totalNet,
+    total_tax: totalTax,
+  };
+}
+
+/** Non-EU B2C with coupon baked into line totals (same WC double-deduction issue). */
+export function buildNonEuB2cLineItemWithBakedDiscount(
+  item: { id: number; price: string; qty: number },
+  itemDiscountGrossEur: number
+) {
+  const qty = Math.max(1, Number(item.qty) || 1);
+  const unitGross = Math.max(0, parsePrice(item.price));
+  const lineGross = unitGross * qty;
+  const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
+
+  const { net: subtotalNet, tax: subtotalTax } = splitGrossForNonEu(lineGross);
+  const { net: totalNet, tax: totalTax } = splitGrossForNonEu(lineGrossAfterDiscount);
+
+  return {
+    product_id: Number(item.id),
+    quantity: item.qty,
+    subtotal: subtotalNet,
+    subtotal_tax: subtotalTax,
+    total: totalNet,
+    total_tax: totalTax,
+    taxes: [] as unknown[],
+  };
+}
+
 /** Drittland B2C: Brutto = Endkundenpreis, keine ausgewiesene USt. (Versand analog). */
 export function splitGrossForNonEu(grossEur: number): { net: string; tax: string } {
   const g = Math.max(0, grossEur);

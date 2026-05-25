@@ -11,7 +11,9 @@ import {
   splitGrossForWooRest,
   buildWholesaleNonRcLineItem,
   buildEuB2cNonAtLineItem,
+  buildEuB2cNonAtLineItemWithBakedDiscount,
   buildNonEuB2cLineItem,
+  buildNonEuB2cLineItemWithBakedDiscount,
   splitGrossForNonEu,
   addTaxToNet,
   buildEuB2cWooShippingTaxes,
@@ -27,7 +29,9 @@ import {
 import { getCartItemsForSync } from "@/lib/cart-items-from-context";
 import {
   allocateDiscountCentsToLines,
+  appendAppliedCouponOrderMeta,
   buildWooCouponLines,
+  shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
 import { wooFetch } from "@/lib/woocommerce";
 
@@ -539,9 +543,24 @@ export async function createWooOrderFromCheckoutSync(
         return buildWholesaleNonRcLineItem(item, taxCountry);
       }
       if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+        const lineDiscountCents = discountByLine.get(item.id) ?? 0;
+        if (lineDiscountCents > 0) {
+          return buildEuB2cNonAtLineItemWithBakedDiscount(
+            item,
+            taxCountry,
+            lineDiscountCents / 100
+          );
+        }
         return buildEuB2cNonAtLineItem(item, taxCountry);
       }
       if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+        const lineDiscountCents = discountByLine.get(item.id) ?? 0;
+        if (lineDiscountCents > 0) {
+          return buildNonEuB2cLineItemWithBakedDiscount(
+            item,
+            lineDiscountCents / 100
+          );
+        }
         return buildNonEuB2cLineItem(item);
       }
       return {
@@ -561,6 +580,11 @@ export async function createWooOrderFromCheckoutSync(
   if (couponLines) {
     orderData.coupon_lines = couponLines;
   }
+
+  const bakeCouponIntoLines =
+    Boolean(normalizedCoupon) &&
+    discountCents > 0 &&
+    shouldBakeCouponIntoLineItems(taxCountry);
 
   if (isReverseCharge) {
     orderData.tax_lines = [];
@@ -642,6 +666,12 @@ export async function createWooOrderFromCheckoutSync(
   mergedMeta = mergeVideoUtmIntoMeta(mergedMeta, videoUtmMeta);
   mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
   mergedMeta = appendThirdCountryExportMeta(mergedMeta, isThirdCountryB2c);
+  if (bakeCouponIntoLines && normalizedCoupon) {
+    mergedMeta = appendAppliedCouponOrderMeta(mergedMeta, {
+      code: normalizedCoupon,
+      discountCents,
+    });
+  }
   if (mergedMeta && mergedMeta.length > 0) {
     orderData.meta_data = mergedMeta;
   }
