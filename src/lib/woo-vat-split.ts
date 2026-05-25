@@ -36,7 +36,10 @@ export function splitGrossForWooRest(
   return { net: net.toFixed(2), tax: tax.toFixed(2) };
 }
 
-/** WC REST shipping `taxes[]` — pins tax so Woo does not recalc from net × rate. */
+/**
+ * WC REST shipping `taxes[]` (EU-B2C). WC still recalculates tax on create;
+ * production fix: WPCode hook `uncuttv_preserve_shipping_tax_from_rest` — see docs/wordpress/.
+ */
 export function buildEuB2cWooShippingTaxes(
   countryIso2: string,
   tax: string
