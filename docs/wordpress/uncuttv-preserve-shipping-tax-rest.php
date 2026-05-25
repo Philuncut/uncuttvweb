@@ -115,7 +115,59 @@ function uncuttv_preserve_shipping_tax($order, $request, $creating) {
     }
 
     if ($any_changes) {
-        $order->calculate_totals(false);
-        $order->save();
+        uncuttv_recalc_order_totals_after_shipping_tax_fix($order);
     }
+}
+
+/**
+ * Re-aggregate tax_lines and set order total from line items (not calculate_totals(false),
+ * which leaves order->total stale while item taxes are correct).
+ *
+ * @param WC_Order $order
+ */
+function uncuttv_recalc_order_totals_after_shipping_tax_fix($order) {
+    if (!is_a($order, 'WC_Order')) {
+        return;
+    }
+
+    if (method_exists($order, 'update_taxes')) {
+        $order->update_taxes();
+    }
+
+    $cart_total     = 0.0;
+    $cart_tax       = 0.0;
+    $shipping_total = 0.0;
+    $shipping_tax   = 0.0;
+
+    foreach ($order->get_items('line_item') as $line) {
+        $cart_total += (float) $line->get_total();
+        $cart_tax   += (float) $line->get_total_tax();
+    }
+
+    foreach ($order->get_items('shipping') as $ship) {
+        $shipping_total += (float) $ship->get_total();
+        $shipping_tax   += (float) $ship->get_total_tax();
+    }
+
+    foreach ($order->get_items('fee') as $fee) {
+        $cart_total += (float) $fee->get_total();
+        $cart_tax   += (float) $fee->get_total_tax();
+    }
+
+    $discount_total = (float) $order->get_discount_total();
+    $discount_tax   = (float) $order->get_discount_tax();
+
+    $new_total = $cart_total + $cart_tax + $shipping_total + $shipping_tax
+        - $discount_total - $discount_tax;
+
+    $order->set_props(
+        array(
+            'total'          => wc_format_decimal($new_total),
+            'shipping_total' => wc_format_decimal($shipping_total),
+            'shipping_tax'   => wc_format_decimal($shipping_tax),
+            'cart_tax'       => wc_format_decimal($cart_tax),
+        )
+    );
+
+    $order->save();
 }

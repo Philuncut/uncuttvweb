@@ -64,6 +64,7 @@ Example **DE 19%**, GLS **€7,80**:
 ### Vorherige Versuche (nicht funktioniert)
 
 - **v1** (`set_total_tax()` / `set_taxes()` direkt): Fatal Error `Call to protected method WC_Order_Item_Shipping::set_total_tax() from global scope` (WC 10.7).
+- **v2** (`calculate_totals(false)` nach `set_props`): Shipping-Tax und Tax-Zeilen korrekt, aber `order->total` blieb 1 ct zu niedrig (z. B. Order #4908: €44,69 statt €44,70). PDF nutzt gespeichertes Total → Versand dort noch €7,79.
 
 ### Rollback
 
