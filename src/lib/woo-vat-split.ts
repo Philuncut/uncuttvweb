@@ -115,22 +115,16 @@ export function buildEuB2cNonAtLineItemWithBakedDiscount(
   const lineGross = unitGross * qty;
   const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
 
-  const { net: subtotalNet, tax: subtotalTax } = splitGrossForWooRest(
-    lineGross,
-    countryIso2
-  );
-  const { net: totalNet, tax: totalTax } = splitGrossForWooRest(
-    lineGrossAfterDiscount,
-    countryIso2
-  );
+  // subtotal must equal total — WC treats subtotal − total as discount_total (double deduction).
+  const { net, tax } = splitGrossForWooRest(lineGrossAfterDiscount, countryIso2);
 
   return {
     product_id: Number(item.id),
     quantity: item.qty,
-    subtotal: subtotalNet,
-    subtotal_tax: subtotalTax,
-    total: totalNet,
-    total_tax: totalTax,
+    subtotal: net,
+    subtotal_tax: tax,
+    total: net,
+    total_tax: tax,
   };
 }
 
@@ -144,16 +138,15 @@ export function buildNonEuB2cLineItemWithBakedDiscount(
   const lineGross = unitGross * qty;
   const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
 
-  const { net: subtotalNet, tax: subtotalTax } = splitGrossForNonEu(lineGross);
-  const { net: totalNet, tax: totalTax } = splitGrossForNonEu(lineGrossAfterDiscount);
+  const { net, tax } = splitGrossForNonEu(lineGrossAfterDiscount);
 
   return {
     product_id: Number(item.id),
     quantity: item.qty,
-    subtotal: subtotalNet,
-    subtotal_tax: subtotalTax,
-    total: totalNet,
-    total_tax: totalTax,
+    subtotal: net,
+    subtotal_tax: tax,
+    total: net,
+    total_tax: tax,
     taxes: [] as unknown[],
   };
 }
