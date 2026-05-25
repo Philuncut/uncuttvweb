@@ -56,6 +56,15 @@ Example **DE 19%**, GLS **€7,80**:
 
 5. **Stripe** sync order (not only bank transfer).
 
+### WC-Version-Kompatibilität
+
+- **WC 10.x:** nutzt `set_props(['total_tax' => ...])`, weil `set_total_tax()` und `set_taxes()` in dieser Version `protected` sind (Fatal Error bei Direct-Calls).
+- Bei WC-Updates auf zukünftige Major-Versionen: prüfen, ob `set_props()` weiterhin als public API existiert (Teil der `WC_Data`-Basisklasse, sollte stabil bleiben).
+
+### Vorherige Versuche (nicht funktioniert)
+
+- **v1** (`set_total_tax()` / `set_taxes()` direkt): Fatal Error `Call to protected method WC_Order_Item_Shipping::set_total_tax() from global scope` (WC 10.7).
+
 ### Rollback
 
 Deactivate the WPCode snippet. No DB migration. Next.js `taxes[]` on shipping lines can stay (harmless); the hook is the authoritative fix.
