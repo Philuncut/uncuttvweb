@@ -13,6 +13,7 @@ import {
   splitGrossForNonEu,
   addTaxToNet,
   standardVatFraction,
+  buildEuB2cWooShippingTaxes,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
 import {
@@ -348,6 +349,11 @@ export async function POST(request: Request) {
           shipTotal = p.net;
           shipTax = p.tax;
           shipTaxes = [];
+        } else if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+          const p = splitGrossForWooRest(rate, taxCountry);
+          shipTotal = p.net;
+          shipTax = p.tax;
+          shipTaxes = buildEuB2cWooShippingTaxes(taxCountry, p.tax);
         } else {
           const p = splitGrossForWooRest(rate, taxCountry);
           shipTotal = p.net;

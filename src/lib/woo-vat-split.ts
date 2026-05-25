@@ -5,7 +5,10 @@
  *
  * EU-Sätze: `src/lib/eu-vat-rates.ts` (getVatRateForCountry). Unbekanntes Land → 20 %.
  */
-import { getVatRateForCountry } from "./eu-vat-rates";
+import {
+  getVatRateForCountry,
+  getWooStandardTaxRateId,
+} from "./eu-vat-rates";
 import { parsePrice } from "./parse-price";
 
 export function standardVatFraction(countryIso2: string): number {
@@ -31,6 +34,16 @@ export function splitGrossForWooRest(
   const tax = round2((g * r) / (1 + r));
   const net = round2(g - tax);
   return { net: net.toFixed(2), tax: tax.toFixed(2) };
+}
+
+/** WC REST shipping `taxes[]` — pins tax so Woo does not recalc from net × rate. */
+export function buildEuB2cWooShippingTaxes(
+  countryIso2: string,
+  tax: string
+): { id: number; total: string; subtotal: string }[] | undefined {
+  const rateId = getWooStandardTaxRateId(countryIso2);
+  if (rateId === undefined) return undefined;
+  return [{ id: rateId, total: tax, subtotal: tax }];
 }
 
 /** Net line/shipping amount → WC REST net + tax strings (wholesale haendler_preis / wholesale shipping are net). */

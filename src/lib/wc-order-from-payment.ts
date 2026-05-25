@@ -14,6 +14,7 @@ import {
   buildNonEuB2cLineItem,
   splitGrossForNonEu,
   addTaxToNet,
+  buildEuB2cWooShippingTaxes,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
 import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
@@ -599,6 +600,11 @@ export async function createWooOrderFromCheckoutSync(
         shipTotal = p.net;
         shipTax = p.tax;
         shipTaxes = [];
+      } else if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
+        const p = splitGrossForWooRest(rate, taxCountry);
+        shipTotal = p.net;
+        shipTax = p.tax;
+        shipTaxes = buildEuB2cWooShippingTaxes(taxCountry, p.tax);
       } else {
         const p = splitGrossForWooRest(rate, taxCountry);
         shipTotal = p.net;
