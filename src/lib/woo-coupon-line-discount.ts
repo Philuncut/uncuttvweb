@@ -1,5 +1,6 @@
 import { getVatRateForCountry, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
+import { splitGrossForWooRest } from "@/lib/woo-vat-split";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
 
 export type WooCouponLine = {
@@ -8,26 +9,16 @@ export type WooCouponLine = {
   discount_tax?: string;
 };
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 /**
  * Split gross coupon discount (€) into WC REST `discount` (net) + `discount_tax`.
- * Uses destination-country VAT % (same basis as splitGrossForWooRest line items).
+ * Same rounding as splitGrossForWooRest (tax first, net = gross − tax).
  */
 export function splitCouponDiscountGrossForWooRest(
   discountGrossEur: number,
   countryIso2: string
 ): { discount: string; discount_tax: string } {
-  const gross = Math.max(0, discountGrossEur);
-  const vatPercent = getVatRateForCountry(countryIso2) ?? 20;
-  const discountTax = round2((gross * vatPercent) / (100 + vatPercent));
-  const discountNet = round2(gross - discountTax);
-  return {
-    discount: discountNet.toFixed(2),
-    discount_tax: discountTax.toFixed(2),
-  };
+  const { net, tax } = splitGrossForWooRest(discountGrossEur, countryIso2);
+  return { discount: net, discount_tax: tax };
 }
 
 /**

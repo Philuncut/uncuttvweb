@@ -14,15 +14,22 @@ export function standardVatFraction(countryIso2: string): number {
   return p / 100;
 }
 
-/** Split a tax-inclusive gross amount into WC REST net `total` + `total_tax` strings (B2C shipping). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Split tax-inclusive gross into WC REST net + tax strings.
+ * Tax is rounded first; net = gross − tax so net + tax always equals gross (no 1¢ drift on PDF).
+ */
 export function splitGrossForWooRest(
   gross: number,
   countryIso2: string
 ): { net: string; tax: string } {
   const g = Math.max(0, gross);
   const r = standardVatFraction(countryIso2);
-  const net = g / (1 + r);
-  const tax = g - net;
+  const tax = round2((g * r) / (1 + r));
+  const net = round2(g - tax);
   return { net: net.toFixed(2), tax: tax.toFixed(2) };
 }
 
