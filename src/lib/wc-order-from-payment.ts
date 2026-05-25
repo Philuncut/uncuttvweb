@@ -26,7 +26,7 @@ import {
 import { getCartItemsForSync } from "@/lib/cart-items-from-context";
 import {
   allocateDiscountCentsToLines,
-  buildLineItemWithCouponDiscount,
+  buildWooCouponLines,
 } from "@/lib/woo-coupon-line-discount";
 import { wooFetch } from "@/lib/woocommerce";
 
@@ -538,24 +538,10 @@ export async function createWooOrderFromCheckoutSync(
         return buildWholesaleNonRcLineItem(item, taxCountry);
       }
       if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-        return lineDiscountEur > 0
-          ? buildLineItemWithCouponDiscount(
-              item,
-              taxCountry,
-              "eu_b2c",
-              lineDiscountEur
-            )
-          : buildEuB2cNonAtLineItem(item, taxCountry);
+        return buildEuB2cNonAtLineItem(item, taxCountry);
       }
       if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-        return lineDiscountEur > 0
-          ? buildLineItemWithCouponDiscount(
-              item,
-              taxCountry,
-              "non_eu",
-              lineDiscountEur
-            )
-          : buildNonEuB2cLineItem(item);
+        return buildNonEuB2cLineItem(item);
       }
       return {
         product_id: Number(item.id),
@@ -565,8 +551,14 @@ export async function createWooOrderFromCheckoutSync(
     transaction_id: transactionId,
   };
 
-  if (normalizedCoupon) {
-    orderData.coupon_lines = [{ code: normalizedCoupon }];
+  const couponLines = buildWooCouponLines(
+    normalizedCoupon,
+    discountCents,
+    taxCountry,
+    { isReverseCharge }
+  );
+  if (couponLines) {
+    orderData.coupon_lines = couponLines;
   }
 
   if (isReverseCharge) {

@@ -1,62 +1,78 @@
+import { getVatRateForCountry, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
-import {
-  buildEuB2cNonAtLineItem,
-  buildNonEuB2cLineItem,
-  splitGrossForNonEu,
-  splitGrossForWooRest,
-} from "@/lib/woo-vat-split";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
 
-/**
- * Reduce explicit WC REST line totals by coupon discount (gross €, subtotal-only),
- * so order total matches Stripe when coupon_lines alone do not recalculate fixed totals.
- */
-type WooExplicitLineItem = {
-  product_id: number;
-  quantity: number;
-  subtotal: string;
-  subtotal_tax: string;
-  total: string;
-  total_tax: string;
-  taxes?: unknown[];
+export type WooCouponLine = {
+  code: string;
+  discount?: string;
+  discount_tax?: string;
 };
 
-export function buildLineItemWithCouponDiscount(
-  item: CartMeta,
-  taxCountry: string,
-  mode: "eu_b2c" | "non_eu",
-  discountGrossEur: number
-): WooExplicitLineItem {
-  const qty = Math.max(1, Number(item.qty) || 1);
-  const unitGross = Math.max(0, parsePrice(item.price));
-  const lineGrossBefore = unitGross * qty;
-  const lineGrossAfter = Math.max(0, lineGrossBefore - discountGrossEur);
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
-  if (mode === "non_eu") {
-    const { net, tax } = splitGrossForNonEu(lineGrossAfter);
-    return {
-      product_id: Number(item.id),
-      quantity: item.qty,
-      subtotal: net,
-      subtotal_tax: tax,
-      total: net,
-      total_tax: tax,
-      taxes: [] as unknown[],
-    };
-  }
-
-  const { net, tax } = splitGrossForWooRest(lineGrossAfter, taxCountry);
+/**
+ * Split gross coupon discount (€) into WC REST `discount` (net) + `discount_tax`.
+ * Uses destination-country VAT % (same basis as splitGrossForWooRest line items).
+ */
+export function splitCouponDiscountGrossForWooRest(
+  discountGrossEur: number,
+  countryIso2: string
+): { discount: string; discount_tax: string } {
+  const gross = Math.max(0, discountGrossEur);
+  const vatPercent = getVatRateForCountry(countryIso2) ?? 20;
+  const discountTax = round2((gross * vatPercent) / (100 + vatPercent));
+  const discountNet = round2(gross - discountTax);
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
-    subtotal: net,
-    subtotal_tax: tax,
-    total: net,
-    total_tax: tax,
+    discount: discountNet.toFixed(2),
+    discount_tax: discountTax.toFixed(2),
   };
 }
 
-/** Spread subtotal-only discount (cents) across cart lines (largest lines first). */
+/**
+ * WooCommerce coupon_lines for REST order create.
+ * EU/Non-EU B2C: explicit net + tax on full line_items (Option B).
+ * Reverse charge: code only — line totals already reduced in the RC builder.
+ */
+export function buildWooCouponLines(
+  code: string | undefined,
+  discountCents: number,
+  taxCountry: string,
+  opts?: { isReverseCharge?: boolean }
+): WooCouponLine[] | undefined {
+  const normalized = code?.trim().toLowerCase();
+  if (!normalized || discountCents <= 0) return undefined;
+
+  if (opts?.isReverseCharge) {
+    return [{ code: normalized }];
+  }
+
+  const gross = discountCents / 100;
+
+  if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
+    return [
+      {
+        code: normalized,
+        discount: gross.toFixed(2),
+        discount_tax: "0.00",
+      },
+    ];
+  }
+
+  const vatPercent = getVatRateForCountry(taxCountry);
+  if (vatPercent !== undefined) {
+    const { discount, discount_tax } = splitCouponDiscountGrossForWooRest(
+      gross,
+      taxCountry
+    );
+    return [{ code: normalized, discount, discount_tax }];
+  }
+
+  return [{ code: normalized }];
+}
+
+/** Spread subtotal-only discount (cents) across cart lines (largest lines first). Used for RC line totals. */
 export function allocateDiscountCentsToLines(
   items: CartMeta[],
   discountCents: number
