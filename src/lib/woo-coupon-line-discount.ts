@@ -108,7 +108,7 @@ export function buildWooCouponLines(
   return [{ code: normalized }];
 }
 
-/** Spread subtotal-only discount (cents) across cart lines (largest lines first). Used for RC line totals. */
+/** Spread coupon discount (cents) across cart lines proportional to line gross. */
 export function allocateDiscountCentsToLines(
   items: CartMeta[],
   discountCents: number
@@ -116,25 +116,30 @@ export function allocateDiscountCentsToLines(
   const byLine = new Map<number, number>();
   if (discountCents <= 0 || items.length === 0) return byLine;
 
-  let remaining = discountCents;
-  const sorted = [...items].sort((a, b) => {
-    const ga =
-      Math.round(parsePrice(a.price) * 100) * Math.max(1, a.qty);
-    const gb =
-      Math.round(parsePrice(b.price) * 100) * Math.max(1, b.qty);
-    return gb - ga;
-  });
+  const lineGrosses = items.map(
+    (item) =>
+      Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty)
+  );
+  const totalGross = lineGrosses.reduce((sum, g) => sum + g, 0);
+  if (totalGross === 0) return byLine;
 
-  for (const item of sorted) {
-    if (remaining <= 0) break;
-    const lineCents =
-      Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty);
-    const take = Math.min(remaining, lineCents);
-    if (take > 0) {
-      byLine.set(item.id, (byLine.get(item.id) ?? 0) + take);
-      remaining -= take;
-    }
+  const allocations = lineGrosses.map((g) =>
+    Math.round((g / totalGross) * discountCents)
+  );
+
+  const allocatedSum = allocations.reduce((s, a) => s + a, 0);
+  const diff = discountCents - allocatedSum;
+  if (diff !== 0) {
+    const maxIdx = lineGrosses.indexOf(Math.max(...lineGrosses));
+    allocations[maxIdx] += diff;
   }
+
+  items.forEach((item, idx) => {
+    const cents = allocations[idx];
+    if (cents > 0) {
+      byLine.set(item.id, cents);
+    }
+  });
 
   return byLine;
 }
