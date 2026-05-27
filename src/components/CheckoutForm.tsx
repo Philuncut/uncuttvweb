@@ -50,6 +50,22 @@ import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
+import {
+  extractPayPalCaptureAmount,
+  extractPayPalCaptureId,
+  extractPayPalOrderId,
+  isValidCheckoutEmail,
+  resolvePayPalCheckoutEmail,
+} from "@/lib/paypal-capture";
+import {
+  reportPayPalOrphanAlert,
+  reportPayPalOrphanAlertBestEffort,
+} from "@/lib/paypal-orphan-alert-client";
+import {
+  clearPayPalRecoveryRecord,
+  markPayPalRecoveryAlertSent,
+  savePayPalRecoveryRecord,
+} from "@/lib/paypal-recovery-storage";
 import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
 import {
   cartHasMixedPreOrder,
@@ -874,6 +890,17 @@ function computePayPalOrderTotalEuro({
   return paypalTotal + shippingAmount;
 }
 
+type CheckoutCustomerSnapshot = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  street: string;
+  zip: string;
+  city: string;
+  country: string;
+  state: string;
+};
+
 function PayPalButtonWrapper({
   totalPrice,
   couponDiscount,
@@ -1241,6 +1268,31 @@ function CheckoutInner() {
   const [company, setCompany] = useState("");
   const [vat, setVat] = useState("");
   const [vatFieldError, setVatFieldError] = useState("");
+
+  const checkoutCustomerRef = useRef<CheckoutCustomerSnapshot>({
+    email: "",
+    firstName: "",
+    lastName: "",
+    street: "",
+    zip: "",
+    city: "",
+    country: "AT",
+    state: "",
+  });
+  checkoutCustomerRef.current = {
+    email,
+    firstName,
+    lastName,
+    street,
+    zip,
+    city,
+    country,
+    state,
+  };
+  const companyRef = useRef(company);
+  companyRef.current = company;
+  const vatRef = useRef(vat);
+  vatRef.current = vat;
 
   useEffect(() => {
     let cancelled = false;
@@ -2548,59 +2600,184 @@ function CheckoutInner() {
   // PayPal handlers
   const handlePayPalApprove = useCallback(
     async (_data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => {
-      const details = await actions.order?.capture();
-      const paypalIntentId = `paypal_${(details as Record<string, unknown>)?.id || "unknown"}`;
+      setProcessing(true);
+      setError("");
+
+      let captured: Record<string, unknown> | undefined;
       try {
-        const paypalSyncBody = {
-          paymentIntentId: paypalIntentId,
-          customer: customerData,
-          items: cartMeta,
-          ...buildCheckoutOrderExtras(company, vat),
-          ...buildCheckoutShippingBody(checkoutShippingForWoo),
-          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
-          ...(isWholesale ? { isWholesale: true } : {}),
-          ...videoUtmRequestField(),
-          ...(!isWholesale
-            ? {
-                couponCode: couponCode ?? "",
-                customerEmail: email.trim() || undefined,
-              }
-            : {}),
-        };
+        captured = (await actions.order?.capture()) as
+          | Record<string, unknown>
+          | undefined;
+      } catch (captureErr) {
+        console.error("[PayPal] capture failed:", captureErr);
+        setError(t("CHECKOUT_PAYPAL_FAILED"));
+        setProcessing(false);
+        return;
+      }
+
+      const paypalOrderId = extractPayPalOrderId(captured);
+      const captureId = extractPayPalCaptureId(captured);
+      const captureAmount = extractPayPalCaptureAmount(captured);
+      const formSnapshot = checkoutCustomerRef.current;
+      const payer = captured?.payer as { email_address?: string } | undefined;
+      const paypalEmail = resolvePayPalCheckoutEmail(
+        captured,
+        formSnapshot.email
+      );
+
+      if (!paypalOrderId) {
+        console.error("[PayPal] Missing order id after capture", captured);
+        setError(t("CHECKOUT_PAYPAL_FAILED"));
+        setProcessing(false);
+        return;
+      }
+
+      if (!isValidCheckoutEmail(paypalEmail)) {
+        console.error("[PayPal] Empty email after capture, blocking sync", {
+          paypalOrderId,
+          captureId,
+          payerEmail: payer?.email_address,
+          formEmail: formSnapshot.email,
+        });
+        await reportPayPalOrphanAlert({
+          reason: "empty_email_pre_sync",
+          paypalOrderId,
+          captureId,
+          amount: captureAmount || undefined,
+          payerEmail: payer?.email_address,
+          formEmail: formSnapshot.email,
+        });
+        setError(
+          formatTranslation("CHECKOUT_PAYPAL_EMAIL_MISSING", language, {
+            orderId: paypalOrderId,
+          })
+        );
+        setProcessing(false);
+        return;
+      }
+
+      const paypalIntentId = `paypal_${paypalOrderId}`;
+      const customer = {
+        email: paypalEmail,
+        firstName: formSnapshot.firstName,
+        lastName: formSnapshot.lastName,
+        street: formSnapshot.street,
+        zip: formSnapshot.zip,
+        city: formSnapshot.city,
+        country: formSnapshot.country,
+        ...(formSnapshot.state.trim()
+          ? { state: formSnapshot.state.trim() }
+          : {}),
+      };
+
+      const paypalSyncBody = {
+        paymentIntentId: paypalIntentId,
+        customer,
+        items: cartMeta,
+        ...buildCheckoutOrderExtras(companyRef.current, vatRef.current),
+        ...buildCheckoutShippingBody(checkoutShippingForWoo),
+        ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+        ...(isWholesale ? { isWholesale: true } : {}),
+        ...videoUtmRequestField(),
+        ...(!isWholesale
+          ? {
+              couponCode: couponCode ?? "",
+              customerEmail: paypalEmail,
+            }
+          : {}),
+      };
+
+      savePayPalRecoveryRecord({
+        paypalOrderId,
+        captureId,
+        captureAmount,
+        savedAt: new Date().toISOString(),
+        syncBody: paypalSyncBody,
+      });
+
+      try {
         const syncRes = await fetch("/api/sync-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(paypalSyncBody),
         });
+
         if (!syncRes.ok) {
-          const errBody = await syncRes.text().catch(() => "");
-          console.error(
-            "[PayPal] sync-order failed:",
-            syncRes.status,
-            errBody
+          let errorData: Record<string, unknown> = {};
+          try {
+            errorData = (await syncRes.json()) as Record<string, unknown>;
+          } catch {
+            errorData = { message: await syncRes.text().catch(() => "") };
+          }
+
+          console.error("[PayPal] sync-order failed:", {
+            status: syncRes.status,
+            error: errorData,
+            paypalOrderId,
+          });
+
+          setError(
+            formatTranslation("CHECKOUT_PAYPAL_SYNC_FAILED", language, {
+              orderId: paypalOrderId,
+            })
           );
+          setProcessing(false);
+          return;
         }
+
+        clearPayPalRecoveryRecord(paypalOrderId);
+        clearCart();
+        clearVideoUtmStorage();
+        router.push(
+          `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
+        );
       } catch (syncErr) {
-        console.error("[PayPal] sync-order error:", syncErr);
+        const syncErrorMessage =
+          syncErr instanceof Error ? syncErr.message : String(syncErr);
+
+        console.error("[PayPal] sync-order network error:", {
+          paypalOrderId,
+          captureId,
+          error: syncErrorMessage,
+        });
+
+        const alertPayload = {
+          reason: "sync_order_network_exception",
+          paypalOrderId,
+          captureId,
+          amount: captureAmount || undefined,
+          email: paypalEmail,
+          syncError: syncErrorMessage,
+          cartItems: cartMeta,
+          rawBody: paypalSyncBody,
+        };
+
+        const beaconSent = reportPayPalOrphanAlertBestEffort(alertPayload, {
+          preferBeacon: true,
+        });
+        if (beaconSent) {
+          markPayPalRecoveryAlertSent(paypalOrderId);
+        }
+
+        setError(
+          formatTranslation("CHECKOUT_PAYPAL_NETWORK_RECOVERY", language, {
+            orderId: paypalOrderId,
+            captureId: captureId || paypalOrderId,
+          })
+        );
+        setProcessing(false);
       }
-      clearCart();
-      clearVideoUtmStorage();
-      router.push(
-        `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
-      );
     },
     [
-      customerData,
       cartMeta,
       clearCart,
       router,
-      company,
-      vat,
       checkoutShippingForWoo,
       wholesaleReverseCharge,
       isWholesale,
       couponCode,
-      email,
+      language,
+      t,
     ]
   );
 

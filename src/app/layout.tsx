@@ -7,6 +7,7 @@ import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
 import IntroLoaderClient from "@/components/IntroLoaderClient";
+import PayPalRecoveryBoot from "@/components/PayPalRecoveryBoot";
 import { INTRO_LOADER_BOOT_SCRIPT } from "@/lib/intro-loader-boot";
 import "./globals.css";
 
@@ -77,6 +78,7 @@ export default function RootLayout({
           <div className="intro-vignette" aria-hidden />
         </div>
         <IntroLoaderClient />
+        <PayPalRecoveryBoot />
         <NavigationProgress />
         <LanguageProvider>
           <CartProvider>

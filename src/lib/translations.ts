@@ -384,6 +384,18 @@ const translations: Record<string, Record<string, string>> = {
     de: "Bitte Firmenname und gültige UID eingeben.",
     en: "Please enter company name and a valid VAT ID.",
   },
+  CHECKOUT_PAYPAL_EMAIL_MISSING: {
+    de: "Deine E-Mail-Adresse konnte nicht ermittelt werden. Die Zahlung wurde durchgeführt — bitte kontaktiere uns sofort unter office@uncuttv.at mit der PayPal-Order-ID: {{orderId}}.",
+    en: "We could not determine your email address. Payment was captured — please contact us immediately at office@uncuttv.at with PayPal order ID: {{orderId}}.",
+  },
+  CHECKOUT_PAYPAL_SYNC_FAILED: {
+    de: "Deine Zahlung wurde erfolgreich durchgeführt, aber wir konnten deine Bestellung nicht automatisch verbuchen. Bitte kontaktiere uns sofort unter office@uncuttv.at mit der PayPal-Order-ID: {{orderId}}. Du wirst nicht doppelt belastet; wir bearbeiten deine Bestellung manuell.",
+    en: "Your payment was successful, but we could not create your order automatically. Please contact us immediately at office@uncuttv.at with PayPal order ID: {{orderId}}. You will not be charged twice; we will process your order manually.",
+  },
+  CHECKOUT_PAYPAL_NETWORK_RECOVERY: {
+    de: "Deine Zahlung bei PayPal war erfolgreich (Transaktions-ID: {{captureId}}), aber die Verbindung zum Shop ist unterbrochen. Deine Bestellung wurde lokal gesichert und wird automatisch erneut versucht. Bitte kontaktiere uns unter office@uncuttv.at mit der PayPal-Order-ID {{orderId}}, falls du keine Bestätigung erhältst. Du wirst nicht doppelt belastet.",
+    en: "Your PayPal payment succeeded (transaction ID: {{captureId}}), but the connection to our shop was interrupted. Your order was saved locally and will be retried automatically. Please contact office@uncuttv.at with PayPal order ID {{orderId}} if you do not receive a confirmation. You will not be charged twice.",
+  },
   CHECKOUT_EXISTING_CUSTOMER_TITLE: {
     de: "BEREITS KUNDE?",
     en: "EXISTING CUSTOMER?",

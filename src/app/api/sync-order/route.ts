@@ -20,6 +20,13 @@ import {
 } from "@/lib/wc-order-from-payment";
 import type { OrderMetaEntry } from "@/lib/video-utm-server";
 import { sendOrderConfirmationWithPdf } from "@/lib/send-order-confirmation-with-pdf";
+import {
+  estimateOrphanAmountEur,
+  paypalOrderIdFromPaymentIntent,
+  recordPayPalOrphanFailure,
+  resolveSyncBodyEmail,
+  validatePayPalSyncEmail,
+} from "@/lib/paypal-orphan-order";
 
 interface SyncBody {
   sessionId?: string;
@@ -99,6 +106,42 @@ async function trySendOrderConfirmation(
   } catch (mailError) {
     console.error("[OrderMail] Failed to send confirmation:", mailError);
   }
+}
+
+async function reportPayPalSyncFailure(
+  body: SyncBody,
+  reason: string,
+  errorDetails: unknown,
+  syncStatus?: number
+): Promise<void> {
+  const paymentIntentId = body.paymentIntentId?.trim() ?? "";
+  if (!paymentIntentId.startsWith("paypal_")) return;
+
+  const paypalOrderId = paypalOrderIdFromPaymentIntent(paymentIntentId);
+  const resolvedEmail = resolveSyncBodyEmail(body);
+  const amountEur = estimateOrphanAmountEur(body);
+
+  await recordPayPalOrphanFailure(
+    {
+      paypal_order_id: paypalOrderId,
+      capture_id: null,
+      amount_eur: amountEur,
+      customer_email: resolvedEmail || null,
+      raw_body: body,
+      error_reason: reason,
+      error_details: errorDetails,
+    },
+    {
+      reason,
+      paypalOrderId,
+      email: resolvedEmail || undefined,
+      formEmail: body.customer?.email,
+      syncStatus,
+      syncError: errorDetails,
+      cartItems: body.items,
+      rawBody: body,
+    }
+  );
 }
 
 export async function POST(request: Request) {
@@ -314,6 +357,43 @@ export async function POST(request: Request) {
       stripeDiscountCents = applied.discountCents;
     }
 
+    if (transactionId.startsWith("paypal_")) {
+      const resolvedEmail = resolveSyncBodyEmail(body);
+      if (!validatePayPalSyncEmail(resolvedEmail)) {
+        console.error(
+          "[sync-order] PayPal flow with invalid email, persisting orphan",
+          {
+            paymentIntentId: transactionId,
+            customerEmail: body.customer?.email ?? "",
+            customerEmailField: body.customerEmail ?? "",
+          }
+        );
+        await reportPayPalSyncFailure(
+          body,
+          "invalid_email_pre_wc",
+          {
+            received_email: body.customer?.email ?? "",
+            customer_email_field: body.customerEmail ?? "",
+            billing_email: body.billing?.email ?? "",
+          },
+          400
+        );
+        return NextResponse.json(
+          {
+            error: "invalid_email",
+            message: "Die E-Mail-Adresse ist ungültig.",
+            orphaned: true,
+          },
+          { status: 400 }
+        );
+      }
+      if (body.customer) {
+        body.customer.email = resolvedEmail;
+      }
+      billing.email = resolvedEmail;
+      shipping.email = resolvedEmail;
+    }
+
     const result = await createWooOrderFromCheckoutSync({
       cartItems,
       billing,
@@ -390,9 +470,18 @@ export async function POST(request: Request) {
     }
 
     const failMsg = err instanceof Error ? err.message : String(err);
+    const resolvedLogEmail = body ? resolveSyncBodyEmail(body) : "";
     console.error(
-      `[sync-order] FAILED pi=${body?.paymentIntentId ?? "?"} msg=${failMsg} itemsInBody=${body?.items?.length ?? 0} email=${body?.customer?.email ?? ""}`
+      `[sync-order] FAILED pi=${body?.paymentIntentId ?? "?"} msg=${failMsg} itemsInBody=${body?.items?.length ?? 0} email=${resolvedLogEmail}`
     );
+
+    if (body?.paymentIntentId?.startsWith("paypal_")) {
+      const reason = failMsg.includes("WooCommerce order creation failed")
+        ? "wc_rejected"
+        : "sync_order_failed";
+      await reportPayPalSyncFailure(body, reason, failMsg, 400);
+    }
+
     return NextResponse.json(
       {
         error: "sync-order-failed",
