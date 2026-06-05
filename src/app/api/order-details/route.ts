@@ -5,73 +5,50 @@ import {
   findWooOrderByPaymentReference,
   mapWooOrderToOrderDetailsPayload,
 } from "@/lib/wc-order-from-payment";
+import { wooFetch } from "@/lib/woocommerce";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("session_id");
   const paymentIntentId = searchParams.get("payment_intent");
+  const wooOrderId = searchParams.get("woo_order_id");
 
   try {
+    if (wooOrderId) {
+      const id = Number(wooOrderId);
+      if (!Number.isFinite(id) || id <= 0) {
+        return NextResponse.json(
+          { error: "invalid_woo_order_id" },
+          { status: 400 }
+        );
+      }
+      const order = await wooFetch(
+        `/orders/${id}`,
+        {},
+        { cache: "no-store" }
+      );
+      return NextResponse.json(mapWooOrderToOrderDetailsPayload(order));
+    }
+
     if (sessionId) {
       const wcPayload = await fetchOrderDetailsPayloadByReference(sessionId);
       if (wcPayload) {
         return NextResponse.json(wcPayload);
       }
 
-      const session = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ["line_items"],
-      });
-
-      const items =
-        session.line_items?.data.map((item) => ({
-          description: item.description,
-          quantity: item.quantity ?? 1,
-          amount: item.amount_total ?? 0,
-        })) ?? [];
-
-      const shippingCents =
-        session.total_details?.amount_shipping != null
-          ? session.total_details.amount_shipping
-          : 0;
-
-      const stripeLineItems = await stripe.checkout.sessions.listLineItems(
-        sessionId,
-        { limit: 100 }
+      return NextResponse.json(
+        {
+          error: "order_not_synced",
+          message:
+            "Bestellung noch nicht synchronisiert. Bitte Seite in ein paar Sekunden neu laden.",
+        },
+        { status: 404 }
       );
-      const line_items = stripeLineItems.data.map((line) => {
-        const qty = Math.max(1, line.quantity ?? 1);
-        const totalCents = line.amount_total ?? 0;
-        const productId =
-          typeof line.price?.product === "string"
-            ? line.price.product
-            : typeof line.price?.product === "object" &&
-                line.price.product &&
-                "id" in line.price.product
-              ? String((line.price.product as { id: string | number }).id)
-              : "0";
-        return {
-          product_id: productId,
-          name: line.description || "Artikel",
-          quantity: qty,
-          price: totalCents / 100 / qty,
-        };
-      });
-
-      return NextResponse.json({
-        customerName: session.customer_details?.name || "",
-        customerEmail: session.customer_details?.email || "",
-        total: ((session.amount_total ?? 0) / 100).toFixed(2),
-        currency: session.currency || "eur",
-        items,
-        shippingCents,
-        isWholesaleShipping: false,
-        line_items,
-      });
     }
 
     if (paymentIntentId?.startsWith("paypal_")) {
       const wooOrder = await findWooOrderByPaymentReference(paymentIntentId);
-      if (!wooOrder) {
+      if (!wooOrder?.id) {
         return NextResponse.json(
           {
             error: "order_not_synced",
@@ -81,7 +58,12 @@ export async function GET(request: Request) {
           { status: 404 }
         );
       }
-      return NextResponse.json(mapWooOrderToOrderDetailsPayload(wooOrder));
+      const fullOrder = await wooFetch(
+        `/orders/${wooOrder.id}`,
+        {},
+        { cache: "no-store" }
+      );
+      return NextResponse.json(mapWooOrderToOrderDetailsPayload(fullOrder));
     }
 
     if (paymentIntentId) {

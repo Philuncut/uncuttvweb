@@ -26,6 +26,7 @@ interface OrderLineItem {
 }
 
 interface OrderDetails {
+  woo_order_id?: string;
   customerName: string;
   customerEmail: string;
   total: string;
@@ -40,13 +41,59 @@ interface OrderDetails {
   line_items?: OrderLineItem[];
 }
 
+const ORDER_SYNC_MAX_ATTEMPTS = 4;
+const ORDER_SYNC_DELAY_MS = 1500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchOrderDetailsWithRetry(
+  url: string
+): Promise<{ data: OrderDetails | null; hardError?: string }> {
+  for (let attempt = 0; attempt < ORDER_SYNC_MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) {
+      return { data: (await res.json()) as OrderDetails };
+    }
+
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+    };
+
+    if (res.status === 400 && body.error === "payment_not_complete") {
+      return {
+        data: null,
+        hardError:
+          body.message ??
+          "Zahlung nicht abgeschlossen.",
+      };
+    }
+
+    const retryable =
+      res.status === 404 &&
+      (body.error === "order_not_synced" || !body.error);
+
+    if (retryable && attempt < ORDER_SYNC_MAX_ATTEMPTS - 1) {
+      await delay(ORDER_SYNC_DELAY_MS);
+      continue;
+    }
+
+    return { data: null };
+  }
+
+  return { data: null };
+}
+
 export default function OrderSuccess() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
   const paymentIntentId = searchParams.get("payment_intent");
   const redirectStatus = searchParams.get("redirect_status");
   const method = searchParams.get("method");
-  const bankOrder = searchParams.get("order");
+  const bankOrderId =
+    searchParams.get("order_id") ?? searchParams.get("order");
 
   const { clearCart } = useCart();
   const { language } = useLanguage();
@@ -54,15 +101,40 @@ export default function OrderSuccess() {
   const [order, setOrder] = useState<OrderDetails | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [syncPending, setSyncPending] = useState(false);
   const [isWholesaleBank, setIsWholesaleBank] = useState(false);
   const syncedRef = useRef(false);
+
+  const fireBrowserPurchase = (data: OrderDetails) => {
+    const wooId = data.woo_order_id;
+    const lineItems = data.line_items ?? [];
+    if (!wooId || lineItems.length === 0) return;
+
+    const storageKey = `meta_purchase_${wooId}`;
+    try {
+      if (sessionStorage.getItem(storageKey)) return;
+      sessionStorage.setItem(storageKey, "1");
+    } catch {
+      // private mode / blocked storage
+    }
+
+    trackPurchase(
+      wooId,
+      parsePrice(data.total),
+      lineItems.map((i) => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        price: i.price,
+      }))
+    );
+  };
 
   const bankPaymentText = isWholesaleBank
     ? t("BANK_TEXT_WHOLESALE")
     : t("BANK_TEXT_B2C");
 
   const bankThanksText = formatTranslation("ORDER_SUCCESS_BANK_THANKS", language, {
-    order: bankOrder ? ` #${bankOrder}` : "",
+    order: bankOrderId ? ` #${bankOrderId}` : "",
   });
 
   const hasPayment = !!(
@@ -91,7 +163,7 @@ export default function OrderSuccess() {
 
     async function load() {
       try {
-        // Bank transfer — no Stripe details to fetch
+        // Bank transfer — Woo order is source of truth
         if (method === "bank") {
           clearCart();
           clearVideoUtmStorage();
@@ -110,6 +182,14 @@ export default function OrderSuccess() {
             }
           }
           setIsWholesaleBank(wholesale);
+
+          if (bankOrderId) {
+            const { data } = await fetchOrderDetailsWithRetry(
+              `/api/order-details?woo_order_id=${encodeURIComponent(bankOrderId)}`
+            );
+            if (data) setOrder(data);
+          }
+
           setLoading(false);
           return;
         }
@@ -167,14 +247,14 @@ export default function OrderSuccess() {
           ? `session_id=${sessionId}`
           : `payment_intent=${paymentIntentId}`;
 
-        const res = await fetch(`/api/order-details?${param}`);
-        if (res.ok) {
-          const data = (await res.json()) as OrderDetails;
-          trackPurchase(
-            sessionId ?? paymentIntentId ?? `order-${Date.now()}`,
-            parsePrice(data.total),
-            data.line_items?.map((i) => i.product_id) ?? []
-          );
+        const { data, hardError } = await fetchOrderDetailsWithRetry(
+          `/api/order-details?${param}`
+        );
+
+        if (hardError) {
+          setError(hardError);
+        } else if (data) {
+          fireBrowserPurchase(data);
           let merged = data;
           const stored = paymentIntentId
             ? readCheckoutSyncPayload(paymentIntentId)
@@ -210,13 +290,8 @@ export default function OrderSuccess() {
             }
           }
           setOrder(merged);
-        } else if (paymentIntentId?.startsWith("paypal_")) {
-          const errBody = (await res.json().catch(() => ({}))) as {
-            message?: string;
-          };
-          if (errBody.message) {
-            setError(errBody.message);
-          }
+        } else {
+          setSyncPending(true);
         }
 
         // Legacy Stripe Checkout Session → Woo sync
@@ -339,6 +414,39 @@ export default function OrderSuccess() {
           className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
         >
           {t("ORDER_SUCCESS_RETRY")}
+        </Link>
+      </div>
+    );
+  }
+
+  if (syncPending && method !== "bank") {
+    return (
+      <div className="text-center">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center border-2 border-yellow-500">
+          <svg
+            className="h-10 w-10 text-yellow-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="square"
+              d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z"
+            />
+          </svg>
+        </div>
+        <h1 className="mt-6 text-2xl font-black tracking-[0.15em] text-white sm:text-3xl">
+          {t("ORDER_SUCCESS_SYNC_PENDING_TITLE")}
+        </h1>
+        <p className="mt-3 text-sm text-white/50">
+          {t("ORDER_SUCCESS_SYNC_PENDING_BODY")}
+        </p>
+        <Link
+          href="/shop"
+          className="mt-8 inline-block bg-[#c0392b] px-8 py-3 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_20px_rgba(192,57,43,0.5)]"
+        >
+          {t("ORDER_SUCCESS_BACK_TO_SHOP")}
         </Link>
       </div>
     );

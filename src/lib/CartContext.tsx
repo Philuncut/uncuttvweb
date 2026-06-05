@@ -269,6 +269,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [drawerOpen]);
 
   const addToCart = useCallback((product: WooProduct) => {
+    const unitPrice = parsePrice(product.price || "0");
     setItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
@@ -284,7 +285,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     void trackAddToCart(
       product.id.toString(),
       product.name,
-      parsePrice(product.price || "0"),
+      unitPrice,
       1
     );
   }, []);

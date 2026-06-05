@@ -1,15 +1,26 @@
 import crypto from "crypto";
+import { normalizePhoneForMeta } from "@/lib/meta-capi-phone";
 
 export interface CapiUserData {
   email?: string;
   phone?: string;
   firstName?: string;
   lastName?: string;
+  city?: string;
+  zip?: string;
+  state?: string;
+  country?: string;
   externalId?: string;
   clientIpAddress?: string;
   clientUserAgent?: string;
   fbc?: string;
   fbp?: string;
+}
+
+export interface CapiContentItem {
+  id: string;
+  quantity: number;
+  item_price: number;
 }
 
 export interface CapiCustomData {
@@ -18,6 +29,7 @@ export interface CapiCustomData {
   content_ids?: string[];
   content_name?: string;
   content_type?: string;
+  contents?: CapiContentItem[];
   num_items?: number;
   order_id?: string;
   search_string?: string;
@@ -42,9 +54,16 @@ function sha256(value: string): string {
 function hashUserData(user: CapiUserData): Record<string, unknown> {
   const hashed: Record<string, unknown> = {};
   if (user.email) hashed.em = sha256(user.email);
-  if (user.phone) hashed.ph = sha256(user.phone.replace(/[^0-9]/g, ""));
+  if (user.phone) {
+    const normalized = normalizePhoneForMeta(user.phone, user.country);
+    if (normalized) hashed.ph = sha256(normalized);
+  }
   if (user.firstName) hashed.fn = sha256(user.firstName);
   if (user.lastName) hashed.ln = sha256(user.lastName);
+  if (user.city) hashed.ct = sha256(user.city);
+  if (user.zip) hashed.zp = sha256(user.zip);
+  if (user.state) hashed.st = sha256(user.state);
+  if (user.country) hashed.country = sha256(user.country.toLowerCase());
   if (user.externalId) hashed.external_id = sha256(user.externalId);
   if (user.clientIpAddress) hashed.client_ip_address = user.clientIpAddress;
   if (user.clientUserAgent) hashed.client_user_agent = user.clientUserAgent;

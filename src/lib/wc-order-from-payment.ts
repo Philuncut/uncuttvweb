@@ -303,7 +303,13 @@ export type WooOrderForDetails = WooOrderRow & {
     first_name?: string;
     last_name?: string;
     email?: string;
+    phone?: string;
+    city?: string;
+    postcode?: string;
+    country?: string;
+    state?: string;
   };
+  customer_id?: number;
   shipping?: { country?: string };
   line_items?: Array<{
     product_id?: number;
@@ -320,6 +326,7 @@ export type WooOrderForDetails = WooOrderRow & {
 };
 
 export type OrderDetailsApiPayload = {
+  woo_order_id: string;
   customerName: string;
   customerEmail: string;
   total: string;
@@ -379,6 +386,7 @@ export function mapWooOrderToOrderDetailsPayload(
   const shipCountry = asString(order.shipping?.country).toUpperCase();
 
   return {
+    woo_order_id: String(order.id),
     customerName,
     customerEmail: asString(billing.email),
     total: asString(order.total) || "0.00",

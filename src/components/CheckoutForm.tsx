@@ -26,7 +26,7 @@ import {
 } from "@paypal/react-paypal-js";
 import { useCart } from "@/lib/CartContext";
 import { useRouter } from "next/navigation";
-import { trackInitiateCheckout } from "@/lib/meta-pixel";
+import { createMetaEventId, trackInitiateCheckout } from "@/lib/meta-pixel";
 import { validateEuVatFormat } from "@/lib/vat-format";
 import { isReverseChargeEligible } from "@/lib/reverse-charge";
 import { parsePrice, parseFixedDiscountEuros } from "@/lib/parse-price";
@@ -1236,16 +1236,7 @@ function CheckoutInner() {
   const t = useMemo(() => createT(language), [language]);
 
   const initiateCheckoutTracked = useRef(false);
-  useEffect(() => {
-    if (initiateCheckoutTracked.current) return;
-    if (items.length === 0) return;
-    initiateCheckoutTracked.current = true;
-    void trackInitiateCheckout(
-      totalPrice,
-      items.reduce((sum, i) => sum + i.quantity, 0),
-      items.map((i) => i.product.id.toString())
-    );
-  }, [items, totalPrice]);
+  const initiateCheckoutEventIdRef = useRef(createMetaEventId());
 
   const [email, setEmail] = useState("");
   const [newsletter, setNewsletter] = useState(false);
@@ -1268,6 +1259,61 @@ function CheckoutInner() {
   const [company, setCompany] = useState("");
   const [vat, setVat] = useState("");
   const [vatFieldError, setVatFieldError] = useState("");
+
+  useEffect(() => {
+    if (initiateCheckoutTracked.current || items.length === 0) return;
+
+    const lineItems = items.map((i) => ({
+      product_id: i.product.id.toString(),
+      quantity: i.quantity,
+      price: parsePrice(i.product.price || "0"),
+    }));
+    const eventId = initiateCheckoutEventIdRef.current;
+
+    const fireInitiateCheckout = (withUserData: boolean) => {
+      if (initiateCheckoutTracked.current) return;
+      initiateCheckoutTracked.current = true;
+      void trackInitiateCheckout(
+        totalPrice,
+        lineItems,
+        withUserData
+          ? {
+              email: email.trim(),
+              firstName: firstName.trim(),
+              lastName: lastName.trim(),
+              city: city.trim() || undefined,
+              zip: zip.trim() || undefined,
+              state: state.trim() || undefined,
+              country: country.trim().toUpperCase() || undefined,
+            }
+          : undefined,
+        eventId
+      );
+    };
+
+    const hasBilling =
+      email.trim().length > 0 &&
+      firstName.trim().length > 0 &&
+      lastName.trim().length > 0;
+
+    if (hasBilling) {
+      fireInitiateCheckout(true);
+      return;
+    }
+
+    const fallback = window.setTimeout(() => fireInitiateCheckout(false), 8000);
+    return () => window.clearTimeout(fallback);
+  }, [
+    items,
+    totalPrice,
+    email,
+    firstName,
+    lastName,
+    city,
+    zip,
+    state,
+    country,
+  ]);
 
   const checkoutCustomerRef = useRef<CheckoutCustomerSnapshot>({
     email: "",
@@ -2465,8 +2511,8 @@ function CheckoutInner() {
             clearCart();
             clearVideoUtmStorage();
             router.push(
-              "/bestellung/erfolg?method=bank&order=" +
-                data.orderNumber +
+              "/bestellung/erfolg?method=bank&order_id=" +
+                data.orderId +
                 (isWholesale ? "&wholesale=1" : "")
             );
           } else {

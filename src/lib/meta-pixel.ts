@@ -1,5 +1,12 @@
 "use client";
 
+import type { CapiUserData } from "@/lib/meta-capi";
+import {
+  buildMetaContents,
+  totalMetaNumItems,
+  type MetaLineItem,
+} from "@/lib/meta-capi-contents";
+
 type FbqEvent =
   | "PageView" | "ViewContent" | "AddToCart"
   | "InitiateCheckout" | "Purchase" | "Search" | "Lead";
@@ -8,9 +15,11 @@ interface FbqParams {
   content_name?: string;
   content_ids?: string[];
   content_type?: "product" | "product_group";
+  contents?: Array<{ id: string; quantity: number; item_price: number }>;
   value?: number;
   currency?: string;
   num_items?: number;
+  order_id?: string;
   search_string?: string;
   event_id?: string;
 }
@@ -29,6 +38,10 @@ function generateEventId(): string {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function createMetaEventId(): string {
+  return generateEventId();
 }
 
 export function fbqTrack(event: FbqEvent, params?: FbqParams): string {
@@ -66,21 +79,29 @@ export function fbqTrack(event: FbqEvent, params?: FbqParams): string {
   return eventId;
 }
 
-export async function fbqTrackDual(event: FbqEvent, params?: FbqParams): Promise<string> {
+export async function fbqTrackDual(
+  event: FbqEvent,
+  params?: FbqParams,
+  userData?: CapiUserData
+): Promise<string> {
   const eventId = fbqTrack(event, params);
 
   if (!hasConsent()) return eventId;
 
+  const { event_id: _eventId, ...customData } = params ?? {};
+
   fetch("/api/meta-capi/event", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
     body: JSON.stringify({
       event_name: event,
       event_id: eventId,
       event_source_url: window.location.href,
-      custom_data: params,
+      custom_data: customData,
+      user_data: userData,
     }),
-  }).catch(err => console.error("[CAPI] dual-track failed:", err));
+  }).catch((err) => console.error("[CAPI] dual-track failed:", err));
 
   return eventId;
 }
@@ -92,36 +113,65 @@ export function trackViewContent(productId: string, name: string, price: number)
     content_type: "product",
     value: price,
     currency: "EUR",
+    contents: [{ id: productId, quantity: 1, item_price: price }],
   });
 }
 
-export function trackAddToCart(productId: string, name: string, price: number, qty: number = 1) {
+export function trackAddToCart(
+  productId: string,
+  name: string,
+  price: number,
+  qty: number = 1
+) {
+  const quantity = Math.max(1, qty);
   return fbqTrackDual("AddToCart", {
     content_ids: [productId],
     content_name: name,
     content_type: "product",
-    value: price * qty,
+    value: price * quantity,
     currency: "EUR",
-    num_items: qty,
+    num_items: quantity,
+    contents: [{ id: productId, quantity, item_price: price }],
   });
 }
 
-export function trackInitiateCheckout(totalValue: number, numItems: number, productIds: string[]) {
-  return fbqTrackDual("InitiateCheckout", {
-    content_ids: productIds,
-    content_type: "product",
-    value: totalValue,
-    currency: "EUR",
-    num_items: numItems,
-  });
+export function trackInitiateCheckout(
+  totalValue: number,
+  lineItems: MetaLineItem[],
+  userData?: CapiUserData,
+  eventId?: string
+) {
+  const contents = buildMetaContents(lineItems);
+  return fbqTrackDual(
+    "InitiateCheckout",
+    {
+      content_ids: lineItems.map((li) => li.product_id),
+      content_type: "product",
+      value: totalValue,
+      currency: "EUR",
+      num_items: totalMetaNumItems(lineItems),
+      contents,
+      event_id: eventId,
+    },
+    userData
+  );
 }
 
-export function trackPurchase(orderId: string, totalValue: number, productIds: string[]) {
+export function trackPurchase(
+  wooOrderId: string | number,
+  totalValue: number,
+  lineItems: MetaLineItem[]
+) {
+  const orderId = String(wooOrderId);
+  const contents = buildMetaContents(lineItems);
   return fbqTrack("Purchase", {
-    content_ids: productIds,
+    content_ids: lineItems.map((li) => li.product_id),
     content_type: "product",
     value: totalValue,
     currency: "EUR",
+    num_items: totalMetaNumItems(lineItems),
+    contents,
+    order_id: orderId,
     event_id: orderId,
   });
 }

@@ -300,6 +300,14 @@ const translations: Record<string, Record<string, string>> = {
     de: "Bestellung konnte nicht geladen werden.",
     en: "Order could not be loaded.",
   },
+  ORDER_SUCCESS_SYNC_PENDING_TITLE: {
+    de: "BESTELLUNG WIRD VERARBEITET",
+    en: "ORDER BEING PROCESSED",
+  },
+  ORDER_SUCCESS_SYNC_PENDING_BODY: {
+    de: "Deine Zahlung ist eingegangen. Die Bestelldetails werden gerade synchronisiert — du erhältst in Kürze eine Bestätigungs-E-Mail.",
+    en: "Your payment was received. Order details are syncing — you will receive a confirmation email shortly.",
+  },
   ORDER_SUCCESS_RETRY: { de: "ERNEUT VERSUCHEN", en: "TRY AGAIN" },
   ORDER_SUCCESS_BACK_TO_SHOP: { de: "ZURÜCK ZUM SHOP", en: "BACK TO SHOP" },
   ORDER_SUCCESS_BANK_TITLE: { de: "BESTELLUNG EINGEGANGEN", en: "ORDER RECEIVED" },
