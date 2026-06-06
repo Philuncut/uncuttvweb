@@ -34,22 +34,56 @@ export function isAllowedMetaCapiEventOrigin(req: Request): boolean {
   return false;
 }
 
-/** WooCommerce webhook HMAC (x-wc-webhook-signature, base64). */
+/** WooCommerce stores secrets with htmlspecialchars; HMAC uses decoded value. */
+function decodeWooWebhookSecret(secret: string): string {
+  return secret
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+/**
+ * WooCommerce deliver_ping(): body `webhook_id={id}`, no signature header.
+ * Must return 2xx so Woo marks the webhook active.
+ */
+export function isWooWebhookConnectivityPing(
+  rawBody: string,
+  signatureHeader: string | null,
+  topicHeader: string | null
+): boolean {
+  const topic = (topicHeader ?? "").trim().toLowerCase();
+  if (topic === "action.ping") return true;
+
+  const body = rawBody.trim();
+  return !signatureHeader?.trim() && /^webhook_id=\d+$/.test(body);
+}
+
+/**
+ * WooCommerce: Base64( HMAC-SHA256( rawBody, secret ) ) in x-wc-webhook-signature.
+ * Body must be the exact raw request text (never re-stringified JSON).
+ */
 export function verifyWooWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
   secret: string
 ): boolean {
   if (!signatureHeader?.trim() || !secret.trim()) return false;
-  const expected = crypto
-    .createHmac("sha256", secret.trim())
+
+  const expectedMac = crypto
+    .createHmac("sha256", decodeWooWebhookSecret(secret.trim()))
     .update(rawBody, "utf8")
-    .digest("base64");
+    .digest();
+
+  let receivedMac: Buffer;
   try {
-    const a = Buffer.from(expected);
-    const b = Buffer.from(signatureHeader.trim());
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
+    receivedMac = Buffer.from(signatureHeader.trim(), "base64");
   } catch {
     return false;
   }
+
+  if (receivedMac.length !== expectedMac.length) return false;
+  return crypto.timingSafeEqual(receivedMac, expectedMac);
 }

@@ -4,6 +4,7 @@ import { fetchOrderDetailsPayloadByReference } from "@/lib/order-lookup";
 import {
   findWooOrderByPaymentReference,
   mapWooOrderToOrderDetailsPayload,
+  type WooOrderForDetails,
 } from "@/lib/wc-order-from-payment";
 import { wooFetch } from "@/lib/woocommerce";
 
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
           { status: 400 }
         );
       }
-      const order = await wooFetch(
+      const order = await wooFetch<WooOrderForDetails>(
         `/orders/${id}`,
         {},
         { cache: "no-store" }
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
           { status: 404 }
         );
       }
-      const fullOrder = await wooFetch(
+      const fullOrder = await wooFetch<WooOrderForDetails>(
         `/orders/${wooOrder.id}`,
         {},
         { cache: "no-store" }

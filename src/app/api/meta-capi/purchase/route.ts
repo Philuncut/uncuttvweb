@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyWooWebhookSignature } from "@/lib/meta-capi-auth";
+import {
+  isWooWebhookConnectivityPing,
+  verifyWooWebhookSignature,
+} from "@/lib/meta-capi-auth";
 import {
   fetchWooOrderForCapiPurchase,
   isEligibleCapiPurchaseStatus,
@@ -29,6 +32,16 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.text();
   const signature = req.headers.get("x-wc-webhook-signature");
+  const topic = req.headers.get("x-wc-webhook-topic");
+
+  if (isWooWebhookConnectivityPing(rawBody, signature, topic)) {
+    return NextResponse.json({ ok: true, ping: true });
+  }
+
+  if (!signature?.trim()) {
+    console.warn("[CAPI purchase] missing x-wc-webhook-signature");
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
 
   if (!verifyWooWebhookSignature(rawBody, signature, secret)) {
     console.warn("[CAPI purchase] invalid webhook signature");
