@@ -58,6 +58,13 @@ export type VideoUtmCheckoutPayload = {
   videoId: string;
 };
 
+export type MarketingUtmCheckoutPayload = {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  content?: string;
+};
+
 export type StoredCheckoutCartItem = {
   id: number;
   name: string;
@@ -72,6 +79,7 @@ export type StoredCheckoutSyncPayload = CheckoutCustomerPayload &
     isReverseCharge?: boolean;
     isWholesale?: boolean;
     videoUtm?: VideoUtmCheckoutPayload;
+    marketingUtm?: MarketingUtmCheckoutPayload;
   };
 
 const PAYLOAD_PREFIX = "checkout_pi_payload_";

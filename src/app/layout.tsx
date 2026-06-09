@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import MarketingUtmCapture from "@/components/MarketingUtmCapture";
 import { CartProvider } from "@/lib/CartContext";
 import { LanguageProvider } from "@/lib/LanguageContext";
 import NavigationProgress from "@/components/NavigationProgress";
@@ -82,6 +84,9 @@ export default function RootLayout({
         <NavigationProgress />
         <LanguageProvider>
           <CartProvider>
+            <Suspense fallback={null}>
+              <MarketingUtmCapture />
+            </Suspense>
             {children}
             <CookieConsent />
             <MetaPixel />

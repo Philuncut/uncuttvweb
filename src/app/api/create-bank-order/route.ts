@@ -24,6 +24,11 @@ import {
 } from "@/lib/notify-wholesale-order";
 import { sendOrderConfirmationWithPdf } from "@/lib/send-order-confirmation-with-pdf";
 import {
+  buildMarketingUtmOrderMeta,
+  mergeMarketingUtmIntoMeta,
+  type MarketingUtmInput,
+} from "@/lib/marketing-utm-server";
+import {
   buildVideoUtmOrderMeta,
   mergeVideoUtmIntoMeta,
   type VideoUtmInput,
@@ -62,6 +67,7 @@ interface Body {
   isWholesale?: boolean;
   locale?: "de" | "en";
   videoUtm?: VideoUtmInput;
+  marketingUtm?: MarketingUtmInput;
   couponCode?: string;
   customerEmail?: string;
 }
@@ -220,11 +226,15 @@ export async function POST(request: Request) {
         : new Map<number, number>();
 
     const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
-    const meta_data = mergeVideoUtmIntoMeta(
+    let meta_data = mergeVideoUtmIntoMeta(
       bodyMeta && bodyMeta.length > 0
         ? [...bodyMeta].filter((e) => e.key !== "_eu_vat_guard_order_vat_exempt")
         : undefined,
       videoUtmMeta
+    );
+    meta_data = mergeMarketingUtmIntoMeta(
+      meta_data,
+      buildMarketingUtmOrderMeta(body.marketingUtm)
     );
 
     const orderData: Record<string, unknown> = {
