@@ -99,40 +99,62 @@ export default function MobileBanner() {
             justifyContent: "center",
           }}
         >
-          {promo.items.map((item, i) => (
-            <div key={i} style={{ textAlign: "center" }}>
-              <Link
-                href={promo.link}
-                className="block cursor-pointer transition-opacity hover:opacity-90"
-              >
-                {item.image ? (
-                  <img
-                    src={item.image}
-                    alt={item.label}
-                    style={{
-                      width: "40px",
-                      height: "56px",
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: "40px",
-                      height: "56px",
-                      backgroundColor: "#1a1a1a",
-                    }}
-                  />
-                )}
-              </Link>
+          {promo.items.map((item, i) => {
+            const thumb = item.image ? (
+              <img
+                src={item.image}
+                alt={item.label}
+                style={{
+                  width: "40px",
+                  height: "56px",
+                  objectFit: "cover",
+                  display: "block",
+                  margin: "0 auto",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: "40px",
+                  height: "56px",
+                  backgroundColor: "#1a1a1a",
+                  margin: "0 auto",
+                }}
+              />
+            );
+            const caption = (
               <div
                 style={{ color: "#888", fontSize: "10px", marginTop: "4px" }}
               >
                 {item.label}
               </div>
-            </div>
-          ))}
+            );
+            const itemStyle = {
+              display: "inline-block" as const,
+              textAlign: "center" as const,
+              transition: "opacity 0.15s ease",
+            };
+
+            return (
+              <div key={i} style={{ textAlign: "center" }}>
+                {promo.link ? (
+                  <Link
+                    href={promo.link}
+                    className="cursor-pointer hover:opacity-90"
+                    style={itemStyle}
+                  >
+                    {thumb}
+                    {caption}
+                  </Link>
+                ) : (
+                  <div style={itemStyle}>
+                    {thumb}
+                    {caption}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -137,12 +137,9 @@ export default function ShopHero() {
             </p>
             {promo.items && promo.items.length > 0 && (
               <div className="mt-3 flex gap-3">
-                {promo.items.map((item: PromoItem, i: number) => (
-                  <div key={i} className="text-center">
-                    <Link
-                      href={promo.link}
-                      className="mx-auto block h-[77px] w-[55px] cursor-pointer overflow-hidden bg-[#1a1a1a] transition-opacity hover:opacity-90"
-                    >
+                {promo.items.map((item: PromoItem, i: number) => {
+                  const thumb = (
+                    <div className="mx-auto h-[77px] w-[55px] overflow-hidden bg-[#1a1a1a]">
                       {item.image ? (
                         <img
                           src={item.image}
@@ -154,10 +151,33 @@ export default function ShopHero() {
                           {item.label}
                         </div>
                       )}
-                    </Link>
+                    </div>
+                  );
+                  const caption = (
                     <p className="mt-1 text-[10px] text-[#888]">{item.label}</p>
-                  </div>
-                ))}
+                  );
+                  const itemClass =
+                    "mx-auto inline-block text-center transition-opacity";
+
+                  return (
+                    <div key={i} className="text-center">
+                      {promo.link ? (
+                        <Link
+                          href={promo.link}
+                          className={`${itemClass} cursor-pointer hover:opacity-90`}
+                        >
+                          {thumb}
+                          {caption}
+                        </Link>
+                      ) : (
+                        <div className={itemClass}>
+                          {thumb}
+                          {caption}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             <Link
