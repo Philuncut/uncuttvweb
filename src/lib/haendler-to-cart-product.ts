@@ -50,6 +50,7 @@ function dashboardRowToCartProduct(row: HaendlerDashboardProductRow): WooProduct
     id: row.id,
     name: row.name,
     slug: row.slug,
+    status: "publish",
     price: resolveHaendlerLinePrice(row.haendler_preis, row.price),
     regular_price: row.regular_price,
     sale_price: row.sale_price,

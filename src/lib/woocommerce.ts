@@ -21,6 +21,22 @@ export type WooFetchOptions = {
 
 const DEFAULT_REVALIDATE = 60;
 
+/** Bare collection only — not `/products/categories` or `/products/{id}`. */
+function isProductsCollectionEndpoint(endpoint: string): boolean {
+  const path = endpoint.replace(/\?.*$/, "").replace(/\/+$/, "") || "/";
+  return path === "/products";
+}
+
+/** Authenticated WC requests omitting `status` return all post statuses; storefront reads default to publish. */
+function withProductsCollectionDefaults(
+  endpoint: string,
+  params: Record<string, string>
+): Record<string, string> {
+  if (!isProductsCollectionEndpoint(endpoint)) return params;
+  if ("status" in params) return params;
+  return { ...params, status: "publish" };
+}
+
 function buildFetchInit(options?: WooFetchOptions): RequestInit {
   if (options?.cache === "no-store") {
     return { headers: authHeaders, cache: "no-store" };
@@ -37,8 +53,9 @@ export async function wooFetch<T = unknown>(
   params: Record<string, string> = {},
   options?: WooFetchOptions
 ): Promise<T> {
+  const resolvedParams = withProductsCollectionDefaults(endpoint, params);
   const url = new URL(`${baseUrl}${endpoint}`);
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(resolvedParams)) {
     url.searchParams.set(key, value);
   }
 
@@ -62,8 +79,9 @@ export async function wooFetchAll<T>(
   params: Record<string, string> = {},
   options?: WooFetchOptions
 ): Promise<T[]> {
+  const resolvedParams = withProductsCollectionDefaults(endpoint, params);
   const firstUrl = new URL(`${baseUrl}${endpoint}`);
-  for (const [key, value] of Object.entries(params)) {
+  for (const [key, value] of Object.entries(resolvedParams)) {
     firstUrl.searchParams.set(key, value);
   }
   if (!firstUrl.searchParams.has("per_page")) {

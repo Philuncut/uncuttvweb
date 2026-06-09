@@ -88,6 +88,7 @@ function parseWooProduct(value: unknown): WooProduct | null {
     id,
     name,
     slug: typeof value.slug === "string" ? value.slug : "",
+    status: typeof value.status === "string" ? value.status : "publish",
     price,
     regular_price,
     sale_price,

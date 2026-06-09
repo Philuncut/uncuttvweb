@@ -77,7 +77,9 @@ export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const products = await wooFetch<WooProductSeo[]>("/products", { slug });
   const product = products[0];
-  if (!product) return { title: "Nicht gefunden — UncutTV" };
+  if (!product || product.status !== "publish") {
+    return { title: "Nicht gefunden — UncutTV" };
+  }
   return buildProductMetadata(product);
 }
 
@@ -85,7 +87,7 @@ export default async function ProductPage({ params }: PageProps) {
   const { slug } = await params;
   const products = await wooFetch<WooProductSeo[]>("/products", { slug });
   const product = products[0];
-  if (!product) notFound();
+  if (!product || product.status !== "publish") notFound();
 
   const productJsonLd = buildProductJsonLd(product);
   const badge = getStockBadge(product);

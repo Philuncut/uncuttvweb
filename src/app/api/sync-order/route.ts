@@ -51,6 +51,7 @@ function cartMetaToCartItems(items: CartMeta[]): CartItem[] {
       id: Number(item.id),
       name: item.name,
       slug: "",
+      status: "publish",
       price: item.price,
       regular_price: item.price,
       sale_price: "",

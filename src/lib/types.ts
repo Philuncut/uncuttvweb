@@ -16,6 +16,8 @@ export interface WooProduct {
   id: number;
   name: string;
   slug: string;
+  /** Woo post status — e.g. "publish", "draft", "private". */
+  status: string;
   price: string;
   regular_price: string;
   sale_price: string;
