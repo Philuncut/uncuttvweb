@@ -3,7 +3,16 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
-import { createT, translateDetailLabel } from "@/lib/translations";
+import {
+  createT,
+  translateDetailHeading,
+  translateDetailLabel,
+} from "@/lib/translations";
+import {
+  parseDetails,
+  stripInfoGrids,
+  type DetailGroup,
+} from "@/lib/parse-product-details";
 import type { WooProduct } from "@/lib/types";
 import ProductGallery from "@/components/ProductGallery";
 import AddToCartButton from "@/components/AddToCartButton";
@@ -15,51 +24,14 @@ import {
   productHasPreOrderCategory,
 } from "@/lib/stock-display";
 
-interface DetailEntry {
-  label: string;
-  value: string;
-}
-
 interface ProductDetailProps {
   product: WooProduct;
-  details: DetailEntry[];
+  details: DetailGroup[];
   descriptionHtml: string;
   related: WooProduct[];
   badge: { label: string; className: string };
   /** Full raw description including info-grids (for re-parsing after translation) */
   rawDescription: string;
-}
-
-/* ── Parsing helpers (same as server-side) ── */
-
-function parseDetails(html: string): DetailEntry[] {
-  const entries: DetailEntry[] = [];
-  const gridRegex = /<section class="info-grid">([\s\S]*?)<\/section>/g;
-  let gridMatch;
-  while ((gridMatch = gridRegex.exec(html)) !== null) {
-    const block = gridMatch[1];
-    const pairRegex = /<strong>([^<]+?):<\/strong>\s*(.+?)(?:<\/p>|$)/g;
-    let pairMatch;
-    while ((pairMatch = pairRegex.exec(block)) !== null) {
-      const label = pairMatch[1].trim();
-      const value = pairMatch[2].replace(/<[^>]*>/g, "").trim();
-      if (label && value) entries.push({ label, value });
-    }
-    const castRegex =
-      /<h4>Cast<\/h4>\s*(?:<p>)?(?!<strong>)([\s\S]*?)(?:<\/p>|<\/div>)/g;
-    let castMatch;
-    while ((castMatch = castRegex.exec(block)) !== null) {
-      const castVal = castMatch[1].replace(/<[^>]*>/g, "").trim();
-      if (castVal && !entries.some((e) => e.label === "Cast")) {
-        entries.push({ label: "Cast", value: castVal });
-      }
-    }
-  }
-  return entries;
-}
-
-function stripInfoGrids(html: string): string {
-  return html.replace(/<section class="info-grid">[\s\S]*?<\/section>/g, "");
 }
 
 /* ── Translate helper ── */
@@ -309,15 +281,38 @@ export default function ProductDetail({
               <h3 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
                 {t("DETAILS")}
               </h3>
-              <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
-                {activeDetails.map((d, i) => (
-                  <div key={i}>
-                    <dt className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
-                      {translateDetailLabel(d.label, language)}
-                    </dt>
-                    <dd className="mt-0.5 break-words text-sm text-white">
-                      {d.value}
-                    </dd>
+              <div className="mt-4 space-y-6">
+                {activeDetails.map((group, gi) => (
+                  <div key={gi}>
+                    <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
+                      {translateDetailHeading(group.heading, language)}
+                    </h4>
+                    {group.entries.length > 0 && (
+                      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3">
+                        {group.entries.map((d, i) => (
+                          <div key={i}>
+                            <dt className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
+                              {translateDetailLabel(d.label, language)}
+                            </dt>
+                            <dd className="mt-0.5 break-words text-sm text-white">
+                              {d.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    {group.lines.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        {group.lines.map((line, li) => (
+                          <p
+                            key={li}
+                            className="break-words text-sm text-white"
+                          >
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

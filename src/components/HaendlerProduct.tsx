@@ -4,7 +4,12 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
-import { createT, translateDetailLabel } from "@/lib/translations";
+import {
+  createT,
+  translateDetailHeading,
+  translateDetailLabel,
+} from "@/lib/translations";
+import { parseDetails, stripInfoGrids } from "@/lib/parse-product-details";
 import ProductGallery from "@/components/ProductGallery";
 import type { WooProduct } from "@/lib/types";
 import { toHaendlerCartProduct } from "@/lib/haendler-to-cart-product";
@@ -16,43 +21,6 @@ export interface HaendlerProductData extends WooProduct {
   sales_kit_url?: string;
   meta_data?: Array<{ key: string; value: unknown }>;
   stock_quantity?: number | null;
-}
-
-interface DetailEntry {
-  label: string;
-  value: string;
-}
-
-function parseDetails(html: string): DetailEntry[] {
-  const entries: DetailEntry[] = [];
-  const gridRegex = /<section class="info-grid">([\s\S]*?)<\/section>/g;
-  let gridMatch;
-  while ((gridMatch = gridRegex.exec(html)) !== null) {
-    const block = gridMatch[1];
-    const pairRegex = /<strong>([^<]+?):<\/strong>\s*(.+?)(?:<\/p>|$)/g;
-    let pairMatch;
-    while ((pairMatch = pairRegex.exec(block)) !== null) {
-      const label = pairMatch[1].trim();
-      const value = pairMatch[2].replace(/<[^>]*>/g, "").trim();
-      if (label && value) {
-        entries.push({ label, value });
-      }
-    }
-    const castRegex =
-      /<h4>Cast<\/h4>\s*(?:<p>)?(?!<strong>)([\s\S]*?)(?:<\/p>|<\/div>)/g;
-    let castMatch;
-    while ((castMatch = castRegex.exec(block)) !== null) {
-      const castVal = castMatch[1].replace(/<[^>]*>/g, "").trim();
-      if (castVal && !entries.some((e) => e.label === "Cast")) {
-        entries.push({ label: "Cast", value: castVal });
-      }
-    }
-  }
-  return entries;
-}
-
-function stripInfoGrids(html: string): string {
-  return html.replace(/<section class="info-grid">[\s\S]*?<\/section>/g, "");
 }
 
 export default function HaendlerProduct({
@@ -234,15 +202,35 @@ export default function HaendlerProduct({
               <h3 className="border-l-4 border-[#c0392b] pl-3 text-sm font-black tracking-[0.15em] text-white">
                 {t("DETAILS")}
               </h3>
-              <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
-                {details.map((d, i) => (
-                  <div key={i}>
-                    <dt className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
-                      {translateDetailLabel(d.label, language)}
-                    </dt>
-                    <dd className="mt-0.5 text-sm text-white">
-                      {d.value}
-                    </dd>
+              <div className="mt-4 space-y-6">
+                {details.map((group, gi) => (
+                  <div key={gi}>
+                    <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
+                      {translateDetailHeading(group.heading, language)}
+                    </h4>
+                    {group.entries.length > 0 && (
+                      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3">
+                        {group.entries.map((d, i) => (
+                          <div key={i}>
+                            <dt className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#888]">
+                              {translateDetailLabel(d.label, language)}
+                            </dt>
+                            <dd className="mt-0.5 text-sm text-white">
+                              {d.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    {group.lines.length > 0 && (
+                      <div className="mt-3 space-y-1">
+                        {group.lines.map((line, li) => (
+                          <p key={li} className="text-sm text-white">
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

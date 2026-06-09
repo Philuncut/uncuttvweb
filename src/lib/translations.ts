@@ -653,6 +653,25 @@ export function translateDetailLabel(label: string, lang: "de" | "en"): string {
   return detailLabels[label] || label;
 }
 
+export function translateDetailHeading(heading: string, lang: "de" | "en"): string {
+  if (lang === "de") return heading;
+
+  const known: Record<string, string> = {
+    Produktion: "Production",
+    Cast: "Cast",
+    Release: "Release",
+    Extras: "Extras",
+  };
+  if (known[heading]) return known[heading];
+
+  const techPrefix = "Technische Daten – ";
+  if (heading.startsWith(techPrefix)) {
+    return `Technical Data – ${heading.slice(techPrefix.length)}`;
+  }
+
+  return heading;
+}
+
 // Hook-compatible function creator
 export function createT(lang: "de" | "en") {
   return (key: string) => getTranslation(key, lang);

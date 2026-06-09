@@ -12,50 +12,15 @@ import { filterPurchasableRelatedProducts } from "@/lib/woo-product-filters";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductDetail from "@/components/ProductDetail";
+import {
+  parseDetails,
+  stripInfoGrids,
+} from "@/lib/parse-product-details";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
-}
-
-/* ── Parse description HTML ── */
-
-interface DetailEntry {
-  label: string;
-  value: string;
-}
-
-function parseDetails(html: string): DetailEntry[] {
-  const entries: DetailEntry[] = [];
-  const gridRegex = /<section class="info-grid">([\s\S]*?)<\/section>/g;
-  let gridMatch;
-  while ((gridMatch = gridRegex.exec(html)) !== null) {
-    const block = gridMatch[1];
-    const pairRegex = /<strong>([^<]+?):<\/strong>\s*(.+?)(?:<\/p>|$)/g;
-    let pairMatch;
-    while ((pairMatch = pairRegex.exec(block)) !== null) {
-      const label = pairMatch[1].trim();
-      const value = pairMatch[2].replace(/<[^>]*>/g, "").trim();
-      if (label && value) {
-        entries.push({ label, value });
-      }
-    }
-    const castRegex =
-      /<h4>Cast<\/h4>\s*(?:<p>)?(?!<strong>)([\s\S]*?)(?:<\/p>|<\/div>)/g;
-    let castMatch;
-    while ((castMatch = castRegex.exec(block)) !== null) {
-      const castVal = castMatch[1].replace(/<[^>]*>/g, "").trim();
-      if (castVal && !entries.some((e) => e.label === "Cast")) {
-        entries.push({ label: "Cast", value: castVal });
-      }
-    }
-  }
-  return entries;
-}
-
-function stripInfoGrids(html: string): string {
-  return html.replace(/<section class="info-grid">[\s\S]*?<\/section>/g, "");
 }
 
 function getStockBadge(product: WooProduct) {
