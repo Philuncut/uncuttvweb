@@ -8,6 +8,7 @@ import {
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
+import type { MarketingUtmInput } from "@/lib/marketing-utm-server";
 import type { VideoUtmInput } from "@/lib/video-utm-server";
 import {
   createWooOrderFromCheckoutSync,
@@ -39,6 +40,7 @@ interface SyncBody {
   isWholesale?: boolean;
   checkoutShipping?: CheckoutShippingInput;
   videoUtm?: VideoUtmInput;
+  marketingUtm?: MarketingUtmInput;
   couponCode?: string;
   customerEmail?: string;
 }
@@ -195,6 +197,7 @@ export async function POST(request: Request) {
           isReverseCharge: body.isReverseCharge,
           isWholesale: body.isWholesale,
           videoUtm: body.videoUtm,
+          marketingUtm: body.marketingUtm,
         },
       });
       await trySendOrderConfirmation(
@@ -405,6 +408,7 @@ export async function POST(request: Request) {
       meta_data: body.meta_data,
       checkoutShipping: body.checkoutShipping,
       videoUtm: body.videoUtm,
+      marketingUtm: body.marketingUtm,
       stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
       couponCode: couponCodeResolved,
       stripeDiscountCents,

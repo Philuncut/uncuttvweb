@@ -21,6 +21,11 @@ import {
 import { parsePrice } from "@/lib/parse-price";
 import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
 import {
+  buildMarketingUtmOrderMeta,
+  mergeMarketingUtmIntoMeta,
+  type MarketingUtmInput,
+} from "@/lib/marketing-utm-server";
+import {
   buildVideoUtmOrderMeta,
   mergeVideoUtmIntoMeta,
   type OrderMetaEntry,
@@ -71,6 +76,7 @@ export type WooOrderSyncContext = {
   isReverseCharge?: boolean;
   isWholesale?: boolean;
   videoUtm?: VideoUtmInput;
+  marketingUtm?: MarketingUtmInput;
 };
 
 export interface CreateWooOrderInput {
@@ -411,6 +417,7 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   meta_data?: OrderMetaEntry[];
   checkoutShipping?: CheckoutShippingInput;
   videoUtm?: VideoUtmInput;
+  marketingUtm?: MarketingUtmInput;
   stripePiId?: string;
   stripeChargeId?: string;
   /** WooCommerce coupon code from PaymentIntent metadata. */
@@ -435,6 +442,7 @@ export async function createWooOrderFromCheckoutSync(
     meta_data,
     checkoutShipping,
     videoUtm,
+    marketingUtm,
     stripePiId,
     stripeChargeId,
     couponCode,
@@ -672,6 +680,8 @@ export async function createWooOrderFromCheckoutSync(
   );
   const videoUtmMeta = await buildVideoUtmOrderMeta(videoUtm);
   mergedMeta = mergeVideoUtmIntoMeta(mergedMeta, videoUtmMeta);
+  const marketingUtmMeta = buildMarketingUtmOrderMeta(marketingUtm);
+  mergedMeta = mergeMarketingUtmIntoMeta(mergedMeta, marketingUtmMeta);
   mergedMeta = appendReverseChargeMeta(mergedMeta, isReverseCharge);
   mergedMeta = appendThirdCountryExportMeta(mergedMeta, isThirdCountryB2c);
   if (bakeCouponIntoLines && normalizedCoupon) {
@@ -919,6 +929,7 @@ export async function createWooOrderFromPayment(
       source: pi.metadata?.utm_source,
       videoId: pi.metadata?.utm_video_id,
     },
+    marketingUtm: syncContext?.marketingUtm,
     stripePiId: paymentIntentId,
     stripeChargeId: chargeId,
     couponCode: couponFromMeta,

@@ -40,6 +40,10 @@ import {
   type CheckoutShippingForWoo,
   type StoredCheckoutSyncPayload,
 } from "@/lib/checkout-order-extras";
+import {
+  clearMarketingUtmStorage,
+  marketingUtmRequestField,
+} from "@/lib/marketing-utm";
 import { clearVideoUtmStorage, videoUtmRequestField } from "@/lib/video-utm";
 import { standardVatFraction } from "@/lib/woo-vat-split";
 import { getShippingLogo } from "@/components/ShippingLogos";
@@ -1970,6 +1974,7 @@ function CheckoutInner() {
             shippingMethodTitle: shipLabel.trim() || undefined,
           }),
       ...videoUtmRequestField(),
+      ...marketingUtmRequestField(),
     }),
     [
       items,
@@ -2292,6 +2297,7 @@ function CheckoutInner() {
       isReverseCharge: wholesaleReverseCharge,
       ...(isWholesale ? { isWholesale: true } : {}),
       ...videoUtmRequestField(),
+      ...marketingUtmRequestField(),
     }),
     [
       customerData,
@@ -2315,6 +2321,7 @@ function CheckoutInner() {
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          ...marketingUtmRequestField(),
         };
         await fetch("/api/sync-order", {
           method: "POST",
@@ -2327,6 +2334,7 @@ function CheckoutInner() {
       }
       clearCart();
       clearVideoUtmStorage();
+      clearMarketingUtmStorage();
       router.push("/bestellung/erfolg?payment_intent=" + paymentIntentId);
     },
     [
@@ -2429,6 +2437,7 @@ function CheckoutInner() {
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          ...marketingUtmRequestField(),
         };
         persistCheckoutSyncPayload(paidPiId, cardSyncPayload);
 
@@ -2440,6 +2449,7 @@ function CheckoutInner() {
           ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
           ...(isWholesale ? { isWholesale: true } : {}),
           ...videoUtmRequestField(),
+          ...marketingUtmRequestField(),
           items: cartMeta,
         };
 
@@ -2482,6 +2492,7 @@ function CheckoutInner() {
 
         clearCart();
         clearVideoUtmStorage();
+        clearMarketingUtmStorage();
         router.push("/bestellung/erfolg?payment_intent=" + paidPiId);
       } else if (paymentMethod === "bank") {
         try {
@@ -2494,6 +2505,7 @@ function CheckoutInner() {
             ...(isWholesale ? { isWholesale: true } : {}),
             locale: language,
             ...videoUtmRequestField(),
+            ...marketingUtmRequestField(),
             ...(!isWholesale
               ? {
                   couponCode: couponCode ?? "",
@@ -2510,6 +2522,7 @@ function CheckoutInner() {
           if (data.success) {
             clearCart();
             clearVideoUtmStorage();
+            clearMarketingUtmStorage();
             router.push(
               "/bestellung/erfolg?method=bank&order_id=" +
                 data.orderId +
@@ -2589,6 +2602,7 @@ function CheckoutInner() {
             isReverseCharge: wholesaleReverseCharge,
             ...(isWholesale ? { isWholesale: true } : {}),
             ...videoUtmRequestField(),
+            ...marketingUtmRequestField(),
           });
         }
 
@@ -2725,6 +2739,7 @@ function CheckoutInner() {
         ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
         ...(isWholesale ? { isWholesale: true } : {}),
         ...videoUtmRequestField(),
+        ...marketingUtmRequestField(),
         ...(!isWholesale
           ? {
               couponCode: couponCode ?? "",
@@ -2774,6 +2789,7 @@ function CheckoutInner() {
         clearPayPalRecoveryRecord(paypalOrderId);
         clearCart();
         clearVideoUtmStorage();
+        clearMarketingUtmStorage();
         router.push(
           `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
         );

@@ -15,6 +15,7 @@ import { parsePrice } from "@/lib/parse-price";
 import { getShippingLogo } from "@/components/ShippingLogos";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation, getTranslation } from "@/lib/translations";
+import { clearMarketingUtmStorage } from "@/lib/marketing-utm";
 import { clearVideoUtmStorage } from "@/lib/video-utm";
 import { trackPurchase } from "@/lib/meta-pixel";
 
@@ -167,6 +168,7 @@ export default function OrderSuccess() {
         if (method === "bank") {
           clearCart();
           clearVideoUtmStorage();
+          clearMarketingUtmStorage();
           let wholesale = searchParams.get("wholesale") === "1";
           if (!wholesale) {
             try {
@@ -236,6 +238,9 @@ export default function OrderSuccess() {
                     : {}),
                   ...(stored.isWholesale ? { isWholesale: true } : {}),
                   ...(stored.videoUtm ? { videoUtm: stored.videoUtm } : {}),
+                  ...(stored.marketingUtm
+                    ? { marketingUtm: stored.marketingUtm }
+                    : {}),
                 }),
               });
             }
@@ -305,6 +310,7 @@ export default function OrderSuccess() {
 
         clearCart();
         clearVideoUtmStorage();
+        clearMarketingUtmStorage();
       } catch {
         setError(getTranslation("ORDER_SUCCESS_LOAD_FAILED", language));
       } finally {
