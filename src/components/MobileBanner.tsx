@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import promoData from "../../data/promo-banner.json";
 
 interface PromoItem {
   image: string;
@@ -19,12 +18,24 @@ interface PromoConfig {
   items?: PromoItem[];
 }
 
-const promo = promoData as PromoConfig;
-
 export default function MobileBanner() {
+  const [promo, setPromo] = useState<PromoConfig | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
-  if (!promo.active || dismissed) return null;
+  useEffect(() => {
+    fetch("/api/promo-banner")
+      .then((res) => res.json())
+      .then((data: PromoConfig) => {
+        if (data.active) {
+          setPromo(data);
+        }
+      })
+      .catch(() => {
+        // ignore — no banner shown
+      });
+  }, []);
+
+  if (!promo || dismissed) return null;
 
   return (
     <div

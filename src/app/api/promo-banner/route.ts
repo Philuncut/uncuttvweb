@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { readFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 
-const DATA_PATH = join(process.cwd(), "data", "promo-banner.json");
+export const dynamic = "force-dynamic";
 
 interface PromoItem {
   image: string;
   label: string;
 }
 
-interface PromoData {
+export interface PromoData {
   active: boolean;
   title: string;
   subtitle: string;
@@ -20,41 +19,57 @@ interface PromoData {
   items: PromoItem[];
 }
 
-const DEFAULT_DATA: PromoData = {
-  active: true,
-  title: "GROSSER VORVERKAUF",
-  subtitle: "3 Neue Mediabooks · Ab €34.90",
-  label: "NEU IM VORVERKAUF",
+interface BannerRow {
+  active: boolean;
+  label: string | null;
+  title: string | null;
+  subtitle: string | null;
+  cta_text: string | null;
+  link: string | null;
+  items: PromoItem[] | null;
+}
+
+const INACTIVE_DEFAULT: PromoData = {
+  active: false,
+  title: "",
+  subtitle: "",
+  label: "",
   image: "",
-  link: "/shop?kategorie=vorverkauf",
-  ctaText: "JETZT VORBESTELLEN",
+  link: "",
+  ctaText: "",
   items: [],
 };
 
-async function readPromo(): Promise<PromoData> {
-  try {
-    const raw = await readFile(DATA_PATH, "utf-8");
-    return JSON.parse(raw);
-  } catch {
-    return DEFAULT_DATA;
-  }
+function mapRowToPromoData(row: BannerRow): PromoData {
+  const items = Array.isArray(row.items) ? row.items : [];
+  return {
+    active: row.active,
+    title: row.title ?? "",
+    subtitle: row.subtitle ?? "",
+    label: row.label ?? "",
+    image: items[0]?.image ?? "",
+    link: row.link ?? "",
+    ctaText: row.cta_text ?? "",
+    items,
+  };
 }
 
 export async function GET() {
-  const data = await readPromo();
-  return NextResponse.json(data);
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as Partial<PromoData>;
-    const current = await readPromo();
-    const updated = { ...current, ...body };
-    await writeFile(DATA_PATH, JSON.stringify(updated, null, 2), "utf-8");
-    return NextResponse.json(updated);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Speichern fehlgeschlagen.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return NextResponse.json(INACTIVE_DEFAULT);
   }
+
+  const { data, error } = await supabase
+    .from("banners")
+    .select("active, label, title, subtitle, cta_text, link, items")
+    .eq("active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) {
+    return NextResponse.json(INACTIVE_DEFAULT);
+  }
+
+  return NextResponse.json(mapRowToPromoData(data as BannerRow));
 }
