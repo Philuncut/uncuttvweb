@@ -6,8 +6,8 @@
   "link": "/shop?kategorie=vorverkauf",
   "ctaText": "JETZT VORBESTELLEN",
   "items": [
-    { "image": "/promo/collar.jpg", "label": "Collar" },
-    { "image": "/promo/sideling-hill.jpg", "label": "Sideling Hill" },
-    { "image": "/promo/vhs-underground.jpg", "label": "VHS Underground" }
+    { "image": "/promo/wither.jpg", "label": "Wither" },
+    { "image": "/promo/evil_within.jpg", "label": "Evil Within" },
+    { "image": "/promo/fear_cabin.jpg", "label": "Fear Cabin" }
   ]
 }
