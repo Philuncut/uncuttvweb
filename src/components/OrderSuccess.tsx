@@ -18,6 +18,7 @@ import { createT, formatTranslation, getTranslation } from "@/lib/translations";
 import { clearMarketingUtmStorage } from "@/lib/marketing-utm";
 import { clearVideoUtmStorage } from "@/lib/video-utm";
 import { trackPurchase } from "@/lib/meta-pixel";
+import { sendGAEvent } from "@next/third-parties/google";
 
 interface OrderLineItem {
   product_id: string;
@@ -128,6 +129,58 @@ export default function OrderSuccess() {
         price: i.price,
       }))
     );
+  };
+
+  const fireGooglePurchase = (data: OrderDetails) => {
+    // Gleicher Consent wie Meta-Pixel / GoogleAnalytics-Komponente
+    try {
+      if (localStorage.getItem("cookie_consent") !== "all") return;
+    } catch {
+      return;
+    }
+
+    const wooId = data.woo_order_id;
+    const lineItems = data.line_items ?? [];
+    if (!wooId || lineItems.length === 0) return;
+
+    if (typeof window === "undefined") return;
+
+    // Sende-Mechanismus: sendGAEvent (dataLayer) bevorzugt, sonst window.gtag
+    const gtagFn = (window as { gtag?: (...args: unknown[]) => void }).gtag;
+    const canSendGAEvent = !!(window as { dataLayer?: unknown[] }).dataLayer;
+    if (!canSendGAEvent && typeof gtagFn !== "function") return;
+
+    // Dedup pro Order — eigener Key, NICHT der Meta-Key
+    const storageKey = `google_purchase_${wooId}`;
+    try {
+      if (sessionStorage.getItem(storageKey)) return;
+    } catch {
+      // private mode / blocked storage
+    }
+
+    const params = {
+      transaction_id: String(wooId),
+      value: parsePrice(data.total),
+      currency: (data.currency || "eur").toUpperCase(),
+      items: lineItems.map((li) => ({
+        item_id: String(li.product_id),
+        item_name: li.name,
+        quantity: li.quantity,
+        price: parsePrice(String(li.price)),
+      })),
+    };
+
+    if (canSendGAEvent) {
+      sendGAEvent("event", "purchase", params);
+    } else {
+      gtagFn!("event", "purchase", params);
+    }
+
+    try {
+      sessionStorage.setItem(storageKey, "1");
+    } catch {
+      // private mode / blocked storage
+    }
   };
 
   const bankPaymentText = isWholesaleBank
@@ -260,6 +313,7 @@ export default function OrderSuccess() {
           setError(hardError);
         } else if (data) {
           fireBrowserPurchase(data);
+          fireGooglePurchase(data);
           let merged = data;
           const stored = paymentIntentId
             ? readCheckoutSyncPayload(paymentIntentId)
