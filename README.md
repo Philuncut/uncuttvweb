@@ -10,10 +10,14 @@ WordPress auf **wp.uncuttv.at** (WPCode-Snippet):
 - Quelle und Anleitung: [`docs/wordpress/uncuttv-videoplattform-anmeldung.php`](docs/wordpress/uncuttv-videoplattform-anmeldung.php)
   bzw. [`docs/wordpress/WPCODE_SNIPPETS.md`](docs/wordpress/WPCODE_SNIPPETS.md)
   (Abschnitt „Videoplattform Anmelde-Endpunkt“).
-- Nötige Konfiguration in `wp-config.php` auf wp.uncuttv.at:
-  `define('UNCUTTV_VIDEOPLATTFORM_SECRET', '…')` — dasselbe Geheimnis
-  steht auf der Videoplattform als `SHOP_AUTH_SECRET`. Der Endpunkt gibt
-  nur Kennung, Anzeigename und E-Mail heraus; Passwörter bleiben im Shop.
+- Das gemeinsame Geheimnis wird ohne Dateizugriff über das
+  WPCode-Snippet „Videoplattform Geheimnis setzen“
+  (`docs/wordpress/uncuttv-videoplattform-geheimnis.php`) erzeugt und in
+  einer WordPress-Option abgelegt; eine Konstante
+  `UNCUTTV_VIDEOPLATTFORM_SECRET` in der `wp-config.php` hätte Vorrang,
+  falls Dateizugriff besteht. Derselbe Wert steht auf der Videoplattform
+  als `SHOP_AUTH_SECRET`. Der Endpunkt gibt nur Kennung, Anzeigename und
+  E-Mail heraus; Passwörter bleiben im Shop.
 
 ## Getting Started
 

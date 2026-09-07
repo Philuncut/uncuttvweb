@@ -7,6 +7,7 @@ Snippets run on **wp.uncuttv.at** via [WPCode](https://wpcode.com/). The Next.js
 | Reverse Charge — force zero tax | *(existing in WP, not in this repo)* | Production |
 | **Preserve explicit shipping tax (REST)** | `uncuttv-preserve-shipping-tax-rest.php` | **Deploy via WPCode** |
 | **Videoplattform Anmelde-Endpunkt** | `uncuttv-videoplattform-anmeldung.php` | **Deploy via WPCode** |
+| **Videoplattform Geheimnis setzen** | `uncuttv-videoplattform-geheimnis.php` | **Deploy via WPCode** |
 
 ---
 
@@ -114,9 +115,13 @@ Body:   { "email": "...", "passwort": "..." }
 ### Absicherung
 
 - **Gemeinsames Geheimnis:** Der Endpunkt antwortet nur, wenn der Header
-  `X-Videoplattform-Secret` exakt der Konstante
-  `UNCUTTV_VIDEOPLATTFORM_SECRET` entspricht (`hash_equals`). Ohne
-  Konfiguration: 503. Er ist damit nie öffentlich abfragbar.
+  `X-Videoplattform-Secret` exakt dem hinterlegten Geheimnis entspricht
+  (`hash_equals`). Quelle in dieser Reihenfolge: Konstante
+  `UNCUTTV_VIDEOPLATTFORM_SECRET` aus der `wp-config.php` (hat Vorrang,
+  falls Dateizugriff doch möglich wird) — sonst die WordPress-Option
+  `uncuttv_videoplattform_secret` (gesetzt über das Snippet
+  „Geheimnis setzen", kein Dateizugriff nötig). Ist keins von beiden
+  gesetzt: 503. Er ist damit nie öffentlich abfragbar.
 - **Drosselung:** Fehlversuchszähler je Konto und je Absender-IP
   (Transients, 15-Minuten-Fenster; Limits 10 je Konto / 30 je IP,
   darüber 429 mit Retry-After), ab dem dritten Fehlschlag zunehmende
@@ -130,19 +135,42 @@ Body:   { "email": "...", "passwort": "..." }
 
 ### Install
 
-1. **wp-config.php** auf wp.uncuttv.at ergänzen (Geheimnis erzeugen,
-   z. B. `openssl rand -hex 32`):
-   ```php
-   define('UNCUTTV_VIDEOPLATTFORM_SECRET', '<64 Zeichen Zufall>');
-   ```
-   Dasselbe Geheimnis kommt auf der Videoplattform (Vercel) in die
-   Umgebungsvariable `SHOP_AUTH_SECRET`.
-2. WPCode → Add New → PHP Snippet.
-3. **Name:** `UncutTV — Videoplattform Anmelde-Endpunkt`
-4. **Code:** aus [`uncuttv-videoplattform-anmeldung.php`](./uncuttv-videoplattform-anmeldung.php)
+**Schritt 1 — Geheimnis setzen (ohne Dateizugriff, über WPCode):**
+
+Das Geheimnis wird **nicht von Hand eingetippt** und steht nie im
+Snippet-Code — das Setz-Snippet erzeugt es selbst (64 Hex-Zeichen aus
+`random_bytes`) und legt es in der Option
+`uncuttv_videoplattform_secret` ab (`autoload=no`; nicht per
+`register_setting` registriert, also nicht über `/wp/v2/settings` oder
+sonst über die REST-API auslesbar):
+
+1. WPCode → Add New → PHP Snippet.
+2. **Name:** `UncutTV — Videoplattform Geheimnis setzen`
+3. **Code:** aus [`uncuttv-videoplattform-geheimnis.php`](./uncuttv-videoplattform-geheimnis.php).
+4. **Location:** Admin Only. Aktivieren.
+5. Eine beliebige Admin-Seite laden: Oben erscheint ein Hinweis mit dem
+   erzeugten Geheimnis. Den Wert kopieren und auf der Videoplattform
+   (Vercel) als `SHOP_AUTH_SECRET` eintragen.
+6. Im Hinweis **„Übertragen — nicht mehr anzeigen"** klicken. Danach
+   zeigt das Snippet nichts mehr an und überschreibt nie ein
+   vorhandenes Geheimnis — es kann gefahrlos aktiv bleiben oder
+   deaktiviert werden.
+7. **Rotation** bei Bedarf: „Neues Geheimnis erzeugen" im Hinweis
+   (erscheint nach Reaktivierung bzw. solange nicht bestätigt) — der
+   alte Wert gilt sofort nicht mehr, Vercel muss nachziehen.
+
+*Alternative, falls später doch Dateizugriff besteht:* in der
+`wp-config.php` `define('UNCUTTV_VIDEOPLATTFORM_SECRET', '<64 Zeichen
+Zufall>')` setzen — die Konstante hat Vorrang vor der Option.
+
+**Schritt 2 — Endpunkt einspielen:**
+
+1. WPCode → Add New → PHP Snippet.
+2. **Name:** `UncutTV — Videoplattform Anmelde-Endpunkt`
+3. **Code:** aus [`uncuttv-videoplattform-anmeldung.php`](./uncuttv-videoplattform-anmeldung.php)
    (doppeltes `<?php` weglassen, falls WPCode selbst wrappt).
-5. **Location:** Run Everywhere.
-6. Aktivieren.
+4. **Location:** Run Everywhere.
+5. Aktivieren.
 
 ### Testplan
 

@@ -11,9 +11,15 @@
  *
  * Absicherung:
  * - Nur mit gemeinsamem Geheimnis erreichbar (Header
- *   X-Videoplattform-Secret, Konstante UNCUTTV_VIDEOPLATTFORM_SECRET in
- *   wp-config.php). Ohne bzw. mit falschem Geheimnis: 401, ohne
- *   Konfiguration: 503 — der Endpunkt ist nie oeffentlich nutzbar.
+ *   X-Videoplattform-Secret). Quelle des Geheimnisses, in dieser
+ *   Reihenfolge: Konstante UNCUTTV_VIDEOPLATTFORM_SECRET (wp-config.php,
+ *   hat Vorrang, falls Dateizugriff moeglich ist) — sonst die
+ *   WordPress-Option uncuttv_videoplattform_secret, gesetzt ueber das
+ *   Begleit-Snippet uncuttv-videoplattform-geheimnis.php (kein
+ *   Dateizugriff noetig). Ohne bzw. mit falschem Geheimnis: 401, ist
+ *   keins von beiden gesetzt: 503 — der Endpunkt ist nie oeffentlich
+ *   nutzbar. Die Option ist nicht per register_setting registriert und
+ *   damit nicht ueber /wp/v2/settings auslesbar; autoload steht auf no.
  * - Versuchszaehler je Absender-IP und je Konto (Transients, 15 min);
  *   ueber dem Limit 429 mit Retry-After, davor zunehmende Verzoegerung.
  * - Falsches Passwort und unbekanntes Konto ergeben dieselbe Antwort;
@@ -27,8 +33,9 @@
  * Install: WordPress Admin -> Code Snippets (WPCode) -> Add New -> PHP
  * Name: "UncutTV — Videoplattform Anmelde-Endpunkt"
  * Location: Run Everywhere
- * Voraussetzung in wp-config.php:
- *   define('UNCUTTV_VIDEOPLATTFORM_SECRET', '<langes Zufallsgeheimnis>');
+ * Voraussetzung: Geheimnis gesetzt — per Begleit-Snippet (Option) oder,
+ * falls moeglich, per define('UNCUTTV_VIDEOPLATTFORM_SECRET', ...) in
+ * der wp-config.php (Konstante hat Vorrang).
  */
 
 defined('ABSPATH') || exit;
@@ -42,14 +49,28 @@ add_action('rest_api_init', function () {
 });
 
 /**
+ * Das gemeinsame Geheimnis der beiden Server: bevorzugt die Konstante
+ * aus der wp-config.php; ohne Dateizugriff die WordPress-Option, die
+ * das Begleit-Snippet setzt. Leer = nicht konfiguriert.
+ */
+function uncuttv_vp_geheimnis() {
+    if (defined('UNCUTTV_VIDEOPLATTFORM_SECRET') && UNCUTTV_VIDEOPLATTFORM_SECRET !== '') {
+        return (string) UNCUTTV_VIDEOPLATTFORM_SECRET;
+    }
+    $option = get_option('uncuttv_videoplattform_secret', '');
+    return is_string($option) ? $option : '';
+}
+
+/**
  * Zugang nur mit dem gemeinsamen Geheimnis der beiden Server.
  */
 function uncuttv_vp_anmeldung_erlaubt(WP_REST_Request $request) {
-    if (!defined('UNCUTTV_VIDEOPLATTFORM_SECRET') || UNCUTTV_VIDEOPLATTFORM_SECRET === '') {
+    $erwartet = uncuttv_vp_geheimnis();
+    if ($erwartet === '') {
         return new WP_Error('nicht_konfiguriert', 'Endpunkt nicht konfiguriert.', array('status' => 503));
     }
     $geheimnis = (string) $request->get_header('x-videoplattform-secret');
-    if ($geheimnis === '' || !hash_equals(UNCUTTV_VIDEOPLATTFORM_SECRET, $geheimnis)) {
+    if ($geheimnis === '' || !hash_equals($erwartet, $geheimnis)) {
         return new WP_Error('kein_zugriff', 'Kein Zugriff.', array('status' => 401));
     }
     return true;
