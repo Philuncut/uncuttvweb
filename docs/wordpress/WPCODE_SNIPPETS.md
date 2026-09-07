@@ -6,6 +6,7 @@ Snippets run on **wp.uncuttv.at** via [WPCode](https://wpcode.com/). The Next.js
 |---------|------|--------|
 | Reverse Charge — force zero tax | *(existing in WP, not in this repo)* | Production |
 | **Preserve explicit shipping tax (REST)** | `uncuttv-preserve-shipping-tax-rest.php` | **Deploy via WPCode** |
+| **Videoplattform Anmelde-Endpunkt** | `uncuttv-videoplattform-anmeldung.php` | **Deploy via WPCode** |
 
 ---
 
@@ -83,3 +84,88 @@ Add to the `is_protected_meta` allowlist on **wp.uncuttv.at** when baking coupon
 - `src/app/api/create-bank-order/route.ts` — bank transfer
 - `src/lib/woo-vat-split.ts` — `splitGrossForWooRest`, `buildEuB2cWooShippingTaxes`
 - `src/lib/eu-vat-rates.ts` — `WOO_STANDARD_TAX_RATE_ID_BY_COUNTRY`
+
+---
+
+## UncutTV — Videoplattform Anmelde-Endpunkt
+
+### Zweck
+
+Die Videoplattform (Repo `uncuttv-videoplattform`, eigenes
+Next.js-Projekt) lässt Kunden sich mit ihrem **bestehenden Shop-Konto**
+anmelden. Dafür stellt WordPress einen Endpunkt bereit, der Zugangsdaten
+prüft und bei Erfolg nur die Eckdaten zurückgibt — unveränderliche
+Kennung (WP-User-ID), Anzeigename, E-Mail. Kein Passwort, keine
+Bestelldaten. Die Plattform ruft ihn ausschließlich
+**Server-zu-Server** auf; aus dem Browser kommt hier nie etwas an.
+
+```
+POST /wp-json/uncuttv/v1/videoplattform/anmeldung
+Header: X-Videoplattform-Secret: <gemeinsames Geheimnis>
+Body:   { "email": "...", "passwort": "..." }
+
+200 → { "kennung": 123, "anzeigename": "…", "email": "…" }
+401 → { "fehler": "ungueltig" }          (falsches Passwort, unbekanntes
+                                          ODER gesperrtes Konto — bewusst
+                                          nicht unterscheidbar)
+429 → { "fehler": "zu_viele_versuche" }  (+ Retry-After: 900)
+```
+
+### Absicherung
+
+- **Gemeinsames Geheimnis:** Der Endpunkt antwortet nur, wenn der Header
+  `X-Videoplattform-Secret` exakt der Konstante
+  `UNCUTTV_VIDEOPLATTFORM_SECRET` entspricht (`hash_equals`). Ohne
+  Konfiguration: 503. Er ist damit nie öffentlich abfragbar.
+- **Drosselung:** Fehlversuchszähler je Konto und je Absender-IP
+  (Transients, 15-Minuten-Fenster; Limits 10 je Konto / 30 je IP,
+  darüber 429 mit Retry-After), ab dem dritten Fehlschlag zunehmende
+  Verzögerung bis 2 s.
+- **Kein Konten-Orakel:** Für unbekannte E-Mail-Adressen läuft dieselbe
+  bcrypt-Rechenarbeit wie eine echte Passwortprüfung, und die Antwort
+  ist identisch zu „falsches Passwort".
+- **Gesperrte Konten:** Die Prüfung läuft über `wp_authenticate`, damit
+  Sperren aus Sicherheits-Plugins greifen; zusätzlich blockt
+  `user_status != 0`.
+
+### Install
+
+1. **wp-config.php** auf wp.uncuttv.at ergänzen (Geheimnis erzeugen,
+   z. B. `openssl rand -hex 32`):
+   ```php
+   define('UNCUTTV_VIDEOPLATTFORM_SECRET', '<64 Zeichen Zufall>');
+   ```
+   Dasselbe Geheimnis kommt auf der Videoplattform (Vercel) in die
+   Umgebungsvariable `SHOP_AUTH_SECRET`.
+2. WPCode → Add New → PHP Snippet.
+3. **Name:** `UncutTV — Videoplattform Anmelde-Endpunkt`
+4. **Code:** aus [`uncuttv-videoplattform-anmeldung.php`](./uncuttv-videoplattform-anmeldung.php)
+   (doppeltes `<?php` weglassen, falls WPCode selbst wrappt).
+5. **Location:** Run Everywhere.
+6. Aktivieren.
+
+### Testplan
+
+```bash
+# Ohne bzw. mit falschem Geheimnis → 401 (kein_zugriff):
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://wp.uncuttv.at/wp-json/uncuttv/v1/videoplattform/anmeldung \
+  -H 'Content-Type: application/json' -d '{"email":"x@y.z","passwort":"a"}'
+```
+
+- Mit Geheimnis + echten Testkonto-Daten → 200 mit
+  `kennung`/`anzeigename`/`email`.
+- Mit Geheimnis + falschem Passwort → 401 `{"fehler":"ungueltig"}`.
+- Mit Geheimnis + nicht existierender E-Mail → 401, **gleiche Antwort**.
+- 10 Fehlversuche auf ein Konto → 429 mit `Retry-After: 900`.
+
+### Rollback
+
+Snippet deaktivieren. Keine DB-Änderung. Die Videoplattform zeigt dann
+bei Anmeldeversuchen einen Fehler; bestehende Plattform-Sitzungen
+laufen weiter.
+
+### Related code (uncuttv-videoplattform)
+
+- `src/lib/shopAnmeldung.ts` — Server-seitiger Aufruf dieses Endpunkts
+- `src/app/anmelden/` — Anmeldeseite der Plattform

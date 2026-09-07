@@ -1,5 +1,20 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Anmeldung der Videoplattform gegen die Shop-Konten
+
+Die Videoplattform (Repo `uncuttv-videoplattform`) lässt Kunden sich mit
+ihrem bestehenden Shop-Konto anmelden. Die Kontoprüfung läuft **nicht**
+über dieses Next.js-Frontend, sondern über einen Endpunkt direkt in
+WordPress auf **wp.uncuttv.at** (WPCode-Snippet):
+
+- Quelle und Anleitung: [`docs/wordpress/uncuttv-videoplattform-anmeldung.php`](docs/wordpress/uncuttv-videoplattform-anmeldung.php)
+  bzw. [`docs/wordpress/WPCODE_SNIPPETS.md`](docs/wordpress/WPCODE_SNIPPETS.md)
+  (Abschnitt „Videoplattform Anmelde-Endpunkt“).
+- Nötige Konfiguration in `wp-config.php` auf wp.uncuttv.at:
+  `define('UNCUTTV_VIDEOPLATTFORM_SECRET', '…')` — dasselbe Geheimnis
+  steht auf der Videoplattform als `SHOP_AUTH_SECRET`. Der Endpunkt gibt
+  nur Kennung, Anzeigename und E-Mail heraus; Passwörter bleiben im Shop.
+
 ## Getting Started
 
 First, run the development server:
