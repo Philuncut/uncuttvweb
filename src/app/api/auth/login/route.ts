@@ -33,8 +33,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("[Login] Attempting login for:", email);
-
     // Step 1: Authenticate via JWT
     const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
       method: "POST",
@@ -43,10 +41,8 @@ export async function POST(request: Request) {
     });
 
     const jwtBody = await jwtRes.text();
-    console.log("[Login] JWT response status:", jwtRes.status);
 
     if (!jwtRes.ok) {
-      console.log("[Login] JWT auth failed:", jwtBody.slice(0, 300));
       return NextResponse.json(
         { error: "Ungültige E-Mail oder Passwort." },
         { status: 401 }
@@ -57,8 +53,6 @@ export async function POST(request: Request) {
     const token = jwtData.token || "";
     const jwtEmail = jwtData.user_email || email;
     const jwtDisplayName = jwtData.user_display_name || "";
-
-    console.log("[Login] JWT auth succeeded for:", jwtEmail);
 
     // Step 2: Get user details via JWT token
     let wpUserId = 0;
@@ -72,7 +66,6 @@ export async function POST(request: Request) {
         const wpUser = await meRes.json();
         wpUserId = wpUser.id;
         wpRoles = wpUser.roles || [];
-        console.log("[Login] WP user ID:", wpUserId, "roles:", wpRoles);
       }
     }
 
@@ -155,8 +148,6 @@ export async function POST(request: Request) {
       cookieStore.set("haendler_role", sessionUser.role, opts);
       cookieStore.set("haendler_name", sessionUser.first_name, opts);
     }
-
-    console.log("[Login] Session created for:", sessionUser.email, "role:", sessionUser.role, "isWholesale:", isWholesale);
 
     return NextResponse.json({
       id: sessionUser.id,

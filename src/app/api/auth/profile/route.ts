@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import {
+  mayEnterHaendlerPortal,
+  requireSession,
+} from "@/lib/auth-session";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -245,19 +248,22 @@ function validateProfile(body: ProfilePayload, isHaendler: boolean): string | nu
 }
 
 export async function GET() {
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("woo_token")?.value;
-    const customerId = cookieStore.get("woo_customer_id")?.value;
-    const cookieName = asString(cookieStore.get("woo_customer_name")?.value);
+  // Kundennummer und Token kommen aus der gepruefen Sitzung. Vorher genuegte
+  // ein selbst gesetztes Cookie, um ein fremdes Profil zu lesen.
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
-    if (!token || !customerId) {
-      return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
-    }
+  try {
+    const customerId = String(session.customerId);
 
     const customer = await fetchWooCustomer(customerId);
-    const resolvedVat = await resolveBillingVat(customer, { jwt: token });
-    const profile = buildProfileFromCustomer(customer, cookieName, resolvedVat);
+    const resolvedVat = await resolveBillingVat(customer, {
+      jwt: session.token,
+    });
+    // Der Anzeigename stammt jetzt aus dem Kundensatz statt aus dem
+    // Anzeige-Cookie, das jeder selbst setzen kann.
+    const profile = buildProfileFromCustomer(customer, "", resolvedVat);
     return NextResponse.json(profile);
   } catch (error) {
     const message =
@@ -267,22 +273,18 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("woo_token")?.value;
-    const customerId = cookieStore.get("woo_customer_id")?.value;
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
 
-    if (!token || !customerId) {
-      return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
-    }
+  try {
+    const customerId = String(session.customerId);
+    const token = session.token;
 
     const body = (await request.json()) as ProfilePayload;
-    const role = asString(
-      cookieStore.get("haendler_role")?.value ||
-        cookieStore.get("woo_customer_role")?.value
-    ).toLowerCase();
-    const isHaendler =
-      role === "wholesale" || role === "administrator" || role === "shop_manager";
+    // Die Rolle stammt aus WordPress, nicht mehr aus einem Rollen-Cookie.
+    // Sie entscheidet hier darueber, ob Firma und UID Pflicht sind.
+    const isHaendler = mayEnterHaendlerPortal(session);
 
     const validationError = validateProfile(body, isHaendler);
     if (validationError) {

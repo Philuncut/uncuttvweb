@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
+import { requirePortalPage } from "@/lib/wholesale-gate";
 import Footer from "@/components/Footer";
 import HaendlerProduct from "@/components/HaendlerProduct";
 import Navbar from "@/components/Navbar";
@@ -24,12 +24,7 @@ export default async function HaendlerProductPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("haendler_token")?.value;
-
-  if (!token) {
-    redirect("/haendler");
-  }
+  await requirePortalPage();
 
   const { slug } = await params;
 

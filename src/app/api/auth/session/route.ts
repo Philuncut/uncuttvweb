@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { getCartPersistAuth } from "@/lib/cart-persist-auth";
-import {
-  isNewsletterSubscribedFromMeta,
-} from "@/lib/newsletter-customer-meta";
+import { clearSessionCookies, readSession } from "@/lib/auth-session";
+import { isNewsletterSubscribedFromMeta } from "@/lib/newsletter-customer-meta";
 import { fetchWooCustomer } from "@/lib/woo-customer-api";
-import { WHOLESALE_ROLE } from "@/lib/auth-constants";
 
 export const dynamic = "force-dynamic";
 
@@ -18,71 +14,64 @@ export type AuthSessionPayload = {
   isNewsletterSubscribed: boolean;
 };
 
+const EMPTY: AuthSessionPayload = {
+  isLoggedIn: false,
+  type: null,
+  name: null,
+  dashboardHref: null,
+  isWholesale: false,
+  isNewsletterSubscribed: false,
+};
+
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0]?.trim() ?? email;
   return local.replace(/[._]+/g, " ").trim() || email;
 }
 
-async function resolveNewsletterSubscribed(): Promise<boolean> {
-  const auth = await getCartPersistAuth();
-  if (!auth) return false;
+/** Anzeigename und Newsletter-Status in einem Zug aus dem Kundensatz. */
+async function loadCustomerBits(
+  customerId: number
+): Promise<{ name: string | null; isNewsletterSubscribed: boolean }> {
   try {
-    const customer = await fetchWooCustomer(auth.customerId);
-    return isNewsletterSubscribedFromMeta(customer.meta_data);
+    const customer = await fetchWooCustomer(String(customerId));
+    const first = (customer.first_name ?? "").trim();
+    return {
+      name: first || null,
+      isNewsletterSubscribed: isNewsletterSubscribedFromMeta(
+        customer.meta_data
+      ),
+    };
   } catch {
-    return false;
+    return { name: null, isNewsletterSubscribed: false };
   }
 }
 
 export async function GET() {
-  const empty: AuthSessionPayload = {
-    isLoggedIn: false,
-    type: null,
-    name: null,
-    dashboardHref: null,
-    isWholesale: false,
-    isNewsletterSubscribed: false,
-  };
+  const result = await readSession();
 
-  const cookieStore = await cookies();
-
-  const haendlerToken = cookieStore.get("haendler_token")?.value;
-  const haendlerEmail = cookieStore.get("haendler_email")?.value;
-  const haendlerRole = cookieStore.get("haendler_role")?.value?.toLowerCase() ?? "";
-  const haendlerIsWholesale = haendlerRole === WHOLESALE_ROLE;
-
-  if (haendlerToken && haendlerEmail) {
-    const nameCookie = cookieStore.get("haendler_name")?.value?.trim();
-    const name = nameCookie || displayNameFromEmail(haendlerEmail);
-    const isNewsletterSubscribed = await resolveNewsletterSubscribed();
-    return NextResponse.json({
-      isLoggedIn: true,
-      type: "haendler",
-      name,
-      dashboardHref: "/konto",
-      isWholesale: haendlerIsWholesale,
-      isNewsletterSubscribed,
-    } satisfies AuthSessionPayload);
+  // Ein abgelaufenes oder gefälschtes Token räumt die Cookies weg. Sonst
+  // hielte der Browser den Nutzer noch wochenlang für angemeldet, während
+  // jede geschützte Anfrage mit 401 zurückkommt.
+  if (result.status === "invalid") {
+    await clearSessionCookies();
+    return NextResponse.json(EMPTY satisfies AuthSessionPayload);
   }
 
-  const wooEmail = cookieStore.get("woo_customer_email")?.value;
-  const wooToken = cookieStore.get("woo_token")?.value;
-
-  if (wooEmail && wooToken) {
-    const nameCookie = cookieStore.get("woo_customer_name")?.value?.trim();
-    const wooRole = cookieStore.get("woo_customer_role")?.value?.toLowerCase() ?? "";
-    const name = nameCookie || displayNameFromEmail(wooEmail);
-    const isWholesale = wooRole === WHOLESALE_ROLE;
-    const isNewsletterSubscribed = await resolveNewsletterSubscribed();
-    return NextResponse.json({
-      isLoggedIn: true,
-      type: "customer",
-      name,
-      dashboardHref: "/konto",
-      isWholesale,
-      isNewsletterSubscribed,
-    } satisfies AuthSessionPayload);
+  if (result.status !== "ok") {
+    return NextResponse.json(EMPTY satisfies AuthSessionPayload);
   }
 
-  return NextResponse.json(empty);
+  const { session } = result;
+  const bits = await loadCustomerBits(session.customerId);
+
+  return NextResponse.json({
+    isLoggedIn: true,
+    type: session.source,
+    name: bits.name ?? displayNameFromEmail(session.email),
+    dashboardHref: "/konto",
+    // Die Händlerkennzeichnung stammt aus den Rollen, die WordPress zu
+    // diesem Token nennt, nicht mehr aus einem Rollen-Cookie.
+    isWholesale: session.isWholesale,
+    isNewsletterSubscribed: bits.isNewsletterSubscribed,
+  } satisfies AuthSessionPayload);
 }

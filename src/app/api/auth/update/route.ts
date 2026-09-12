@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { requireSession } from "@/lib/auth-session";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -7,45 +7,35 @@ const WOO_SECRET = process.env.WOOCOMMERCE_SECRET!;
 const AUTH_HEADER =
   "Basic " + Buffer.from(`${WOO_KEY}:${WOO_SECRET}`).toString("base64");
 
+export const dynamic = "force-dynamic";
+
 export async function PUT(request: Request) {
+  // Die Kundennummer kommt aus dem geprüften Token. Vorher stand sie in
+  // einem Cookie, das der Aufrufer selbst setzen konnte — damit ließen sich
+  // fremde Rechnungs- und Lieferadressen überschreiben.
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
+
   try {
-    const cookieStore = await cookies();
-    const customerId =
-      cookieStore.get("woo_customer_id")?.value ||
-      cookieStore.get("haendler_id")?.value;
-
-    if (!customerId) {
-      return NextResponse.json(
-        { error: "Nicht angemeldet." },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
 
-    console.log("[Update] Customer ID:", customerId);
-    console.log("[Update] Request body:", JSON.stringify(body, null, 2));
-    console.log("[Update] Shipping being saved:", JSON.stringify(body.shipping, null, 2));
-    console.log("[Update] Billing being saved:", JSON.stringify(body.billing, null, 2));
-    console.log("[Update] Meta data being saved:", JSON.stringify(body.meta_data, null, 2));
-
-    const wooUrl = `${WOO_URL}/wp-json/wc/v3/customers/${customerId}`;
-    console.log("[Update] PUT to:", wooUrl);
-
-    const res = await fetch(wooUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: AUTH_HEADER,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    const res = await fetch(
+      `${WOO_URL}/wp-json/wc/v3/customers/${session.customerId}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: AUTH_HEADER,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      }
+    );
 
     const responseText = await res.text();
-    console.log("[Update] WooCommerce response status:", res.status);
 
     if (!res.ok) {
-      console.log("[Update] WooCommerce error:", responseText.slice(0, 500));
       let errMsg = "Aktualisierung fehlgeschlagen.";
       try {
         const err = JSON.parse(responseText);
@@ -57,11 +47,6 @@ export async function PUT(request: Request) {
     }
 
     const customer = JSON.parse(responseText);
-    console.log("[Update] WooCommerce returned shipping:", JSON.stringify(customer.shipping, null, 2));
-    console.log("[Update] WooCommerce returned billing:", JSON.stringify(customer.billing, null, 2));
-    console.log("[Update] WooCommerce returned meta_data (uid):",
-      JSON.stringify(customer.meta_data?.filter((m: { key: string }) => m.key === "uid_nummer"), null, 2)
-    );
 
     return NextResponse.json({
       id: customer.id,
@@ -72,7 +57,6 @@ export async function PUT(request: Request) {
       shipping: customer.shipping,
     });
   } catch (error) {
-    console.error("[Update] Unexpected error:", error);
     const message =
       error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.";
     return NextResponse.json({ error: message }, { status: 500 });

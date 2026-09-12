@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { requirePortalSession } from "@/lib/auth-session";
 import {
   fetchWooInvoicePdf,
   fetchWooOrderForOwnership,
   invoicePdfResponse,
   WooInvoiceFetchError,
 } from "@/lib/fetch-woo-invoice";
+import { maySeeInvoice } from "@/lib/invoice-ownership";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  // Portalzugang aus den geprüften Rollen, danach dieselbe Zuordnung der
+  // Bestellung zur Kundennummer wie im Kundenkonto.
+  const auth = await requirePortalSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const orderIdParam = searchParams.get("order_id");
@@ -17,12 +26,6 @@ export async function GET(request: Request) {
     }
 
     const orderId = Number(orderIdParam);
-    const cookieStore = await cookies();
-    const haendlerEmail = cookieStore.get("haendler_email")?.value;
-
-    if (!haendlerEmail) {
-      return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
-    }
 
     const order = await fetchWooOrderForOwnership(orderId);
     if (!order) {
@@ -32,7 +35,7 @@ export async function GET(request: Request) {
       );
     }
 
-    if (order.billing.email.toLowerCase() !== haendlerEmail.toLowerCase()) {
+    if (!maySeeInvoice(order, session)) {
       return NextResponse.json({ error: "Zugriff verweigert." }, { status: 403 });
     }
 

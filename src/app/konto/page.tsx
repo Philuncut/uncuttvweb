@@ -1,13 +1,14 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth-session";
 
 export default async function KontoPage() {
-  const cookieStore = await cookies();
-  const customerId = cookieStore.get("woo_customer_id")?.value;
+  // Vorher genuegte ein selbst gesetztes Cookie `woo_customer_id`, um hier
+  // durchzukommen. Jetzt entscheidet das geprueftes Token.
+  const session = await getSession();
 
-  if (customerId) {
+  if (session) {
     redirect("/konto/dashboard");
-  } else {
-    redirect("/konto/login?redirect=/konto");
   }
+
+  redirect("/konto/login?redirect=/konto");
 }

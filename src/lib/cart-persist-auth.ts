@@ -1,18 +1,18 @@
-import { cookies } from "next/headers";
+import { getSession } from "@/lib/auth-session";
 
 export type CartPersistAuth = {
   customerId: string;
 };
 
-/** Same customer identification as /api/auth/me and profile routes. */
+/**
+ * Dieselbe Kundenzuordnung wie überall sonst, jetzt aus dem geprüften
+ * Token statt aus dem Cookie `woo_customer_id`. Vorher genügte eine
+ * beliebige Nummer in diesem Cookie, um den gespeicherten Warenkorb eines
+ * fremden Kontos zu lesen und zu überschreiben.
+ */
 export async function getCartPersistAuth(): Promise<CartPersistAuth | null> {
-  const cookieStore = await cookies();
-  const customerId = cookieStore.get("woo_customer_id")?.value?.trim();
-  const wooToken = cookieStore.get("woo_token")?.value;
-  const haendlerToken = cookieStore.get("haendler_token")?.value;
+  const session = await getSession();
+  if (!session) return null;
 
-  if (!customerId) return null;
-  if (!wooToken && !haendlerToken) return null;
-
-  return { customerId };
+  return { customerId: String(session.customerId) };
 }

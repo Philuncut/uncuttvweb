@@ -16,6 +16,7 @@ import {
   parseDetails,
   stripInfoGrids,
 } from "@/lib/parse-product-details";
+import { redirectWholesaleToPortal } from "@/lib/wholesale-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,8 @@ export async function generateMetadata({ params }: PageProps) {
 }
 
 export default async function ProductPage({ params }: PageProps) {
+  await redirectWholesaleToPortal();
+
   const { slug } = await params;
   const products = await wooFetch<WooProductSeo[]>("/products", { slug });
   const product = products[0];

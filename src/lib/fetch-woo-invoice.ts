@@ -21,6 +21,8 @@ export class WooInvoiceFetchError extends Error {
 export type WooOrderOwnership = {
   id: number;
   number: string;
+  /** 0 bei Gastbestellungen, sonst die WooCommerce-Kundennummer. */
+  customer_id: number;
   billing: { email: string };
 };
 

@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getSession, mayEnterHaendlerPortal } from "@/lib/auth-session";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HaendlerAuth from "@/components/HaendlerAuth";
@@ -9,10 +9,10 @@ export const metadata = {
 };
 
 export default async function HaendlerPage() {
-  const cookieStore = await cookies();
-  const haendlerToken = cookieStore.get("haendler_token")?.value;
+  // Vorher reichte irgendein Inhalt im Cookie `haendler_token`.
+  const session = await getSession();
 
-  if (haendlerToken) {
+  if (session && mayEnterHaendlerPortal(session)) {
     redirect("/haendler/dashboard");
   }
 

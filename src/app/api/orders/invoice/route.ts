@@ -1,13 +1,23 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { requireSession } from "@/lib/auth-session";
 import {
   fetchWooInvoicePdf,
   fetchWooOrderForOwnership,
   invoicePdfResponse,
   WooInvoiceFetchError,
 } from "@/lib/fetch-woo-invoice";
+import { maySeeInvoice } from "@/lib/invoice-ownership";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  // Zwei Hürden statt einer: erst eine geprüfte Sitzung, dann die
+  // Zuordnung der Bestellung zu deren Kundennummer. Vorher genügte ein
+  // selbst gesetztes Cookie mit der Mailadresse eines fremden Kunden.
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const orderIdParam = searchParams.get("order_id");
@@ -17,12 +27,6 @@ export async function GET(request: Request) {
     }
 
     const orderId = Number(orderIdParam);
-    const cookieStore = await cookies();
-    const customerEmail = cookieStore.get("woo_customer_email")?.value;
-
-    if (!customerEmail) {
-      return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
-    }
 
     const order = await fetchWooOrderForOwnership(orderId);
     if (!order) {
@@ -32,7 +36,7 @@ export async function GET(request: Request) {
       );
     }
 
-    if (order.billing.email.toLowerCase() !== customerEmail.toLowerCase()) {
+    if (!maySeeInvoice(order, session)) {
       return NextResponse.json({ error: "Zugriff verweigert." }, { status: 403 });
     }
 

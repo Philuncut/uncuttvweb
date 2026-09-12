@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { requireSession } from "@/lib/auth-session";
+import { resetIdentityCache } from "@/lib/wp-identity";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 
@@ -8,21 +10,18 @@ interface Body {
   newPassword: string;
 }
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
+  // Die Mailadresse, gegen die das alte Passwort geprüft wird, stammt aus
+  // dem geprüften Token. Vorher kam sie aus einem Cookie, ließ sich also
+  // auf ein fremdes Konto umbiegen.
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
+
   try {
-    const cookieStore = await cookies();
-    const customerEmail = cookieStore.get("woo_customer_email")?.value;
-    const token = cookieStore.get("woo_token")?.value;
-
-    if (!customerEmail) {
-      return NextResponse.json(
-        { error: "Nicht angemeldet." },
-        { status: 401 }
-      );
-    }
-
-    const { currentPassword, newPassword } =
-      (await request.json()) as Body;
+    const { currentPassword, newPassword } = (await request.json()) as Body;
 
     if (!currentPassword || !newPassword) {
       return NextResponse.json(
@@ -38,14 +37,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify current password via JWT
+    // Altes Passwort gegenprüfen.
     const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: customerEmail,
+        username: session.email,
         password: currentPassword,
       }),
+      cache: "no-store",
     });
 
     if (!jwtRes.ok) {
@@ -56,16 +56,8 @@ export async function POST(request: Request) {
     }
 
     const jwtData = await jwtRes.json();
-    const freshToken = jwtData.token || token;
+    const freshToken = jwtData.token || session.token;
 
-    if (!freshToken) {
-      return NextResponse.json(
-        { error: "Authentifizierung fehlgeschlagen." },
-        { status: 401 }
-      );
-    }
-
-    // Update password via WordPress REST API using JWT token
     const updateRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
       method: "POST",
       headers: {
@@ -73,44 +65,57 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ password: newPassword }),
+      cache: "no-store",
     });
 
     if (!updateRes.ok) {
-      const err = await updateRes.text();
-      console.error("[ChangePassword] WordPress update failed:", err);
       return NextResponse.json(
         { error: "Passwort konnte nicht geändert werden." },
         { status: 500 }
       );
     }
 
-    // Get new JWT token with new password
+    // Das alte Token gilt nach dem Wechsel nicht mehr. Ohne ein frisches
+    // wäre der Nutzer bis zum nächsten Login ausgesperrt.
     const newJwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: customerEmail,
+        username: session.email,
         password: newPassword,
       }),
+      cache: "no-store",
     });
 
     if (newJwtRes.ok) {
       const newJwtData = await newJwtRes.json();
       if (newJwtData.token) {
-        cookieStore.set("woo_token", newJwtData.token, {
+        const cookieStore = await cookies();
+        const opts = {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           path: "/",
           maxAge: 60 * 60 * 24 * 30,
-        });
+        } as const;
+
+        cookieStore.set("woo_token", newJwtData.token, opts);
+        // Händler tragen dasselbe Token in ihrem Portal-Cookie. Bliebe es
+        // stehen, prüfte die nächste Anfrage ein totes Token.
+        if (cookieStore.get("haendler_token")) {
+          cookieStore.set("haendler_token", newJwtData.token, opts);
+        }
       }
     }
 
+    // Der Zwischenspeicher kennt das alte Token noch als gültig.
+    resetIdentityCache();
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[ChangePassword] Error:", error);
     const message =
-      error instanceof Error ? error.message : "Fehler beim Ändern des Passworts.";
+      error instanceof Error
+        ? error.message
+        : "Fehler beim Ändern des Passworts.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -189,6 +189,14 @@ export default function AuthForms() {
           return;
         }
         window.dispatchEvent(new Event("uncuttv:session-changed"));
+        // Ohne Token gibt es keine Sitzung. Dann führt der Weg über die
+        // Anmeldung, statt in eine halb angemeldete Ansicht zu laufen.
+        if (data.signedIn === false) {
+          router.push(
+            `/konto/login?redirect=${encodeURIComponent(redirectTo)}`
+          );
+          return;
+        }
         router.push(redirectTo);
       } catch {
         setError("Verbindungsfehler.");

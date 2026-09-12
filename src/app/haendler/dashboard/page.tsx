@@ -1,3 +1,4 @@
+import { requirePortalPage } from "@/lib/wholesale-gate";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import HaendlerDashboardGate from "@/components/HaendlerDashboardGate";
@@ -6,7 +7,9 @@ export const metadata = {
   title: "Händler Dashboard — UNCUTTV",
 };
 
-export default function HaendlerDashboardPage() {
+export default async function HaendlerDashboardPage() {
+  await requirePortalPage();
+
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       <Navbar />

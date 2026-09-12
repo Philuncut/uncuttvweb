@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth-session";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Dashboard from "@/components/Dashboard";
@@ -6,7 +8,12 @@ export const metadata = {
   title: "Mein Konto — UNCUTTV",
 };
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  // Ohne gueltige Sitzung gar nicht erst rendern: Die Seite laedt sonst nur,
+  // um danach an einer 401 haengen zu bleiben.
+  const session = await getSession();
+  if (!session) redirect("/konto/login?redirect=/konto/dashboard");
+
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       <Navbar />

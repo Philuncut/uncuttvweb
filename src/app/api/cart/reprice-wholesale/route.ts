@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { WHOLESALE_ROLE } from "@/lib/auth-constants";
+import { requirePortalSession } from "@/lib/auth-session";
 import {
   enrichHaendlerProductFromWoo,
   hasPositiveHaendlerPreis,
@@ -81,31 +80,17 @@ async function enrichEligibleProducts(
   return eligible;
 }
 
-/** Dealer portal session OR B2C session with wholesale role only — not admin-as-B2C. */
-function authorizedForWholesaleReprice(cookieStore: Awaited<
-  ReturnType<typeof cookies>
->): boolean {
-  const haTok = cookieStore.get("haendler_token")?.value;
-  const haEm = cookieStore.get("haendler_email")?.value;
-  if (haTok && haEm) return true;
-
-  const wooTok = cookieStore.get("woo_token")?.value;
-  const wooEm = cookieStore.get("woo_customer_email")?.value;
-  const wooRole =
-    cookieStore.get("woo_customer_role")?.value?.toLowerCase() ?? "";
-  return !!(wooTok && wooEm && wooRole === WHOLESALE_ROLE);
-}
-
 /**
  * Resolve current wholesale line prices + full product payloads needed for `toHaendlerCartProduct`.
  */
 export async function POST(request: Request) {
-  try {
-    const cookieStore = await cookies();
-    if (!authorizedForWholesaleReprice(cookieStore)) {
-      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-    }
+  // Vorher genuegten zwei selbst gesetzte Cookies mit beliebigem Inhalt,
+  // um an die Haendlerpreise zu kommen. Die Rolle stammt jetzt aus
+  // WordPress. An der Preisberechnung selbst aendert sich nichts.
+  const auth = await requirePortalSession();
+  if (auth.response) return auth.response;
 
+  try {
     const body = (await request.json()) as { ids?: unknown };
     if (!Array.isArray(body.ids)) {
       return NextResponse.json(

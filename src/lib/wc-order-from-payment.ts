@@ -1,4 +1,3 @@
-import { cookies } from "next/headers";
 import type Stripe from "stripe";
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
@@ -39,6 +38,7 @@ import {
   shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
 import { wooFetch } from "@/lib/woocommerce";
+import { resolveOrderCustomer } from "@/lib/order-customer";
 
 export type CartMeta = {
   id: number;
@@ -209,17 +209,6 @@ function splitName(fullName: string | null | undefined): {
     first: parts[0] ?? "",
     last: parts.slice(1).join(" "),
   };
-}
-
-function resolveLoggedInCustomerId(
-  cookieStore: Awaited<ReturnType<typeof cookies>>
-): string | undefined {
-  const wooId = cookieStore.get("woo_customer_id")?.value?.trim();
-  if (wooId) return wooId;
-  const haendlerToken = cookieStore.get("haendler_token")?.value;
-  const haendlerId = cookieStore.get("haendler_id")?.value?.trim();
-  if (haendlerToken && haendlerId) return haendlerId;
-  return undefined;
 }
 
 async function fetchWooCustomer(customerId: string): Promise<WooCustomer | null> {
@@ -474,16 +463,12 @@ export async function createWooOrderFromCheckoutSync(
     throw err;
   }
 
-  let customerIdStr = "";
-  try {
-    const cookieStore = await cookies();
-    customerIdStr = resolveLoggedInCustomerId(cookieStore) ?? "";
-  } catch (cookieErr) {
-    console.warn(
-      "[wc-order] cookies() unavailable, proceeding without logged-in WC customer:",
-      cookieErr instanceof Error ? cookieErr.message : cookieErr
-    );
-  }
+  // Die Zuordnung kommt ausschliesslich aus dem geprueften Token. Ohne
+  // Sitzung wird es eine Gastbestellung, auch wenn ein Cookie eine Nummer
+  // nennt. Siehe order-customer.ts.
+  const orderCustomer = await resolveOrderCustomer();
+  const customerIdStr =
+    orderCustomer.customerId > 0 ? String(orderCustomer.customerId) : "";
 
   let profileCompany = "";
   let profileVat = "";

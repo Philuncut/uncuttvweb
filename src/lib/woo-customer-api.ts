@@ -8,6 +8,8 @@ const AUTH_HEADER =
 export type WooCustomerMetaRow = { key?: string; value?: unknown };
 
 export type WooCustomerRecord = {
+  /** Für den Anzeigenamen der Sitzung. Der Kundensatz ist dafür die Quelle. */
+  first_name?: string;
   meta_data?: WooCustomerMetaRow[];
 };
 

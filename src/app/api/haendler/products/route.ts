@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
+import { requirePortalSession } from "@/lib/auth-session";
 import {
   enrichHaendlerProductFromWoo,
   isProductVisibleForHaendler,
@@ -35,19 +35,14 @@ const getCachedHaendlerProducts = unstable_cache(
 );
 
 export async function GET() {
+  // Vorher genügte ein beliebiger Inhalt im Cookie `haendler_token`, um den
+  // Händlerkatalog samt Einkaufspreisen zu lesen. Jetzt zählt die geprüfte
+  // Rolle aus WordPress.
+  const auth = await requirePortalSession();
+  if (auth.response) return auth.response;
+
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("haendler_token")?.value;
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "Nicht angemeldet." },
-        { status: 401 }
-      );
-    }
-
     const filtered = await getCachedHaendlerProducts();
-
     return NextResponse.json(filtered);
   } catch (error) {
     const message =

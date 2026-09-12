@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { requireSession } from "@/lib/auth-session";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -7,22 +7,19 @@ const WOO_SECRET = process.env.WOOCOMMERCE_SECRET!;
 const AUTH_HEADER =
   "Basic " + Buffer.from(`${WOO_KEY}:${WOO_SECRET}`).toString("base64");
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
+  const auth = await requireSession();
+  if (auth.response) return auth.response;
+  const { session } = auth;
+
   try {
-    const cookieStore = await cookies();
-    const customerId = cookieStore.get("woo_customer_id")?.value;
-    const customerEmail = cookieStore.get("woo_customer_email")?.value;
-    const customerRole = cookieStore.get("woo_customer_role")?.value;
-    const token = cookieStore.get("woo_token")?.value;
+    // Kundennummer und Mailadresse stammen aus dem geprüften Token. Vorher
+    // reichte ein selbst gesetztes Cookie `woo_customer_id`, um fremde
+    // Kundendaten samt Bestellhistorie zu lesen.
+    const customerId = session.customerId;
 
-    if (!customerId) {
-      return NextResponse.json(
-        { error: "Nicht angemeldet." },
-        { status: 401 }
-      );
-    }
-
-    // Try to fetch WooCommerce customer
     const cusRes = await fetch(
       `${WOO_URL}/wp-json/wc/v3/customers/${customerId}`,
       {
@@ -30,13 +27,13 @@ export async function GET() {
           Authorization: AUTH_HEADER,
           "Content-Type": "application/json",
         },
+        cache: "no-store",
       }
     );
 
     if (cusRes.ok) {
       const customer = await cusRes.json();
 
-      // Fetch recent orders
       const ordRes = await fetch(
         `${WOO_URL}/wp-json/wc/v3/orders?customer=${customerId}&per_page=20&orderby=date&order=desc`,
         {
@@ -44,6 +41,7 @@ export async function GET() {
             Authorization: AUTH_HEADER,
             "Content-Type": "application/json",
           },
+          cache: "no-store",
         }
       );
 
@@ -57,7 +55,7 @@ export async function GET() {
         email: customer.email,
         firstName: customer.first_name,
         lastName: customer.last_name,
-        role: customer.role || customerRole || "customer",
+        role: session.roles[0] ?? "customer",
         billing: customer.billing,
         shipping: customer.shipping,
         meta_data: customer.meta_data || [],
@@ -65,57 +63,35 @@ export async function GET() {
       });
     }
 
-    // WooCommerce customer not found — likely an admin user
-    // Use JWT token to fetch WordPress user data
-    if (token) {
-      const meRes = await fetch(`${WOO_URL}/wp-json/wp/v2/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (meRes.ok) {
-        const wpUser = await meRes.json();
-
-        // Fetch all orders (admins can see all, but filter by email)
-        let orders: unknown[] = [];
-        if (customerEmail) {
-          const ordRes = await fetch(
-            `${WOO_URL}/wp-json/wc/v3/orders?search=${encodeURIComponent(customerEmail)}&per_page=20&orderby=date&order=desc`,
-            {
-              headers: {
-                Authorization: AUTH_HEADER,
-                "Content-Type": "application/json",
-              },
-            }
-          );
-          if (ordRes.ok) {
-            orders = await ordRes.json();
-          }
+    // Kein WooCommerce-Kunde zur Nummer — typischerweise ein reines
+    // WordPress-Konto wie ein Administrator. Die Bestellungen werden dann
+    // über die geprüfte Mailadresse gesucht, nicht über ein Cookie.
+    let orders: unknown[] = [];
+    if (session.email) {
+      const ordRes = await fetch(
+        `${WOO_URL}/wp-json/wc/v3/orders?search=${encodeURIComponent(session.email)}&per_page=20&orderby=date&order=desc`,
+        {
+          headers: {
+            Authorization: AUTH_HEADER,
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
         }
-
-        const nameParts = (wpUser.name || "").split(" ");
-        return NextResponse.json({
-          id: wpUser.id,
-          email: customerEmail || wpUser.slug + "@uncuttv.at",
-          firstName: nameParts[0] || wpUser.slug || "",
-          lastName: nameParts.slice(1).join(" ") || "",
-          role: customerRole || "administrator",
-          billing: {},
-          shipping: {},
-          orders,
-        });
+      );
+      if (ordRes.ok) {
+        orders = await ordRes.json();
       }
     }
 
-    // Fallback: return minimal data from cookies
     return NextResponse.json({
-      id: parseInt(customerId),
-      email: customerEmail || "",
+      id: session.wpUserId,
+      email: session.email,
       firstName: "",
       lastName: "",
-      role: customerRole || "customer",
+      role: session.roles[0] ?? "customer",
       billing: {},
       shipping: {},
-      orders: [],
+      orders,
     });
   } catch (error) {
     const message =

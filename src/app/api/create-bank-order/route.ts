@@ -3,7 +3,6 @@ import type { CartItem } from "@/lib/CartContext";
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
-import { cookies } from "next/headers";
 import { shouldSendExplicitEuB2cLineAmounts, shouldSendExplicitNonEuLineAmounts } from "@/lib/eu-vat-rates";
 import {
   splitGrossForWooRest,
@@ -40,6 +39,7 @@ import {
   buildWooCouponLines,
   shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
+import { resolveOrderCustomer } from "@/lib/order-customer";
 
 interface Body {
   customer: {
@@ -155,15 +155,11 @@ export async function POST(request: Request) {
     const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
     const WOOCOMMERCE_SECRET = process.env.WOOCOMMERCE_SECRET!;
 
-    const cookieStore = await cookies();
-    const wooId = cookieStore.get("woo_customer_id")?.value?.trim();
-    const haendlerTok = cookieStore.get("haendler_token")?.value;
-    const haendlerId = cookieStore.get("haendler_id")?.value?.trim();
-    const customerIdStr =
-      wooId || (haendlerTok && haendlerId ? haendlerId : undefined);
-    const parsedCustomerId = customerIdStr
-      ? parseInt(customerIdStr, 10)
-      : NaN;
+    // Die Zuordnung kommt ausschliesslich aus dem geprueften Token. Ohne
+    // Sitzung wird es eine Gastbestellung, auch wenn ein Cookie eine Nummer
+    // nennt. Siehe order-customer.ts.
+    const orderCustomer = await resolveOrderCustomer();
+    const parsedCustomerId = orderCustomer.customerId;
 
     const companyFromBody =
       typeof bodyBilling?.company === "string"

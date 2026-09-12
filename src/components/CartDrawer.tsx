@@ -25,12 +25,7 @@ interface CouponState {
 
 export default function CartDrawer() {
   const pathname = usePathname();
-  const [dealerCookie, setDealerCookie] = useState(false);
   const [isWholesale, setIsWholesale] = useState(false);
-
-  useEffect(() => {
-    setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
-  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +77,10 @@ export default function CartDrawer() {
     closeDrawer,
   } = useCart();
 
-  const isB2B =
-    (pathname ?? "").startsWith("/haendler") || dealerCookie || isWholesale;
+  // Frueher stand hier zusaetzlich ein Test auf das Cookie haendler_token
+  // ueber document.cookie. Das Cookie ist httpOnly, der Test war immer
+  // falsch. Massgeblich ist die geprueftes Sitzung aus /api/auth/session.
+  const isB2B = (pathname ?? "").startsWith("/haendler") || isWholesale;
 
   const showPreOrderMixedBanner = useMemo(
     () => !isB2B && cartHasMixedPreOrder(items),

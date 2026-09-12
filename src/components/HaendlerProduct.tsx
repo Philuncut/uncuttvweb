@@ -32,14 +32,11 @@ export default function HaendlerProduct({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [dealerCookie, setDealerCookie] = useState(false);
 
-  useEffect(() => {
-    setDealerCookie(/(?:^|;\s*)haendler_token=/.test(document.cookie));
-  }, [pathname]);
-
-  const isB2B =
-    (pathname ?? "").startsWith("/haendler") || dealerCookie;
+  // Der Test auf das httpOnly-Cookie haendler_token war immer falsch und
+  // ist entfallen. Diese Ansicht gibt es ohnehin nur unter /haendler, und
+  // die Seite dahinter laesst nur gepruefte Portalnutzer durch.
+  const isB2B = (pathname ?? "").startsWith("/haendler");
 
   const { addToCart, openDrawer } = useCart();
   const product = initialProduct;
