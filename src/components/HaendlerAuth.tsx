@@ -4,6 +4,7 @@ import { useState, useCallback, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
+import { PasswordResyncForm } from "@/components/PasswordResyncForm";
 import { useCart } from "@/lib/CartContext";
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -52,9 +53,14 @@ export default function HaendlerAuth() {
   const [loginPw, setLoginPw] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
+  // Shop und Konto haben verschiedene Passwörter: siehe AuthForms.
+  const [resync, setResync] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
+
+  const submitLogin = useCallback(
+    async (email: string, password: string) => {
       setError("");
       setLoading(true);
 
@@ -62,14 +68,22 @@ export default function HaendlerAuth() {
         const res = await fetch("/api/haendler/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: loginEmail, password: loginPw }),
+          body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
+
+        if (res.status === 409 && data.code === "password_out_of_sync") {
+          setResync({ email, password });
+          setLoading(false);
+          return;
+        }
+
         if (!res.ok) {
           setError(data.error || "Anmeldung fehlgeschlagen.");
           setLoading(false);
           return;
         }
+        setResync(null);
         try {
           const result = await repriceCartForWholesale();
           if (
@@ -95,7 +109,15 @@ export default function HaendlerAuth() {
         setLoading(false);
       }
     },
-    [loginEmail, loginPw, router, repriceCartForWholesale]
+    [router, repriceCartForWholesale]
+  );
+
+  const handleLogin = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault();
+      void submitLogin(loginEmail, loginPw);
+    },
+    [submitLogin, loginEmail, loginPw]
   );
 
   return (
@@ -106,6 +128,16 @@ export default function HaendlerAuth() {
 
       {error && <p className="mt-4 text-sm text-[#c0392b]">{error}</p>}
 
+      {resync && (
+        <PasswordResyncForm
+          email={resync.email}
+          currentPassword={resync.password}
+          onDone={(neu) => submitLogin(resync.email, neu)}
+          onCancel={() => setResync(null)}
+        />
+      )}
+
+      {!resync && (
       <form onSubmit={handleLogin} className="mt-6 space-y-4">
         <div>
           <Label>E-MAIL</Label>
@@ -140,6 +172,7 @@ export default function HaendlerAuth() {
           )}
         </button>
       </form>
+      )}
 
       <div className="mt-8 border-t border-[#222] pt-6 text-center">
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#888]">

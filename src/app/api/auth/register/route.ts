@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { identityLogin } from "@/lib/identity-server";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
 const WOO_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -57,22 +58,17 @@ export async function POST(request: Request) {
     // registrierte Nutzer galt für /api/auth/session als abgemeldet, für
     // /konto und /api/auth/me aber als angemeldet. Ohne Token gibt es jetzt
     // gar keine Sitzung mehr, also muss es hier entstehen.
+    // Über den Identitätsdienst, nicht mehr direkt bei jwt-auth: Er ist die
+    // einzige Stelle, an der Zugangsdaten geprüft werden. Das frisch
+    // angelegte Konto kennt Supabase noch nicht; der Dienst übernimmt es
+    // dabei gleich mit, wie bei jedem ersten Login. Am Anlegen des
+    // WooCommerce-Kunden darüber ändert sich nichts.
+    //
+    // Klappt die Anmeldung nicht, steht das Konto trotzdem, und der Nutzer
+    // meldet sich von Hand an.
     let token = "";
-    try {
-      const jwtRes = await fetch(`${WOO_URL}/wp-json/jwt-auth/v1/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: email, password }),
-        cache: "no-store",
-      });
-      if (jwtRes.ok) {
-        const jwtData = await jwtRes.json();
-        token = typeof jwtData.token === "string" ? jwtData.token : "";
-      }
-    } catch {
-      // Konto steht, nur die Anmeldung klappte nicht. Der Nutzer meldet
-      // sich dann von Hand an.
-    }
+    const login = await identityLogin(email, password, request.headers);
+    if (login.ok) token = login.wordpressToken;
 
     if (token) {
       const cookieStore = await cookies();

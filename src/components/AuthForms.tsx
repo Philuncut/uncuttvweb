@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
+import { PasswordResyncForm } from "@/components/PasswordResyncForm";
 import { useCart } from "@/lib/CartContext";
 
 /** Validates and resolves the post-login redirect target. */
@@ -98,9 +99,17 @@ export default function AuthForms() {
   const [showRegPw, setShowRegPw] = useState(false);
   const [showRegConfirm, setShowRegConfirm] = useState(false);
 
-  const handleLogin = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
+  // Shop und Konto haben verschiedene Passwörter: Der Dienst hat das
+  // eingegebene bestätigt, WordPress kennt ein anderes. Dann zeigt die Seite
+  // den Abgleichschritt statt des Anmeldekastens. Das Passwort bleibt nur
+  // hier im Zustand, bis der Wechsel durch ist.
+  const [resync, setResync] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
+
+  const submitLogin = useCallback(
+    async (email: string, password: string) => {
       setError("");
       setLoading(true);
 
@@ -108,17 +117,22 @@ export default function AuthForms() {
         const res = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: loginEmail,
-            password: loginPassword,
-          }),
+          body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
+
+        if (res.status === 409 && data.code === "password_out_of_sync") {
+          setResync({ email, password });
+          setLoading(false);
+          return;
+        }
+
         if (!res.ok) {
           setError(data.error || "Anmeldung fehlgeschlagen.");
           setLoading(false);
           return;
         }
+        setResync(null);
 
         // Wholesale takes priority — B2C shop flow skipped and cart repriced server-side prices.
         if (data.isWholesale === true) {
@@ -153,7 +167,15 @@ export default function AuthForms() {
         setLoading(false);
       }
     },
-    [loginEmail, loginPassword, router, redirectTo, repriceCartForWholesale]
+    [router, redirectTo, repriceCartForWholesale]
+  );
+
+  const handleLogin = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault();
+      void submitLogin(loginEmail, loginPassword);
+    },
+    [submitLogin, loginEmail, loginPassword]
   );
 
   const handleRegister = useCallback(
@@ -229,6 +251,7 @@ export default function AuthForms() {
           onClick={() => {
             setTab("register");
             setError("");
+            setResync(null);
           }}
           className={`flex-1 cursor-pointer py-3 text-center text-xs font-bold tracking-[0.2em] transition-colors ${
             tab === "register"
@@ -245,8 +268,19 @@ export default function AuthForms() {
         <p className="mt-4 text-sm text-[#c0392b]">{error}</p>
       )}
 
+      {/* Abgleichschritt: Passwort einmalig neu setzen, danach Anmeldung
+          mit dem neuen Passwort über dieselbe Route wie sonst. */}
+      {tab === "login" && resync && (
+        <PasswordResyncForm
+          email={resync.email}
+          currentPassword={resync.password}
+          onDone={(neu) => submitLogin(resync.email, neu)}
+          onCancel={() => setResync(null)}
+        />
+      )}
+
       {/* Login form */}
-      {tab === "login" && (
+      {tab === "login" && !resync && (
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           <div>
             <Label>E-MAIL</Label>

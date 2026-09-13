@@ -52,3 +52,5 @@ händlerzugänge.txt
 /*.pdf
 /*.jpg
 /*.png
+
+!.env.example

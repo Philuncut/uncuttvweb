@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { identityFailureResponse, identityLogin } from "@/lib/identity-server";
 import { wooFetch } from "@/lib/woocommerce";
 
 const WOO_URL = process.env.WOOCOMMERCE_URL!;
@@ -112,28 +113,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Step 1: Authenticate via JWT
-    const jwtUrl = `${WOO_URL}/wp-json/jwt-auth/v1/token`;
+    // Step 1: Zugangsdaten prüft der Identitätsdienst, nicht mehr jwt-auth
+    // direkt. Er liefert das WordPress-JWT mit; die Rollenprüfung darunter
+    // bleibt unverändert. Bei auseinandergelaufenen Passwörtern kommt ein
+    // 409 mit code password_out_of_sync, das Formular führt zum Wechsel.
+    const login = await identityLogin(email, password, request.headers);
+    if (!login.ok) return identityFailureResponse(login.failure);
 
-    const jwtRes = await fetch(jwtUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: email, password }),
-    });
-
-    const jwtBody = await jwtRes.text();
-
-    if (!jwtRes.ok) {
-      return NextResponse.json(
-        { error: "Ungültige E-Mail oder Passwort." },
-        { status: 401 }
-      );
-    }
-
-    const jwtData = JSON.parse(jwtBody);
-    const token = jwtData.token || "";
-    const jwtEmail = jwtData.user_email || email;
-    const jwtDisplayName = jwtData.user_display_name || "";
+    const token = login.wordpressToken;
+    const jwtEmail = login.email;
+    const jwtDisplayName = login.displayName;
 
     // Step 2: Get user roles via JWT token
     const meUrl = `${WOO_URL}/wp-json/wp/v2/users/me?context=edit`;
