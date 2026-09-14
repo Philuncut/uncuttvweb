@@ -29,6 +29,13 @@ export default function ShopHero() {
     const video = videoRef.current;
     if (!video) return;
 
+    // Am Handy wird das Video (2,9 MB) gar nicht erst geladen: Das
+    // Element steht mit preload="none" und ohne autoplay im HTML, der
+    // Verlauf darunter bleibt stehen. Erst ab Tablet-Breite wird
+    // nachgeladen und abgespielt.
+    const desktop = window.matchMedia("(min-width: 768px)").matches;
+    if (!desktop) return;
+
     function onPlaying() {
       setVideoReady(true);
     }
@@ -39,6 +46,11 @@ export default function ShopHero() {
 
     video.addEventListener("playing", onPlaying);
     video.addEventListener("ended", onEnded);
+    video.preload = "auto";
+    video.muted = true;
+    video.play().catch(() => {
+      /* Autoplay verweigert: der Verlauf bleibt sichtbar */
+    });
     if (!video.paused) setVideoReady(true);
 
     return () => {
@@ -71,7 +83,7 @@ export default function ShopHero() {
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={videoRef}
-        autoPlay
+        preload="none"
         muted
         loop
         playsInline

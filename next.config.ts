@@ -104,6 +104,12 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "uncuttv.at",
       },
+      // Produktbilder liegen bei WordPress; ohne diesen Eintrag kann
+      // next/image sie nicht skalieren und der Shop lud die Originale.
+      {
+        protocol: "https",
+        hostname: "wp.uncuttv.at",
+      },
     ],
   },
   async redirects() {

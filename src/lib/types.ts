@@ -32,3 +32,25 @@ export interface WooProduct {
   description: string;
   related_ids: number[];
 }
+
+/**
+ * Die Felder, die das Shop-Raster (ShopContent) und die Warenkorbkette
+ * (CartContext, CartDrawer, CheckoutForm, Persistenz) tatsächlich lesen.
+ * Die Shopseite holt nur diese von WooCommerce (`_fields`) und reicht nur
+ * diese an den Client weiter; Beschreibungen, Meta-Daten und `_links`
+ * bleiben auf dem Server. Ein volles `WooProduct` erfüllt den Typ.
+ */
+export const SHOP_LIST_FIELDS = [
+  "id",
+  "name",
+  "slug",
+  "price",
+  "regular_price",
+  "sale_price",
+  "stock_status",
+  "stock_quantity",
+  "images",
+  "categories",
+] as const;
+
+export type ShopListProduct = Pick<WooProduct, (typeof SHOP_LIST_FIELDS)[number]>;

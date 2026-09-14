@@ -9,8 +9,9 @@ import {
   useCallback,
 } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import type { WooProduct, WooCategory } from "@/lib/types";
+import type { ShopListProduct, WooCategory } from "@/lib/types";
 import SearchInput from "@/components/SearchInput";
 import MobileBanner from "@/components/MobileBanner";
 import { useLanguage } from "@/lib/LanguageContext";
@@ -80,7 +81,7 @@ const INSTOCK_SLUG = "instock";
 const OOP_SLUG = "outofprint";
 
 /* ── Helpers ── */
-function sortProducts(products: WooProduct[]): WooProduct[] {
+function sortProducts(products: ShopListProduct[]): ShopListProduct[] {
   return [...products].sort((a, b) => {
     if (a.stock_status === "instock" && b.stock_status !== "instock") return -1;
     if (a.stock_status !== "instock" && b.stock_status === "instock") return 1;
@@ -88,27 +89,36 @@ function sortProducts(products: WooProduct[]): WooProduct[] {
   });
 }
 
-function getBadge(product: WooProduct): string | null {
+function getBadge(product: ShopListProduct): string | null {
   if (product.stock_status === "outofstock") return "AUSVERKAUFT";
   if (product.categories.some((c) => c.slug.includes("vorverkauf")))
     return "VORVERKAUF";
   return null;
 }
 
-function hasCatSlug(product: WooProduct, slug: string): boolean {
+function hasCatSlug(product: ShopListProduct, slug: string): boolean {
   return product.categories.some((c) => c.slug === slug);
 }
 
 /* ── ProductCard ── */
+
+/** Raster: 2 Spalten mobil, 4 ab lg. Eine Reihe = höchstens 4 Karten. */
+const GRID_COLS_MAX = 4;
+/** Kartenbreite für next/image: ein Viertel ab lg, sonst die Hälfte. */
+const CARD_IMAGE_SIZES = "(min-width: 1024px) 25vw, 50vw";
+
 function ProductCard({
   product,
   muted,
   wholesaleSession,
+  eager = false,
 }: {
-  product: WooProduct;
+  product: ShopListProduct;
   muted?: boolean;
   /** `null` = session not fetched yet — hide scarcity overlays. */
   wholesaleSession: boolean | null;
+  /** Erste sichtbare Reihe lädt sofort, alles darunter erst beim Scrollen. */
+  eager?: boolean;
 }) {
   const [cardFlash, setCardFlash] = useState(false);
   const badge = muted ? "AUSVERKAUFT" : getBadge(product);
@@ -146,11 +156,19 @@ function ProductCard({
         } ${muted ? "grayscale opacity-60" : ""}`}
       >
         {image ? (
-          <img
+          // next/image skaliert das WordPress-Original auf die Rasterbreite
+          // (vorher kamen 200 bis 600 KB je Cover unskaliert). `fill` nutzt
+          // den quadratischen, relativ positionierten Rahmen darüber.
+          // data-product-image bleibt: ProductCardQuickAdd sucht das Bild
+          // darüber für die Flug-Animation in den Warenkorb.
+          <Image
             data-product-image
             src={image}
             alt={product.name}
-            className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+            fill
+            sizes={CARD_IMAGE_SIZES}
+            loading={eager ? "eager" : "lazy"}
+            className={`object-cover transition-transform duration-300 group-hover:scale-105 ${
               !muted && product.stock_status === "outofstock" ? "opacity-50" : ""
             }`}
           />
@@ -223,13 +241,16 @@ function ExpandableSection({
   muted,
   id,
   wholesaleSession,
+  eagerFirstRow = false,
 }: {
   title: string;
-  products: WooProduct[];
+  products: ShopListProduct[];
   defaultRows: number;
   muted?: boolean;
   id?: string;
   wholesaleSession: boolean | null;
+  /** Nur der oberste Abschnitt der Seite: seine erste Reihe lädt sofort. */
+  eagerFirstRow?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -280,12 +301,13 @@ function ExpandableSection({
       >
         <div ref={contentRef}>
           <div className="mt-6 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
-            {visibleProducts.map((product) => (
+            {visibleProducts.map((product, index) => (
               <ProductCard
                 key={product.id}
                 product={product}
                 muted={muted}
                 wholesaleSession={wholesaleSession}
+                eager={eagerFirstRow && index < GRID_COLS_MAX}
               />
             ))}
           </div>
@@ -309,7 +331,7 @@ function ExpandableSection({
 
 /* ── ShopContent ── */
 interface ShopContentProps {
-  products: WooProduct[];
+  products: ShopListProduct[];
   categories: WooCategory[];
 }
 
@@ -442,6 +464,11 @@ export default function ShopContent({
   const showFlat = searchResults !== null || filteredFlat !== null;
   const flatProducts = searchResults ?? filteredFlat ?? [];
 
+  // Der oberste nicht leere Abschnitt stellt die erste sichtbare Reihe;
+  // nur dort laden die Bilder sofort, alle anderen erst beim Scrollen.
+  const firstSection: "vorverkauf" | "brandneu" | "inStock" =
+    vorverkauf.length > 0 ? "vorverkauf" : brandneu.length > 0 ? "brandneu" : "inStock";
+
   useLayoutEffect(() => {
     if (!shouldScrollAfterFilterRef.current) return;
     shouldScrollAfterFilterRef.current = false;
@@ -527,11 +554,12 @@ export default function ShopContent({
         {showFlat ? (
           <>
             <div className="mt-10 grid grid-cols-2 gap-4 px-3 sm:gap-6 sm:px-5 lg:grid-cols-4 lg:px-6">
-              {flatProducts.slice(0, flatVisible).map((product) => (
+              {flatProducts.slice(0, flatVisible).map((product, index) => (
                 <ProductCard
                   key={product.id}
                   product={product}
                   wholesaleSession={wholesaleSession}
+                  eager={index < GRID_COLS_MAX}
                 />
               ))}
             </div>
@@ -563,18 +591,21 @@ export default function ShopContent({
               defaultRows={1}
               id="vorbestellen"
               wholesaleSession={wholesaleSession}
+              eagerFirstRow={firstSection === "vorverkauf"}
             />
             <ExpandableSection
               title={t("NEU")}
               products={brandneu}
               defaultRows={1}
               wholesaleSession={wholesaleSession}
+              eagerFirstRow={firstSection === "brandneu"}
             />
             <ExpandableSection
               title={t("JETZT_ERHAELTLICH")}
               products={inStock}
               defaultRows={3}
               wholesaleSession={wholesaleSession}
+              eagerFirstRow={firstSection === "inStock"}
             />
           </div>
         )}

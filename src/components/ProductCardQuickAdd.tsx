@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { flyToCart } from "@/lib/flyToCart";
-import type { WooProduct } from "@/lib/types";
+import type { ShopListProduct } from "@/lib/types";
 
 const BUSY_MS = 220;
 const PRODUCT_IMAGE_SELECTOR = "[data-product-image]";
@@ -175,7 +175,7 @@ export function ProductCardQuickAdd({
   onCardFlash,
   variant = "card",
 }: {
-  productForCart: WooProduct;
+  productForCart: ShopListProduct;
   /** Fallback feedback when fly-to-cart cannot run (no image / no cart target). */
   onCardFlash?: () => void;
   /** `card`: hover bar (desktop) + round pill (mobile). `inline`: round pill only. */

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
-import type { WooProduct, WooCategory } from "@/lib/types";
+import type { ShopListProduct, WooCategory } from "@/lib/types";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Newsletter from "@/components/Newsletter";
@@ -9,7 +9,7 @@ import ShopContent from "@/components/ShopContent";
 import ShopHero from "@/components/ShopHero";
 
 interface ShopPageProps {
-  products: WooProduct[];
+  products: ShopListProduct[];
   categories: WooCategory[];
 }
 

@@ -7,7 +7,7 @@ import { getSession, mayEnterHaendlerPortal } from "@/lib/auth-session";
  * Diese Umleitung stand bis hierher in der middleware.ts und las die Rolle
  * aus einem Cookie, das jeder selbst setzen konnte. Sie sitzt jetzt in den
  * Seiten selbst, wo die geprüfte Sitzung ohnehin vorliegt. Beide
- * Einstiegsseiten sind bereits `force-dynamic`, die Umleitung kostet also
+ * Einstiegsseiten rendern ohnehin bei jeder Anfrage (Cookies), die Umleitung kostet also
  * keine Vorab-Erzeugung.
  *
  * Administratoren und Shop-Manager sind bewusst ausgenommen: Sie dürfen ins

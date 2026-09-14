@@ -9,14 +9,15 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { WooProduct } from "@/lib/types";
+import type { ShopListProduct, WooProduct } from "@/lib/types";
 import { parsePrice } from "@/lib/parse-price";
 import { mergeCartItems } from "@/lib/persisted-cart";
 import { trackAddToCart } from "@/lib/meta-pixel";
 import { toHaendlerCartProduct } from "@/lib/haendler-to-cart-product";
 
 export interface CartItem {
-  product: WooProduct;
+  /** Nur die Felder, die der Warenkorb liest; ein volles WooProduct passt ebenfalls. */
+  product: ShopListProduct;
   quantity: number;
 }
 
@@ -36,7 +37,7 @@ interface CartContextValue {
   items: CartItem[];
   /** Increments on every `addToCart` — Navbar badge pulse, etc. */
   cartChangeKey: number;
-  addToCart: (product: WooProduct) => void;
+  addToCart: (product: ShopListProduct) => void;
   removeFromCart: (productId: number) => void;
   updateQuantity: (productId: number, quantity: number) => void;
   clearCart: () => void;
@@ -268,7 +269,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     };
   }, [drawerOpen]);
 
-  const addToCart = useCallback((product: WooProduct) => {
+  const addToCart = useCallback((product: ShopListProduct) => {
     const unitPrice = parsePrice(product.price || "0");
     setItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
