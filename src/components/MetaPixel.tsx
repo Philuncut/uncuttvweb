@@ -60,7 +60,11 @@ export default function MetaPixel() {
 
   return (
     <>
-      <Script id="meta-pixel-init" strategy="afterInteractive">
+      {/* lazyOnload: erst nach dem load-Ereignis, damit fbevents.js nicht
+          mit Bildern und Hydration um die Leitung konkurriert. Die
+          Einwilligung wird ohnehin erst danach erteilt; fbq() puffert
+          Aufrufe, die vor dem Laden ankommen. */}
+      <Script id="meta-pixel-init" strategy="lazyOnload">
         {`
           !function(f,b,e,v,n,t,s)
           {if(f.fbq)return;n=f.fbq=function(){n.callMethod?

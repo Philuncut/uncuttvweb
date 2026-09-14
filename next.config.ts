@@ -27,6 +27,19 @@ function redirectTrailingOnly(
   return { source: `${base}/`, destination, permanent: true };
 }
 
+/**
+ * Startseite → Shop. Vorher stand das als redirect() in src/app/page.tsx
+ * und lief damit als Serverfunktion mit eigenem Rundlauf (gemessen
+ * 0,28 s). Als Konfigurationsregel wird es am Edge beantwortet.
+ * Abfrageparameter (UTM, Kampagnen) reicht Next bei redirects durch.
+ * 307 wie bisher, damit Browser die Umleitung nicht dauerhaft merken.
+ */
+const homeRedirect = {
+  source: "/",
+  destination: "/shop",
+  permanent: false,
+} as const;
+
 const wordpressMigrationRedirects: RedirectRule[] = [
   // --- Section 4: static pages (specific before generic patterns) ---
   ...redirectBoth("/privacy-policy", "/datenschutz"),
@@ -113,7 +126,7 @@ const nextConfig: NextConfig = {
     ],
   },
   async redirects() {
-    return wordpressMigrationRedirects;
+    return [homeRedirect, ...wordpressMigrationRedirects];
   },
 };
 

@@ -19,6 +19,7 @@ import { createT, translateCategoryName } from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
+import { loadAuthSession } from "@/lib/session-client";
 import {
   getStockDisplay,
   productHasPreOrderCategory,
@@ -381,28 +382,12 @@ export default function ShopContent({
     setFlatVisible(8);
   }, []);
 
+  // Über session-client: dieselbe Anfrage wie Navbar und CartContext.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/auth/session", {
-          cache: "no-store",
-          credentials: "include",
-        });
-        if (!res.ok || cancelled) {
-          if (!cancelled) setWholesaleSession(false);
-          return;
-        }
-        const data = (await res.json()) as { isWholesale?: boolean };
-        if (!cancelled) {
-          setWholesaleSession(
-            typeof data.isWholesale === "boolean" ? data.isWholesale : false
-          );
-        }
-      } catch {
-        if (!cancelled) setWholesaleSession(false);
-      }
-    })();
+    void loadAuthSession().then((session) => {
+      if (!cancelled) setWholesaleSession(session.isWholesale);
+    });
     return () => {
       cancelled = true;
     };

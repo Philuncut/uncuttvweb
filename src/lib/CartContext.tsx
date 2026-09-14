@@ -12,6 +12,7 @@ import {
 import type { ShopListProduct, WooProduct } from "@/lib/types";
 import { parsePrice } from "@/lib/parse-price";
 import { mergeCartItems } from "@/lib/persisted-cart";
+import { loadAuthSession } from "@/lib/session-client";
 import { trackAddToCart } from "@/lib/meta-pixel";
 import { toHaendlerCartProduct } from "@/lib/haendler-to-cart-product";
 
@@ -85,15 +86,10 @@ function saveCart(items: CartItem[]) {
   }
 }
 
+/** Über session-client: eine Anfrage je Seitenaufbau für alle Aufrufer. */
 async function fetchSessionLoggedIn(): Promise<boolean> {
-  try {
-    const res = await fetch("/api/auth/session", { cache: "no-store" });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { isLoggedIn?: boolean };
-    return data.isLoggedIn === true;
-  } catch {
-    return false;
-  }
+  const session = await loadAuthSession();
+  return session.isLoggedIn;
 }
 
 async function fetchServerCart(): Promise<CartItem[]> {

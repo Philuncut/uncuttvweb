@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { redirectWholesaleToPortal } from "@/lib/wholesale-gate";
 import { wooFetchAll, wooFetch } from "@/lib/woocommerce";
 import {
@@ -7,16 +8,24 @@ import {
 } from "@/lib/types";
 import ShopPage from "./ShopPage";
 
-// Kein force-dynamic mehr: Das würde laut Next-Doku jedes fetch() der
-// Seite auf no-store zwingen und den 60-s-Data-Cache in woocommerce.ts
-// aushebeln. Die Sitzungsprüfung liest Cookies und hält die Seite ohnehin
-// bei jedem Aufruf dynamisch; die Produktabfragen kommen jetzt aus dem
-// Cache und gehen nur einmal pro Minute nach WordPress.
+// Kein force-dynamic: Die Sitzungsprüfung liest Cookies und hält die
+// Seite ohnehin bei jedem Aufruf dynamisch.
+//
+// Der Fetch-Cache (`next: { revalidate: 60 }` in woocommerce.ts) greift in
+// der Produktion trotzdem nicht: Nach `cookies()` und mit Authorization-
+// Header behandelt Next die Abfragen als nicht cachebar, gemessen an fünf
+// Aufrufen innerhalb von 20 s mit je 2,7 bis 3,1 s. Deshalb liegt der
+// ganze Katalog in unstable_cache, das von der Dynamik der Route
+// unabhängig ist: Einmal pro Minute nach WordPress, sonst aus dem Cache.
 
 export const metadata = {
   title: "Shop — UNCUTTV",
   description: "UNCUTTV Shop — Mediabooks, Blu-rays und mehr.",
 };
+
+// Kein export: Seitenmodule dürfen nur die Next-Felder exportieren.
+const SHOP_CATALOG_TAG = "shop-catalog";
+const SHOP_CATALOG_REVALIDATE_SECONDS = 60;
 
 /**
  * Auf die Felder aus SHOP_LIST_FIELDS zuschneiden. WooCommerce liefert mit
@@ -48,23 +57,40 @@ function toShopListProduct(product: ShopListProduct): ShopListProduct {
   };
 }
 
+type ShopCatalog = {
+  products: ShopListProduct[];
+  categories: WooCategory[];
+};
+
+/**
+ * Produkte und Kategorien in einem Cache-Eintrag. Kein Zugriff auf
+ * Cookies oder Kopfzeilen hier drin, das verlangt unstable_cache; die
+ * Sitzungsprüfung läuft davor in der Seite.
+ */
+const getShopCatalog = unstable_cache(
+  async (): Promise<ShopCatalog> => {
+    const [rawProducts, categories] = await Promise.all([
+      wooFetchAll<ShopListProduct>("/products", {
+        per_page: "100",
+        _fields: SHOP_LIST_FIELDS.join(","),
+      }),
+      wooFetch<WooCategory[]>("/products/categories", {
+        per_page: "100",
+        hide_empty: "true",
+      }),
+    ]);
+    return { products: rawProducts.map(toShopListProduct), categories };
+  },
+  ["shop-catalog", SHOP_LIST_FIELDS.join(",")],
+  { revalidate: SHOP_CATALOG_REVALIDATE_SECONDS, tags: [SHOP_CATALOG_TAG] }
+);
+
 export default async function Page() {
   // Haendler sehen das Portal, nicht den B2C-Shop. Frueher stand diese
   // Umleitung in der middleware.ts und las die Rolle aus einem Cookie.
   await redirectWholesaleToPortal();
 
-  const [rawProducts, categories] = await Promise.all([
-    wooFetchAll<ShopListProduct>("/products", {
-      per_page: "100",
-      _fields: SHOP_LIST_FIELDS.join(","),
-    }),
-    wooFetch<WooCategory[]>("/products/categories", {
-      per_page: "100",
-      hide_empty: "true",
-    }),
-  ]);
-
-  const products = rawProducts.map(toShopListProduct);
+  const { products, categories } = await getShopCatalog();
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">

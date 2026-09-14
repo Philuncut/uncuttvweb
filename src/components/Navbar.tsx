@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AuthSessionPayload } from "@/app/api/auth/session/route";
+import { loadAuthSession } from "@/lib/session-client";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
@@ -320,24 +321,16 @@ export default function Navbar() {
   const [sessionReady, setSessionReady] = useState(false);
   const [session, setSession] = useState<AuthSessionPayload | null>(null);
 
-  const loadSession = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/session", { cache: "no-store" });
-      const data = (await res.json()) as AuthSessionPayload;
-      setSession(data);
-    } catch {
-      setSession({
-        isLoggedIn: false,
-        type: null,
-        name: null,
-        dashboardHref: null,
-        isWholesale: false,
-        isNewsletterSubscribed: false,
-      });
-    } finally {
-      setSessionReady(true);
-    }
-  }, []);
+  // Über session-client: teilt sich beim Seitenaufbau die Anfrage mit
+  // CartContext und ShopContent. Fehler liefern dort die leere Sitzung.
+  const loadSession = useCallback(
+    () =>
+      loadAuthSession().then((data) => {
+        setSession(data);
+        setSessionReady(true);
+      }),
+    []
+  );
 
   useEffect(() => {
     void loadSession();
