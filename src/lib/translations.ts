@@ -579,33 +579,44 @@ const translations: Record<string, Record<string, string>> = {
   START_LINK_STREAMING: { de: "Zu UncutTV Streaming", en: "Go to UncutTV Streaming" },
   START_LINK_SHOP: { de: "Zum UncutTV Shop", en: "Go to the UncutTV Shop" },
   START_LINK_SOCIAL: { de: "Zu UncutTV Social", en: "Go to UncutTV Social" },
-  START_EYEBROW: { de: "DER VERBUND", en: "THE NETWORK" },
-  START_TITLE: { de: "Drei Auftritte. Ein UncutTV.", en: "Three sites. One UncutTV." },
+  START_EYEBROW: { de: "DIE PLATTFORM", en: "THE PLATFORM" },
+  START_TITLE: { de: "DREI WEGE. EIN UNCUTTV.", en: "THREE WAYS IN. ONE UNCUTTV." },
   START_TEXT_1: {
-    de: "UncutTV ist ein unabhängiges Filmlabel aus Österreich. Streaming zeigt unsere Filme ungekürzt, der Shop bringt sie als Mediabook und Blu-ray ins Regal, und Social ist der Ort für Videos, Livestreams und alles dazwischen.",
-    en: "UncutTV is an independent film label from Austria. Streaming shows our films uncut, the shop puts them on your shelf as mediabooks and Blu-rays, and Social is the place for videos, livestreams and everything in between.",
+    de: "UncutTV ist ein unabhängiges Filmlabel aus Österreich und die erste Plattform in Europa, die dem Independent-Kino eine echte Bühne gibt. Filme, die hier nie erschienen sind. Filme, die auf keinem anderen Streamingdienst laufen dürfen. Ungekürzt, so wie sie gedreht wurden.",
+    en: "UncutTV is an independent film label from Austria and the first platform in Europe to give independent cinema a proper stage. Films that were never released here. Films no other streaming service is allowed to show. Uncut, exactly as they were shot.",
   },
   START_TEXT_2: {
-    de: "Wähle oben, wohin es gehen soll. Ein Konto gilt überall: Wer im Shop angemeldet ist, meldet sich mit denselben Zugangsdaten auch beim Streaming und bei Social an.",
-    en: "Pick your destination above. One account works everywhere: the same credentials sign you in to the shop, to streaming and to Social.",
+    de: "Ein Konto gilt überall. Wer im Shop angemeldet ist, kommt mit denselben Zugangsdaten ins Streaming und zu Social.",
+    en: "One account works everywhere. If you're signed in at the shop, the same login gets you into streaming and Social.",
   },
   START_WEG_STREAMING_TITEL: { de: "Streaming", en: "Streaming" },
   START_WEG_STREAMING_TEXT: {
-    de: "Unsere Filme ungekürzt, im Abo, auf uncuttv.app.",
-    en: "Our films uncut, by subscription, at uncuttv.app.",
+    de: "Filme aus aller Welt, die du sonst nirgendwo findest. Ungeschnitten, im Abo, auf uncuttv.app.",
+    en: "Films from around the world you won't find anywhere else. Uncut, by subscription, at uncuttv.app.",
   },
   START_WEG_SHOP_TITEL: { de: "Shop", en: "Shop" },
   START_WEG_SHOP_TEXT: {
-    de: "Mediabooks, Blu-rays und Sammlereditionen.",
-    en: "Mediabooks, Blu-rays and collector's editions.",
+    de: "Alle UncutTV-Releases. Limitierte Mediabooks, Amarays und Scanavos. Sammlerstücke statt Massenware.",
+    en: "Every UncutTV release. Limited mediabooks, Amarays and Scanavos. Collector's pieces, not mass-market stock.",
   },
   START_WEG_SOCIAL_TITEL: { de: "Social", en: "Social" },
   START_WEG_SOCIAL_TEXT: {
-    de: "Videos, Livestreams und die Community auf tv.uncuttv.at.",
-    en: "Videos, livestreams and the community at tv.uncuttv.at.",
+    de: "Interviews, Reviews, Livestreams. Der Treffpunkt der Szene, mit den Gesichtern, die sie prägen.",
+    en: "Interviews, reviews, livestreams. Where the scene meets, with the faces who shape it.",
   },
-  START_PRODUCTS_TITLE: { de: "NEU IM SHOP", en: "NEW IN THE SHOP" },
+  // Produktreihe unter dem Text. Die Überschrift richtet sich nach der
+  // Mischung: nur Vorbestellungen, nur Neuerscheinungen oder beides.
+  START_PRODUCTS_TITLE: { de: "VORBESTELLEN UND NEU", en: "PRE-ORDERS AND NEW RELEASES" },
+  START_PRODUCTS_TITLE_VORBESTELLEN: { de: "JETZT VORBESTELLEN", en: "PRE-ORDER NOW" },
+  START_PRODUCTS_TITLE_NEU: { de: "NEU IM SHOP", en: "NEW IN THE SHOP" },
   START_PRODUCTS_CTA: { de: "Zum Shop", en: "To the shop" },
+  // Hinweiszeile unter den drei Kacheln (Platzhaltertexte)
+  START_HINWEIS_ZEILE1: { de: "UNCUTTV", en: "UNCUTTV" },
+  START_HINWEIS_ZEILE2: {
+    de: "Die unabhängige Plattform für extremes Kino.",
+    en: "The independent platform for extreme cinema.",
+  },
+  START_HINWEIS_WEITER: { de: "Weiter nach unten", en: "Scroll down" },
 
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },

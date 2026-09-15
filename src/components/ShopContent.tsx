@@ -24,6 +24,14 @@ import {
   getStockDisplay,
   productHasPreOrderCategory,
 } from "@/lib/stock-display";
+import {
+  BRANDNEU_SLUG,
+  INSTOCK_SLUG,
+  OOP_SLUG,
+  hasCatSlug,
+  sortProducts,
+  vorverkaufProdukte,
+} from "@/lib/shop-sections";
 
 /* ── FilterPill ── */
 const pillGlow =
@@ -75,30 +83,15 @@ function FilterPill({
   );
 }
 
-/* ── Constants ── */
-const VORVERKAUF_SLUG = "vorverkauf";
-const BRANDNEU_SLUG = "brandneu";
-const INSTOCK_SLUG = "instock";
-const OOP_SLUG = "outofprint";
-
 /* ── Helpers ── */
-function sortProducts(products: ShopListProduct[]): ShopListProduct[] {
-  return [...products].sort((a, b) => {
-    if (a.stock_status === "instock" && b.stock_status !== "instock") return -1;
-    if (a.stock_status !== "instock" && b.stock_status === "instock") return 1;
-    return 0;
-  });
-}
+// Kategorie-Slugs, hasCatSlug und sortProducts liegen in
+// src/lib/shop-sections.ts, weil /start dieselbe Auswahl zeigt.
 
 function getBadge(product: ShopListProduct): string | null {
   if (product.stock_status === "outofstock") return "AUSVERKAUFT";
   if (product.categories.some((c) => c.slug.includes("vorverkauf")))
     return "VORVERKAUF";
   return null;
-}
-
-function hasCatSlug(product: ShopListProduct, slug: string): boolean {
-  return product.categories.some((c) => c.slug === slug);
 }
 
 /* ── ProductCard ── */
@@ -410,7 +403,7 @@ export default function ShopContent({
   }, [searchParams, categories]);
 
   const vorverkauf = useMemo(
-    () => sortProducts(products.filter((p) => hasCatSlug(p, VORVERKAUF_SLUG))),
+    () => vorverkaufProdukte(products),
     [products]
   );
 

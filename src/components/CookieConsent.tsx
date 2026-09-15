@@ -1,8 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const CONSENT_KEY = "cookie_consent";
+
+/**
+ * Höhe des sichtbaren Banners als CSS-Variable am html-Element. Der Banner
+ * liegt fest am unteren Rand und deckt ab, was dort steht. Seiten, die
+ * unten etwas zeigen müssen, können damit Platz lassen: bisher nur die
+ * Weiche unter /start (Hinweiszeile und Scrollpfeil, globals.css). Ohne
+ * Banner ist die Variable nicht gesetzt; wer sie liest, nimmt 0px an.
+ * Am Banner selbst ändert sich nichts.
+ */
+const HOEHE_VARIABLE = "--cookie-banner-hoehe";
 
 export function openCookieSettings() {
   localStorage.removeItem(CONSENT_KEY);
@@ -13,6 +23,30 @@ export function openCookieSettings() {
 
 export default function CookieConsent() {
   const [visible, setVisible] = useState(false);
+  const banner = useRef<HTMLDivElement | null>(null);
+
+  // Solange der Banner steht, seine Höhe melden, auch wenn sie sich ändert
+  // (Drehen des Handys, Umbruch der Knöpfe, größere Schrift).
+  useEffect(() => {
+    const el = banner.current;
+    const wurzel = document.documentElement;
+    if (!visible || !el) {
+      wurzel.style.removeProperty(HOEHE_VARIABLE);
+      return;
+    }
+    const melde = () => {
+      wurzel.style.setProperty(HOEHE_VARIABLE, `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    };
+    melde();
+    const beobachter = typeof ResizeObserver === "function" ? new ResizeObserver(melde) : null;
+    beobachter?.observe(el);
+    window.addEventListener("resize", melde);
+    return () => {
+      beobachter?.disconnect();
+      window.removeEventListener("resize", melde);
+      wurzel.style.removeProperty(HOEHE_VARIABLE);
+    };
+  }, [visible]);
 
   useEffect(() => {
     const stored = localStorage.getItem(CONSENT_KEY);
@@ -48,6 +82,7 @@ export default function CookieConsent() {
 
   return (
     <div
+      ref={banner}
       style={{
         position: "fixed",
         bottom: 0,

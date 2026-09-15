@@ -4,6 +4,7 @@ import StartContent from "@/components/weiche/StartContent";
 import Weiche from "@/components/weiche/Weiche";
 import { AUFTAKT_SKRIPT } from "@/components/weiche/auftakt";
 import { getShopCatalog } from "@/lib/shop-catalog";
+import { startAuswahl } from "@/lib/shop-sections";
 import type { ShopListProduct } from "@/lib/types";
 
 /**
@@ -33,16 +34,15 @@ export const metadata: Metadata = {
 };
 
 /** Wie viele Produkte unter der Weiche stehen. */
-const ANZAHL_NEUESTE = 3;
+const ANZAHL_PRODUKTE = 3;
 
 export default async function StartPage() {
-  let neueste: ShopListProduct[] = [];
+  let produkte: ShopListProduct[] = [];
   try {
     const { products } = await getShopCatalog();
-    // WooCommerce liefert die Liste neueste zuerst (Standardsortierung
-    // nach Datum, absteigend); ein eigenes Datumsfeld ist in
-    // SHOP_LIST_FIELDS nicht enthalten.
-    neueste = products.slice(0, ANZAHL_NEUESTE);
+    // Bevorzugt Vorbestellungen, aufgefüllt mit Neuerscheinungen; dieselbe
+    // Auswahl wie die Abschnitte im Shop, siehe src/lib/shop-sections.ts.
+    produkte = startAuswahl(products, ANZAHL_PRODUKTE);
   } catch (err) {
     // Ohne Katalog steht die Weiche trotzdem; unten fehlt dann nur die
     // Produktreihe.
@@ -58,7 +58,7 @@ export default async function StartPage() {
       <script dangerouslySetInnerHTML={{ __html: AUFTAKT_SKRIPT }} />
       <Weiche />
       <main>
-        <StartContent products={neueste} />
+        <StartContent products={produkte} />
       </main>
       <Footer />
     </div>

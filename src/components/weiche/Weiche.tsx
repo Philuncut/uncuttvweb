@@ -16,10 +16,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
+import { TEXTTEIL_ID } from "./StartContent";
 import {
   AUFTAKT_ATTRIBUT,
   AUFTAKT_HOECHSTDAUER_MS,
-  AUFTAKT_LOGO_ANIMATION,
+  AUFTAKT_ENDE_ANIMATION,
 } from "./auftakt";
 
 /**
@@ -112,6 +113,8 @@ const ZOOM_MS = 500;
 const NEUSTART_VERZOEGERUNG_MS = 250;
 /** Takt der Wiedergabe-Wache, siehe den Effekt dazu in Weiche(). */
 const WACHE_INTERVALL_MS = 1000;
+/** Ab so viel eigener Scrollbewegung blendet der Pfeil unter der Weiche aus. */
+const PFEIL_SCROLL_SCHWELLE_PX = 8;
 /** Ab hier Desktop: Felder nebeneinander, Hochkant-Videos. */
 const DESKTOP_QUERY = "(min-width: 768px)";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -198,7 +201,10 @@ const ZOOM_KURVE = "cubic-bezier(0.4, 0, 0.2, 1)";
  */
 function starteZoom(feld: HTMLAnchorElement | null): Animation[] {
   const kachel = feld?.querySelector<HTMLElement>(".weiche__medien");
-  const buehne = feld?.parentElement;
+  // Die Bühne ist die ganze Weiche, nicht die Kachelreihe darin: Unter der
+  // Reihe liegt die Hinweiszeile, und der Zoom soll den ganzen Bildschirm
+  // füllen. Die Variablen (--kachel-rand, --zoom-*) erbt die Reihe ohnehin.
+  const buehne = feld?.closest<HTMLElement>(".weiche");
   if (!kachel || !buehne || typeof kachel.animate !== "function") return [];
 
   const stil = getComputedStyle(kachel);
@@ -359,6 +365,10 @@ export default function Weiche() {
 
   const feldRefs = useRef<(HTMLAnchorElement | null)[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  /** Hinweiszeile unter den Kacheln; ihre Einblendung beendet den Auftakt. */
+  const hinweisRef = useRef<HTMLDivElement | null>(null);
+  /** Der Nutzer hat gescrollt oder den Pfeil benutzt: Pfeil bleibt weg. */
+  const [pfeilWeg, setPfeilWeg] = useState(false);
   /** Zeigerart des letzten pointerdown; entscheidet, ob ein Klick eine
       Berührung war. Tastatur hinterlässt hier nichts. */
   const zeigerTyp = useRef<string | null>(null);
@@ -388,17 +398,47 @@ export default function Weiche() {
   // Takt und Video.
   useEffect(() => {
     if (!auftakt) return;
-    const letztes = feldRefs.current[FELDER.length - 1];
+    // Die Hinweiszeile blendet als Letztes ein, nach den Logos. Erst wenn sie
+    // steht, ist der Auftakt vorbei; endete er schon mit dem letzten Logo,
+    // würde ihre Einblendung abgeschnitten.
+    const hinweis = hinweisRef.current;
     const amEnde = (event: AnimationEvent) => {
-      if (event.animationName === AUFTAKT_LOGO_ANIMATION) beendeAuftakt();
+      if (event.animationName === AUFTAKT_ENDE_ANIMATION) beendeAuftakt();
     };
-    letztes?.addEventListener("animationend", amEnde);
+    hinweis?.addEventListener("animationend", amEnde);
     const netz = window.setTimeout(beendeAuftakt, AUFTAKT_HOECHSTDAUER_MS);
     return () => {
-      letztes?.removeEventListener("animationend", amEnde);
+      hinweis?.removeEventListener("animationend", amEnde);
       window.clearTimeout(netz);
     };
   }, [auftakt]);
+
+  // Pfeil unter der Hinweiszeile: Scrollt der Nutzer selbst nach unten,
+  // blendet er aus und kommt nicht wieder. Gezählt wird nur Scrollen nach
+  // unten, das auf eine eigene Eingabe folgt (Finger, Mausrad, Taste). Die
+  // Scrollposition, die der Browser beim Neuladen wiederherstellt, zählt
+  // nicht: Am Handy lag der Pfeil sonst schon beim Laden versteckt da, und
+  // wer danach nach oben scrollte, sah ihn nie.
+  useEffect(() => {
+    if (pfeilWeg) return;
+    let eingabe = false;
+    let letzteY = window.scrollY;
+    const merkeEingabe = () => {
+      eingabe = true;
+    };
+    const pruefe = () => {
+      const y = window.scrollY;
+      if (eingabe && y > letzteY && y > PFEIL_SCROLL_SCHWELLE_PX) setPfeilWeg(true);
+      letzteY = y;
+    };
+    const eingaben = ["touchstart", "wheel", "keydown", "pointerdown"] as const;
+    eingaben.forEach((typ) => window.addEventListener(typ, merkeEingabe, { passive: true }));
+    window.addEventListener("scroll", pruefe, { passive: true });
+    return () => {
+      eingaben.forEach((typ) => window.removeEventListener(typ, merkeEingabe));
+      window.removeEventListener("scroll", pruefe);
+    };
+  }, [pfeilWeg]);
 
   // Verlässt man /start, darf das Attribut nicht am html-Element hängen
   // bleiben.
@@ -720,11 +760,24 @@ export default function Weiche() {
     [aktiv, gewaehlt, auftakt]
   );
 
+  // Klick auf den Pfeil: weich zum Textteil. Ohne Bewegungswunsch springt
+  // die Seite. Der Pfeil hat damit seinen Zweck erfüllt und bleibt weg.
+  const zumTextteil = useCallback(() => {
+    setPfeilWeg(true);
+    document
+      .getElementById(TEXTTEIL_ID)
+      ?.scrollIntoView({ behavior: reduziert ? "auto" : "smooth", block: "start" });
+  }, [reduziert]);
+
   return (
     <section
       className={"weiche" + (gewaehlt !== null ? " weiche--gewaehlt" : "")}
       aria-label={t("START_WEICHE_LABEL")}
     >
+      {/* Die Kachelreihe. Sie ist um die Hinweiszeile kürzer als der
+          Bildschirm; die Kacheln behalten trotzdem ihre Größe, siehe
+          --kachel-hoehe in globals.css. */}
+      <div className="weiche__felder">
       {FELDER.map((feld, index) => {
         const istAktiv = gewaehlt === null ? index === aktiv : index === gewaehlt;
         const klassen = [
@@ -822,6 +875,35 @@ export default function Weiche() {
           </a>
         );
       })}
+      </div>
+
+      {/* Hinweis, dass darunter Inhalt folgt: zwei Zeilen und ein ruhig
+          atmender Pfeil. Liegt im schwarzen Bereich unter den Kacheln und
+          blendet im Auftakt als Letztes ein. */}
+      <div ref={hinweisRef} className="weiche__hinweis">
+        <p className="weiche__hinweis-zeile1">{t("START_HINWEIS_ZEILE1")}</p>
+        <p className="weiche__hinweis-zeile2">{t("START_HINWEIS_ZEILE2")}</p>
+        <button
+          type="button"
+          className={"weiche__pfeil" + (pfeilWeg ? " weiche__pfeil--weg" : "")}
+          aria-label={t("START_HINWEIS_WEITER")}
+          aria-hidden={pfeilWeg ? true : undefined}
+          tabIndex={pfeilWeg ? -1 : undefined}
+          onClick={zumTextteil}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 4v15M6 13l6 6 6-6" />
+          </svg>
+        </button>
+      </div>
     </section>
   );
 }

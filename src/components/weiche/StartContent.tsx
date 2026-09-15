@@ -7,10 +7,11 @@ import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
 import type { ShopListProduct } from "@/lib/types";
+import { istVorverkauf } from "@/lib/shop-sections";
 
 /**
- * Der lesbare Teil unter der Weiche: was der Verbund ist, die drei Wege als
- * Textlinks und die neuesten Produkte aus dem Shop. Die Weiche selbst
+ * Der lesbare Teil unter der Weiche: was die Plattform ist, die drei Wege
+ * als Textlinks und drei Titel aus dem Shop, bevorzugt Vorbestellungen. Die Weiche selbst
  * besteht aus Videos und Logos; erst hier steht Text, den Suchmaschinen
  * und Vorleseprogramme verwerten können.
  *
@@ -18,6 +19,9 @@ import type { ShopListProduct } from "@/lib/types";
  * (LanguageContext). Der Server rendert Deutsch, nach der Hydration
  * schaltet die Seite um.
  */
+
+/** Sprungziel des Pfeils unter der Weiche (Weiche.tsx). */
+export const TEXTTEIL_ID = "plattform";
 
 const WEGE = [
   { key: "STREAMING", href: "https://uncuttv.app", extern: true },
@@ -28,9 +32,16 @@ const WEGE = [
 export default function StartContent({ products }: { products: ShopListProduct[] }) {
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
+  const vorverkaufAnzahl = products.filter(istVorverkauf).length;
+  const produktTitel =
+    vorverkaufAnzahl === products.length
+      ? "START_PRODUCTS_TITLE_VORBESTELLEN"
+      : vorverkaufAnzahl === 0
+        ? "START_PRODUCTS_TITLE_NEU"
+        : "START_PRODUCTS_TITLE";
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-16 sm:py-24">
+    <div id={TEXTTEIL_ID} className="mx-auto max-w-5xl px-6 py-16 sm:py-24">
       <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-[#c0392b]">
         {t("START_EYEBROW")}
       </p>
@@ -77,7 +88,7 @@ export default function StartContent({ products }: { products: ShopListProduct[]
       {products.length > 0 && (
         <section className="mt-20">
           <h2 className="text-xl font-black uppercase tracking-[0.15em] text-white sm:text-2xl">
-            {t("START_PRODUCTS_TITLE")}
+            {t(produktTitel)}
           </h2>
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
             {products.map((p) => {

@@ -295,9 +295,16 @@ textarea:-webkit-autofill:focus {
 .weiche {
   /* Kachel: Anteil des Feldes, den das Video einnimmt, zentriert. */
   --kachel-breite-handy: 92%;
-  --kachel-hoehe-handy: 78%;
   --kachel-breite-desktop: 86%;
-  --kachel-hoehe-desktop: 70%;
+  /* Kachelhöhe als Faktor der Höhe, die ihr Band OHNE die Hinweiszeile
+     hätte. Die Kachelreihe ist um die Hinweiszeile kürzer als der
+     Bildschirm; damit die Kacheln trotzdem ihre Größe behalten, rechnet
+     .weiche__feld die Höhe zurück (--kachel-hoehe). Der Platz für die
+     Hinweiszeile kommt so aus den schwarzen Abständen, nicht aus den Kacheln. */
+  --kachel-hoehe-handy: 0.78;
+  --kachel-hoehe-desktop: 0.7;
+  /* Handy: Wuchs des aktiven Bandes gegenüber den anderen (flex-grow). */
+  --band-aktiv-grow: 1.5;
   /* Weicher Rand der Kachel: so weit läuft jede Kante ins Schwarz aus. */
   --kachel-rand: 12%;
   /* Zoom nach der Wahl, nur am Handy: welcher Anteil der Kachel am Ende die
@@ -390,10 +397,30 @@ textarea:-webkit-autofill:focus {
   --auftakt-logo-start: 500ms;
   --auftakt-logo-dauer: 500ms;
   --auftakt-kurve: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Die Hinweiszeile blendet als Letztes ein, direkt nach dem letzten Logo
+     (hier 1300 ms), über --auftakt-hinweis-dauer. Der Auftakt ist damit
+     nach rund 1,8 s vorbei. */
+  --auftakt-hinweis-start: calc(var(--auftakt-logo-start) + 2 * var(--auftakt-versatz) + var(--auftakt-logo-dauer));
+  --auftakt-hinweis-dauer: 500ms;
+
+  /* Hinweiszeile unter den Kacheln: feste Höhe, zwei Zeilen und ein Pfeil.
+     Am Handy bewusst knapp, weil der Platz dort aus den schwarzen Abständen
+     zwischen den Bändern kommt. Der Pfeil atmet um --hinweis-atem-weg. */
+  --hinweis-hoehe-handy: clamp(88px, 12dvh, 104px);
+  --hinweis-hoehe-desktop: clamp(96px, 13dvh, 132px);
+  /* Luft zwischen Pfeil und unterem Bildschirmrand, zusätzlich zur
+     Sicherheitszone des Geräts. Hält den Pfeil von Browser- und
+     Systemleiste fern. */
+  --hinweis-abstand-unten: 14px;
+  --hinweis-atem-weg: 5px;
+  --hinweis-atem-dauer: 2.5s;
 
   /* Aufgelöste Werte für den aktuellen Breakpoint. */
   --kachel-breite: var(--kachel-breite-handy);
-  --kachel-hoehe: var(--kachel-hoehe-handy);
+  --kachel-faktor: var(--kachel-hoehe-handy);
+  --hinweis-hoehe: var(--hinweis-hoehe-handy);
+  /* Mit der Sicherheitszone unten (Home-Indikator am iPhone). */
+  --hinweis-gesamt: calc(var(--hinweis-hoehe) + env(safe-area-inset-bottom, 0px));
   --logo-wortmarke: var(--logo-wortmarke-handy);
   --logo-quadrat: var(--logo-quadrat-handy);
   --zoom-unschaerfe: var(--zoom-unschaerfe-handy);
@@ -409,6 +436,27 @@ textarea:-webkit-autofill:focus {
   background: #0a0a0a;
 }
 
+/* Anteil eines Bandes an der Kachelreihe; registriert, damit er im selben
+   Takt wie flex-grow überblendet und die Kachel beim Feldwechsel nicht
+   springt. Desktop: 1 (jede Spalte hat die volle Höhe). */
+@property --band-anteil {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+/* Die Kachelreihe: alles außer der Hinweiszeile. Handy übereinander,
+   Desktop nebeneinander (Media Query unten). Liegt über der Hinweiszeile,
+   damit die aufgezogene Kachel sie beim Zoom überdeckt. */
+.weiche__felder {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .weiche__feld {
   position: relative;
   display: block;
@@ -419,12 +467,21 @@ textarea:-webkit-autofill:focus {
   background: #0a0a0a;
   text-decoration: none;
   outline-offset: -4px;
-  transition: flex-grow 400ms ease, opacity 500ms ease;
+  transition: flex-grow 400ms ease, opacity 500ms ease, --band-anteil 400ms ease;
+  --band-anteil: calc(1 / (var(--band-aktiv-grow) + 2));
+  /* Kachelhöhe, zurückgerechnet auf ein Band ohne Hinweiszeile:
+       Band = Anteil * (Bildschirm - Hinweis)
+       Kachel = Faktor * Anteil * Bildschirm = Faktor * (Band + Hinweis * Anteil)
+     100 % ist die Höhe des Feldes, in dem Kachel, Verlauf und Logo liegen. */
+  /* min(): Wächst die Hinweiszeile über ihre Mindesthöhe, ragt die Kachel
+     nicht über ihr Band hinaus. */
+  --kachel-hoehe: min(calc(var(--kachel-faktor) * (100% + var(--hinweis-gesamt) * var(--band-anteil))), 100%);
 }
 
 /* Handy: das aktive Band bekommt anderthalbfache Höhe. */
 .weiche__feld--aktiv {
-  flex-grow: 1.5;
+  flex-grow: var(--band-aktiv-grow);
+  --band-anteil: calc(var(--band-aktiv-grow) / (var(--band-aktiv-grow) + 2));
 }
 
 /* Die Kachel, mittig im Feld. Die Maske lässt alle vier Kanten ins
@@ -570,19 +627,116 @@ textarea:-webkit-autofill:focus {
    seiner Grundlinie in die Mitte, zusammen mit dem Zoom. Hier steht bewusst
    keine eigene Regel mehr, sonst liefe darunter eine zweite Bewegung. */
 
+/* ── Hinweiszeile unter den Kacheln ─────────────────────────────────────── */
+.weiche__hinweis {
+  position: relative;
+  z-index: 0;
+  /* Mindesthöhe statt fester Höhe: Stellt das Gerät die Schrift größer,
+     wächst die Zeile mit, statt den Pfeil unten abzuschneiden. Die
+     Kachelreihe wird dann entsprechend kürzer. */
+  flex: 0 0 auto;
+  min-height: var(--hinweis-gesamt);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  /* --cookie-banner-hoehe setzt CookieConsent, solange der Banner unten
+     steht: Die Hinweiszeile rückt dann über ihn, statt verdeckt zu werden.
+     Der Platz geht in dieser Zeit von der Kachelreihe ab; nach der
+     Zustimmung gleitet alles zurück. */
+  padding: 6px 16px
+    calc(var(--hinweis-abstand-unten) + env(safe-area-inset-bottom, 0px) + var(--cookie-banner-hoehe, 0px));
+  text-align: center;
+  background: #0a0a0a;
+  transition: opacity 200ms ease, padding-bottom 300ms ease;
+}
+.weiche__hinweis p {
+  margin: 0;
+}
+.weiche__hinweis-zeile1 {
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.32em;
+  /* Die Laufweite hängt auch hinter dem letzten Buchstaben an; der gleiche
+     Einzug links hält die Zeile optisch mittig. */
+  padding-left: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+.weiche__hinweis-zeile2 {
+  max-width: 36em;
+  font-size: clamp(14px, 1.5vw, 20px);
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.85);
+  text-wrap: balance;
+}
+.weiche__pfeil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 26px;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: opacity 400ms ease, visibility 0s linear 0s, color 200ms ease;
+}
+.weiche__pfeil:hover,
+.weiche__pfeil:focus-visible {
+  color: rgba(255, 255, 255, 0.8);
+}
+.weiche__pfeil svg {
+  width: 16px;
+  height: 16px;
+  animation: weiche-pfeil-atmen var(--hinweis-atem-dauer) ease-in-out infinite;
+}
+/* Nach eigenem Scrollen: ausblenden, dann ganz weg, kommt nicht wieder. */
+.weiche__pfeil--weg {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 400ms ease, visibility 0s linear 400ms;
+}
+@keyframes weiche-pfeil-atmen {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(var(--hinweis-atem-weg));
+  }
+}
+/* Mit der Wahl tritt der Hinweis zurück; die Kachel zieht darüber auf. */
+.weiche--gewaehlt .weiche__hinweis {
+  opacity: 0;
+}
+
 @media (min-width: 768px) {
   .weiche {
     --kachel-breite: var(--kachel-breite-desktop);
-    --kachel-hoehe: var(--kachel-hoehe-desktop);
+    --kachel-faktor: var(--kachel-hoehe-desktop);
+    --hinweis-hoehe: var(--hinweis-hoehe-desktop);
     --logo-wortmarke: var(--logo-wortmarke-desktop);
     --logo-quadrat: var(--logo-quadrat-desktop);
     --zoom-unschaerfe: var(--zoom-unschaerfe-desktop);
+  }
+  .weiche__felder {
     flex-direction: row;
+  }
+  .weiche__hinweis-zeile1 {
+    font-size: 11px;
   }
   /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
      und Logo, nicht Fläche. */
+  .weiche__feld,
   .weiche__feld--aktiv {
     flex-grow: 1;
+    --band-anteil: 1;
   }
 }
 
@@ -602,6 +756,16 @@ textarea:-webkit-autofill:focus {
     opacity: 0;
   }
 }
+@keyframes weiche-auftakt-hinweis {
+  from {
+    opacity: 0;
+  }
+}
+/* Die Hinweiszeile als Letztes, nur Einblendung. Ihr Ende beendet den
+   Auftakt (Weiche.tsx). */
+html[data-weiche-auftakt] .weiche__hinweis {
+  animation: weiche-auftakt-hinweis var(--auftakt-hinweis-dauer) ease var(--auftakt-hinweis-start) backwards;
+}
 html[data-weiche-auftakt] .weiche__medien {
   animation: weiche-auftakt-kachel var(--auftakt-kachel-dauer) var(--auftakt-kurve)
     calc(var(--i, 0) * var(--auftakt-versatz)) backwards;
@@ -614,6 +778,12 @@ html[data-weiche-auftakt] .weiche__logo {
    ihren Ruhezustand auf, erst danach wird das erste aktiv. */
 html[data-weiche-auftakt] .weiche__feld--aktiv {
   flex-grow: 1;
+}
+/* Am Handy haben dabei alle drei Bänder denselben Anteil. */
+@media (max-width: 767px) {
+  html[data-weiche-auftakt] .weiche__feld {
+    --band-anteil: calc(1 / 3);
+  }
 }
 html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__medien {
   filter: saturate(var(--ruhe-saettigung)) brightness(var(--ruhe-helligkeit));
@@ -628,12 +798,19 @@ html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
   .weiche__feld,
   .weiche__medien,
   .weiche__medien video,
-  .weiche__logo {
+  .weiche__logo,
+  .weiche__hinweis,
+  .weiche__pfeil {
     transition: none;
+  }
+  /* Der Pfeil steht still. */
+  .weiche__pfeil svg {
+    animation: none;
   }
   /* Das Skript startet den Auftakt hier gar nicht; dies ist das zweite Netz. */
   html[data-weiche-auftakt] .weiche__medien,
-  html[data-weiche-auftakt] .weiche__logo {
+  html[data-weiche-auftakt] .weiche__logo,
+  html[data-weiche-auftakt] .weiche__hinweis {
     animation: none;
   }
 }

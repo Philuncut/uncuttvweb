@@ -33,9 +33,17 @@ export const AUFTAKT_SCHLUESSEL = "uncuttv:weiche-auftakt-gesehen";
 export const AUFTAKT_LOGO_ANIMATION = "weiche-auftakt-logo";
 
 /**
+ * Name der letzten Animation des Auftakts: Die Hinweiszeile unter den
+ * Kacheln blendet nach den Logos ein. Endet sie, ist der Auftakt vorbei.
+ * Vorher endete er mit dem letzten Logo; seit die Hinweiszeile danach
+ * kommt, hätte das ihre Einblendung abgeschnitten.
+ */
+export const AUFTAKT_ENDE_ANIMATION = "weiche-auftakt-hinweis";
+
+/**
  * Sicherheitsnetz, falls animationend nie kommt (etwa weil der Reiter
  * während des Auftakts im Hintergrund lag). Deutlich über der geplanten
- * Dauer von rund 1,3 s, damit es den regulären Ablauf nie abschneidet.
+ * Dauer von rund 1,8 s, damit es den regulären Ablauf nie abschneidet.
  */
 export const AUFTAKT_HOECHSTDAUER_MS = 3000;
 
