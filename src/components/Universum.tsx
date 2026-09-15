@@ -1,7 +1,16 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { UncutTVUniverse } from "@philuncut/universe";
 import { useLanguage } from "@/lib/LanguageContext";
+
+/**
+ * Pfade, auf denen der Verbund nicht erscheint: Die Weiche unter /start
+ * steht außerhalb der Reihe streaming | shop | video und wählt selbst
+ * zwischen den Auftritten. Pfeilflächen und Wischgesten hätten dort eine
+ * zweite, widersprüchliche Bedeutung.
+ */
+const OHNE_UNIVERSUM = /^\/start(?:\/|$)/;
 
 /**
  * Der Verbund der drei UncutTV-Auftritte (streaming | shop | video):
@@ -29,5 +38,7 @@ import { useLanguage } from "@/lib/LanguageContext";
  */
 export default function Universum() {
   const { language } = useLanguage();
+  const pathname = usePathname();
+  if (pathname && OHNE_UNIVERSUM.test(pathname)) return null;
   return <UncutTVUniverse current="shop" locale={language} zIndex={45} />;
 }

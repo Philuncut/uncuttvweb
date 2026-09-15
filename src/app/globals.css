@@ -275,3 +275,223 @@ textarea:-webkit-autofill:focus {
   background-color: #111 !important;
   color: #fff !important;
 }
+
+/* ── Weiche /start: drei Felder für Streaming, Shop und Social ──────────
+   Handy: Bänder übereinander, das aktive etwas höher. Desktop (ab 768 px):
+   Spalten nebeneinander, je ein Drittel. In jedem Feld sitzt das Video
+   als Kachel mit weichem Rand auf durchgehendem Schwarz, darunter das Logo
+   auf einem Verlauf ins Schwarz. Ruhezustand entsättigt und abgedunkelt,
+   das aktive Feld in voller Farbe mit größerem Logo. Nach der Wahl fährt
+   das gewählte Feld über flex-grow auf volle Größe, die anderen fallen auf
+   Breite null und blenden aus; die Kachel darin wächst leicht, was den
+   Zoom in die Tiefe ergibt. Zustände setzt Weiche.tsx.
+
+   ALLE MASSE HIER, in den Variablen von .weiche. Prozentwerte beziehen
+   sich auf das Feld; die Handy-Werte gelten unter 768 px, darüber werden
+   sie im Media Query weiter unten durch die Desktop-Werte ersetzt. */
+.weiche {
+  /* Kachel: Anteil des Feldes, den das Video einnimmt, zentriert. */
+  --kachel-breite-handy: 92%;
+  --kachel-hoehe-handy: 78%;
+  --kachel-breite-desktop: 86%;
+  --kachel-hoehe-desktop: 70%;
+  /* Weicher Rand der Kachel: so weit läuft jede Kante ins Schwarz aus. */
+  --kachel-rand: 12%;
+  /* Logos: Breite relativ zum Feld, getrennt nach Form. Zwei Wortmarken
+     (Streaming 4,5:1, Shop 1,8:1) und ein fast quadratisches Zeichen
+     (Social 1,1:1). Die Wortmarken bekommen rund die anderthalbfache
+     Breite des Quadrats; am Desktop stehen Shop und Social damit etwa
+     gleich hoch (40 % und 46 % der Feldbreite), die flache
+     Streaming-Wortmarke naturgemäß niedriger.
+
+     Handy: Die zweite Zahl in min() deckelt die Höhe über die Bildhöhe,
+     damit ein Logo auf einem kleinen, breiten Schirm nicht über die Kachel
+     hinausragt. Ein Band ohne Hervorhebung ist 100dvh / 3,5 hoch, seine
+     Kachel 78 % davon, also rund 22dvh; die Deckel bleiben darunter
+     (Quadrat 20dvh hoch, Wortmarke 30dvh / 1,8 = 17dvh). Keiner der Werte
+     reicht über die Kachelbreite von 92 vw. */
+  --logo-wortmarke-handy: min(58vw, 30dvh);
+  --logo-quadrat-handy: min(42vw, 20dvh);
+  --logo-wortmarke-desktop: 72%;
+  --logo-quadrat-desktop: 50%;
+  /* Grundlinie: Abstand der Logounterkante von der Kachelunterkante, in
+     Anteilen der Feldhöhe. */
+  --logo-abstand-unten: 5%;
+  /* Höhe des Verlaufs unter dem Logo, als Faktor der Kachelhöhe (0,6 =
+     60 %). Faktor statt Prozent, weil calc() nicht durch Prozent teilen
+     kann. */
+  --verlauf-hoehe: 0.6;
+
+  /* Aufgelöste Werte für den aktuellen Breakpoint. */
+  --kachel-breite: var(--kachel-breite-handy);
+  --kachel-hoehe: var(--kachel-hoehe-handy);
+  --logo-wortmarke: var(--logo-wortmarke-handy);
+  --logo-quadrat: var(--logo-quadrat-handy);
+
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  /* Der body trägt pt-[60px] für die feste Navbar; auf /start gibt es
+     keine, die Weiche soll am oberen Rand beginnen. */
+  margin-top: -60px;
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+.weiche__feld {
+  position: relative;
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0a0a0a;
+  text-decoration: none;
+  outline-offset: -4px;
+  transition: flex-grow 400ms ease, opacity 500ms ease;
+}
+
+/* Handy: das aktive Band bekommt anderthalbfache Höhe. */
+.weiche__feld--aktiv {
+  flex-grow: 1.5;
+}
+
+/* Die Kachel, mittig im Feld. Die Maske lässt alle vier Kanten ins
+   Schwarz auslaufen: zwei Verläufe, waagrecht und senkrecht, geschnitten.
+   Dadurch gibt es keine harte Kante und keine sichtbare Trennung zwischen
+   den Feldern. */
+.weiche__medien {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--kachel-breite);
+  height: var(--kachel-hoehe);
+  transform: translate(-50%, -50%);
+  filter: grayscale(1) brightness(0.55);
+  transition: filter 400ms ease, transform 500ms ease;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent);
+  mask-image:
+    linear-gradient(to right, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent),
+    linear-gradient(to bottom, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+}
+
+.weiche__feld--aktiv .weiche__medien {
+  filter: none;
+}
+
+.weiche__medien img,
+.weiche__medien video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Das Video liegt über dem Standbild und wird erst sichtbar, wenn es
+   wirklich spielt (data-bereit setzt Weiche.tsx bei playing). So gibt es
+   keinen Moment mit falschem Poster oder schwarzem Bild. */
+.weiche__medien video {
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.weiche__medien video[data-bereit="1"] {
+  opacity: 1;
+}
+
+/* Verlauf von transparent nach Schwarz im unteren Teil der Kachel: die
+   Grundfläche für das Logo. Liegt außerhalb der maskierten Kachel, deckt
+   aber genau deren Breite und ihren unteren Teil ab. */
+.weiche__verlauf {
+  position: absolute;
+  left: 50%;
+  bottom: calc((100% - var(--kachel-hoehe)) / 2);
+  width: var(--kachel-breite);
+  height: calc(var(--kachel-hoehe) * var(--verlauf-hoehe));
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, rgba(10, 10, 10, 0), #0a0a0a);
+  pointer-events: none;
+}
+
+/* Das Logo steht auf einer gemeinsamen Grundlinie im unteren Drittel der
+   Kachel: Unterkante = Kachelunterkante + Abstand. Breite je Form, siehe
+   die Variablen oben; die Dateien sind auf den Inhalt beschnitten, die
+   Unterkante des Bildes ist also die Unterkante des Zeichens. */
+.weiche__logo {
+  position: absolute;
+  left: 50%;
+  bottom: calc((100% - var(--kachel-hoehe)) / 2 + var(--logo-abstand-unten));
+  z-index: 1;
+  width: var(--logo-quadrat);
+  max-width: 620px;
+  height: auto;
+  opacity: 0.7;
+  transform: translateX(-50%) scale(1);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 28px rgba(0, 0, 0, 0.65));
+  transition: opacity 400ms ease, transform 400ms ease;
+}
+.weiche__feld--wortmarke .weiche__logo {
+  width: var(--logo-wortmarke);
+}
+
+.weiche__feld--aktiv .weiche__logo {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.08);
+}
+
+/* Nach der Wahl: das Ziel auf volle Größe, die anderen weg. */
+.weiche--gewaehlt .weiche__feld {
+  flex-grow: 0.001;
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 500ms;
+}
+.weiche--gewaehlt .weiche__feld--ziel {
+  flex-grow: 1;
+  opacity: 1;
+}
+.weiche--gewaehlt .weiche__feld--ziel .weiche__medien {
+  transform: translate(-50%, -50%) scale(1.15);
+}
+.weiche--gewaehlt .weiche__feld--ziel .weiche__logo {
+  transform: translateX(-50%) scale(1.2);
+}
+
+@media (min-width: 768px) {
+  .weiche {
+    --kachel-breite: var(--kachel-breite-desktop);
+    --kachel-hoehe: var(--kachel-hoehe-desktop);
+    --logo-wortmarke: var(--logo-wortmarke-desktop);
+    --logo-quadrat: var(--logo-quadrat-desktop);
+    flex-direction: row;
+  }
+  /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
+     und Logo, nicht Fläche. */
+  .weiche__feld--aktiv {
+    flex-grow: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .weiche__feld,
+  .weiche__medien,
+  .weiche__medien video,
+  .weiche__logo {
+    transition: none;
+  }
+}
+
+/* Ältere Browser ohne dvh: dieselben Deckel in vh. */
+@supports not (height: 1dvh) {
+  .weiche {
+    --logo-wortmarke-handy: min(58vw, 30vh);
+    --logo-quadrat-handy: min(42vw, 20vh);
+  }
+}

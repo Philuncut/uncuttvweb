@@ -574,6 +574,39 @@ const translations: Record<string, Record<string, string>> = {
     en: "Your email address hasn't been confirmed yet. Please click the link in your welcome email.",
   },
 
+  // Weiche /start (Streaming | Shop | Social)
+  START_WEICHE_LABEL: { de: "Wähle einen UncutTV-Auftritt", en: "Choose an UncutTV site" },
+  START_LINK_STREAMING: { de: "Zu UncutTV Streaming", en: "Go to UncutTV Streaming" },
+  START_LINK_SHOP: { de: "Zum UncutTV Shop", en: "Go to the UncutTV Shop" },
+  START_LINK_SOCIAL: { de: "Zu UncutTV Social", en: "Go to UncutTV Social" },
+  START_EYEBROW: { de: "DER VERBUND", en: "THE NETWORK" },
+  START_TITLE: { de: "Drei Auftritte. Ein UncutTV.", en: "Three sites. One UncutTV." },
+  START_TEXT_1: {
+    de: "UncutTV ist ein unabhängiges Filmlabel aus Österreich. Streaming zeigt unsere Filme ungekürzt, der Shop bringt sie als Mediabook und Blu-ray ins Regal, und Social ist der Ort für Videos, Livestreams und alles dazwischen.",
+    en: "UncutTV is an independent film label from Austria. Streaming shows our films uncut, the shop puts them on your shelf as mediabooks and Blu-rays, and Social is the place for videos, livestreams and everything in between.",
+  },
+  START_TEXT_2: {
+    de: "Wähle oben, wohin es gehen soll. Ein Konto gilt überall: Wer im Shop angemeldet ist, meldet sich mit denselben Zugangsdaten auch beim Streaming und bei Social an.",
+    en: "Pick your destination above. One account works everywhere: the same credentials sign you in to the shop, to streaming and to Social.",
+  },
+  START_WEG_STREAMING_TITEL: { de: "Streaming", en: "Streaming" },
+  START_WEG_STREAMING_TEXT: {
+    de: "Unsere Filme ungekürzt, im Abo, auf uncuttv.app.",
+    en: "Our films uncut, by subscription, at uncuttv.app.",
+  },
+  START_WEG_SHOP_TITEL: { de: "Shop", en: "Shop" },
+  START_WEG_SHOP_TEXT: {
+    de: "Mediabooks, Blu-rays und Sammlereditionen.",
+    en: "Mediabooks, Blu-rays and collector's editions.",
+  },
+  START_WEG_SOCIAL_TITEL: { de: "Social", en: "Social" },
+  START_WEG_SOCIAL_TEXT: {
+    de: "Videos, Livestreams und die Community auf tv.uncuttv.at.",
+    en: "Videos, livestreams and the community at tv.uncuttv.at.",
+  },
+  START_PRODUCTS_TITLE: { de: "NEU IM SHOP", en: "NEW IN THE SHOP" },
+  START_PRODUCTS_CTA: { de: "Zum Shop", en: "To the shop" },
+
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },
   HAENDLERPREIS: { de: "HÄNDLERPREIS", en: "DEALER PRICE" },

@@ -107,6 +107,7 @@ const wordpressMigrationRedirects: RedirectRule[] = [
   redirectTrailingOnly("/bestellung/erfolg", "/bestellung/erfolg"),
   redirectTrailingOnly("/konto/login", "/konto/login"),
   redirectTrailingOnly("/konto/dashboard", "/konto/dashboard"),
+  redirectTrailingOnly("/start", "/start"),
 ];
 
 const nextConfig: NextConfig = {
