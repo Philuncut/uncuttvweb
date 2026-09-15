@@ -42,6 +42,18 @@
   }
 }
 
+/* Verbund der Auftritte (@philuncut/universe): Der Wechsel zum Nachbarn ist
+   ein echter Dokumentwechsel. Bis zum ersten Bild der neuen Seite malt der
+   Browser den Hintergrund des html-Elements — ohne diese Regel hell, und die
+   Seite führe sichtbar aus Weiß herein. Deshalb steht die Grundfläche nicht
+   nur auf body, sondern auch auf html; color-scheme: dark macht zudem
+   Formularelemente und Scrollleisten von Anfang an dunkel. Derselbe Wert wie
+   --background, das meta theme-color im Layout, Streaming und Video. */
+html {
+  background-color: #0a0a0a;
+  color-scheme: dark;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

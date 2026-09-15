@@ -154,9 +154,15 @@ function MobileOverlayMenu({
 
   if (!mounted) return null;
 
+  // data-uv-no-swipe: Im offenen Menü wird nicht zum Nachbar-Auftritt
+  // gewischt (@philuncut/universe). Das Menü wandert beim Wischen sonst mit
+  // der ganzen Seite mit, weil body per transform verschoben wird und damit
+  // zum Bezugsrahmen für fixed wird — ein Wisch quer über die Liste soll das
+  // Menü nicht verlassen, sondern höchstens schließen.
   return (
     <div
       className="md:hidden"
+      data-uv-no-swipe
       style={{
         position: "fixed",
         top: 0,
@@ -744,8 +750,12 @@ export default function Navbar() {
       />
 
       {/* Fullscreen mobile menu overlay — left-aligned cinematic style */}
+      {/* data-uv-no-swipe: Im offenen Menü wird nicht zum Nachbar-Auftritt
+          gewischt (@philuncut/universe), siehe MobileOverlayMenu. Geschlossen
+          (display: none) nimmt das Element ohnehin keine Gesten an. */}
       <div
         id="mobile-menu"
+        data-uv-no-swipe
         style={{
           position: "fixed",
           top: 0,

@@ -13,6 +13,7 @@
   "dependencies": {
     "@next/third-parties": "^16.2.6",
     "@paypal/react-paypal-js": "^9.1.0",
+    "@philuncut/universe": "^0.3.0",
     "@stripe/react-stripe-js": "^6.4.0",
     "@stripe/stripe-js": "^9.6.0",
     "@supabase/supabase-js": "^2.105.4",
@@ -24,9 +25,6 @@
     "stripe": "^22.0.0"
   },
   "devDependencies": {
-    "sharp": "^0.34.5",
-    "to-ico": "^1.1.5",
-    "tsx": "^4.21.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
@@ -34,7 +32,10 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
+    "to-ico": "^1.1.5",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

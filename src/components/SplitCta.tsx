@@ -164,10 +164,13 @@ export default function SplitCta() {
       />
 
       {/* Age Gate Overlay */}
+      {/* data-uv-no-swipe: Solange die Altersprüfung offen ist, wird nicht
+          zum Nachbar-Auftritt gewischt (@philuncut/universe). */}
       {showGate && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setShowGate(false)}
+          data-uv-no-swipe
         >
           <div
             className="mx-4 w-full max-w-md border border-white/10 bg-[#111] p-8 sm:p-10"

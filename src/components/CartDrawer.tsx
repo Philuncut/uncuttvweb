@@ -214,6 +214,13 @@ export default function CartDrawer() {
 
   return (
     <>
+      {/* data-uv-no-swipe: Im offenen Warenkorb wird nicht zum Nachbar-Auftritt
+          gewischt (@philuncut/universe). Der Übergang verschiebt body per
+          transform, damit wird body zum Bezugsrahmen für fixed — Backdrop und
+          Panel wanderten sonst mit der ganzen Seite mit, und ein Wisch quer
+          über die Positionen soll den Shop nicht verlassen. Geschlossen ist
+          das Attribut wirkungslos: der Backdrop nimmt keine Zeiger an, das
+          Panel steht außerhalb des Bildes. */}
       {/* Backdrop */}
       <div
         className={`fixed inset-0 z-50 bg-black/70 transition-opacity duration-300 ${
@@ -222,6 +229,7 @@ export default function CartDrawer() {
             : "pointer-events-none opacity-0"
         }`}
         onClick={closeDrawer}
+        data-uv-no-swipe
       />
 
       {/* Drawer panel */}
@@ -229,6 +237,7 @@ export default function CartDrawer() {
         className={`fixed top-0 right-0 z-50 flex h-full w-full flex-col bg-[#111] transition-transform duration-300 ease-in-out sm:w-[420px] ${
           drawerOpen ? "translate-x-0" : "translate-x-full"
         }`}
+        data-uv-no-swipe
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#222] px-6 py-4">

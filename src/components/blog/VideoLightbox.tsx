@@ -88,7 +88,17 @@ export default function VideoLightbox({
 
   return (
     <>
-      <div className="fixed inset-0 z-[200] bg-black/90" onClick={handleClose} aria-hidden />
+      {/* data-uv-no-swipe: In der offenen Lightbox wird nicht zum
+          Nachbar-Auftritt gewischt (@philuncut/universe). Das Overlay wandert
+          beim Wischen sonst mit der ganzen Seite mit, weil body per transform
+          verschoben wird und damit zum Bezugsrahmen für fixed wird — und die
+          Produktreihe darunter ist am Handy selbst ein waagrechter Scroller. */}
+      <div
+        className="fixed inset-0 z-[200] bg-black/90"
+        onClick={handleClose}
+        aria-hidden
+        data-uv-no-swipe
+      />
       <div
         className="fixed inset-0 z-[201] flex items-stretch justify-center overflow-y-auto overscroll-contain sm:items-center sm:p-4"
         style={{
@@ -96,6 +106,7 @@ export default function VideoLightbox({
           paddingBottom: "max(0px, env(safe-area-inset-bottom))",
         }}
         onClick={handleClose}
+        data-uv-no-swipe
       >
         <div
           role="dialog"

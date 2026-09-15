@@ -9,6 +9,7 @@ import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
 import PayPalRecoveryBoot from "@/components/PayPalRecoveryBoot";
+import Universum from "@/components/Universum";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,6 +39,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Verbund der Auftritte (@philuncut/universe): Der Wechsel zum Nachbarn
+  // ist ein echter Dokumentwechsel. Damit der Browser dazwischen nicht hell
+  // malt, muss das Dokument selbst dunkel sein — zusammen mit der html-Regel
+  // in globals.css. Derselbe Wert wie bei Streaming und Video.
+  colorScheme: "dark",
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({
@@ -62,6 +69,8 @@ export default function RootLayout({
             <CookieConsent />
             <MetaPixel />
             <GoogleAnalytics />
+            {/* Innerhalb des LanguageProvider, weil die Sprache mitgegeben wird. */}
+            <Universum />
           </CartProvider>
         </LanguageProvider>
       </body>

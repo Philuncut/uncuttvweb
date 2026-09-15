@@ -33,9 +33,13 @@ export default function ShopPage({ products, categories }: ShopPageProps) {
   return (
     <>
       {/* Age Gate Overlay */}
+      {/* data-uv-no-swipe: Solange die Altersprüfung offen ist, wird nicht
+          zum Nachbar-Auftritt gewischt (@philuncut/universe); das Overlay
+          wanderte sonst mit der per transform verschobenen Seite mit. */}
       {!ageConfirmed && (
         <div
           id="age-gate-overlay"
+          data-uv-no-swipe
           style={{
             position: "fixed",
             top: 0,

@@ -111,6 +111,12 @@ const wordpressMigrationRedirects: RedirectRule[] = [
 
 const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
+  // @philuncut/universe wird als Quelltext (TS/TSX) ausgeliefert und muss
+  // von Next mitübersetzt werden.
+  transpilePackages: ["@philuncut/universe"],
+
+  // Entwicklungsserver vom Handy im lokalen Netz aufrufen (Touch-Tests).
+  allowedDevOrigins: ["192.168.0.108"],
   images: {
     remotePatterns: [
       {
