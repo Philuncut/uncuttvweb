@@ -281,10 +281,13 @@ textarea:-webkit-autofill:focus {
    Spalten nebeneinander, je ein Drittel. In jedem Feld sitzt das Video
    als Kachel mit weichem Rand auf durchgehendem Schwarz, darunter das Logo
    auf einem Verlauf ins Schwarz. Ruhezustand entsättigt und abgedunkelt,
-   das aktive Feld in voller Farbe mit größerem Logo. Nach der Wahl fährt
-   das gewählte Feld über flex-grow auf volle Größe, die anderen fallen auf
-   Breite null und blenden aus; die Kachel darin wächst leicht, was den
-   Zoom in die Tiefe ergibt. Zustände setzt Weiche.tsx.
+   das aktive Feld in voller Farbe mit größerem Logo. Nach der Wahl bleibt
+   das Layout stehen: Die anderen Felder blenden aus, und die Kachel des
+   gewählten fährt in einer einzigen Bewegung auf Bildschirmgröße (Zoom in
+   die Tiefe, als Animation in Weiche.tsx); dabei wird sie unscharf und
+   dunkler, und das Logo wandert in die Mitte. Zustände setzt Weiche.tsx; beim
+   ersten Besuch
+   steigen die Felder einmal aus dem Schwarz auf (Auftakt, weiter unten).
 
    ALLE MASSE HIER, in den Variablen von .weiche. Prozentwerte beziehen
    sich auf das Feld; die Handy-Werte gelten unter 768 px, darüber werden
@@ -297,6 +300,31 @@ textarea:-webkit-autofill:focus {
   --kachel-hoehe-desktop: 70%;
   /* Weicher Rand der Kachel: so weit läuft jede Kante ins Schwarz aus. */
   --kachel-rand: 12%;
+  /* Zoom nach der Wahl, nur am Handy: welcher Anteil der Kachel am Ende die
+     Weiche deckt. Größere Werte fahren weniger weit auf.
+
+     1 heißt: Die ganze Kachel, einschließlich ihres weich auslaufenden
+     Randes, reicht genau bis an die Bildschirmkanten. Am Desktop deckt
+     dagegen der deckende Kern (1 minus zweimal --kachel-rand, also 0,76)
+     die Fläche; das fährt rund ein Drittel weiter auf und bleibt dort so.
+
+     Grenze am Handy: Der Clip ist quer, der Bildschirm hoch. Um die Höhe
+     zu füllen, muss die Kachel seitlich weit über den Bildschirm hinaus.
+     Ab etwa 1,3 bleiben oben und unten sichtbare dunkle Streifen. */
+  --zoom-deckung-handy: 1;
+  /* Übergang nach der Wahl, gleichzeitig mit dem Zoom und in derselben
+     Dauer: Die Kachel wird unscharf und dunkler, das Logo wandert in die
+     Mitte und wächst leicht. Am Ende steht das Logo auf einem weichen,
+     dunklen Bild.
+
+     Unschärfe: Wert auf dem Bildschirm am Ende des Zooms. Weiche.tsx rechnet
+     die Vergrößerung der Kachel heraus, sonst würde sie mitskaliert.
+     Helligkeit: 1 = unverändert, kleiner = dunkler.
+     Logo: Vergrößerung gegenüber der Ruhegröße, bewusst gering. */
+  --zoom-unschaerfe-desktop: 24px;
+  --zoom-unschaerfe-handy: 14px;
+  --zoom-helligkeit: 0.55;
+  --zoom-logo-scale: 1.12;
   /* Logos: Breite relativ zum Feld, getrennt nach Form. Zwei Wortmarken
      (Streaming 4,5:1, Shop 1,8:1) und ein fast quadratisches Zeichen
      (Social 1,1:1). Die Wortmarken bekommen rund die anderthalbfache
@@ -317,16 +345,58 @@ textarea:-webkit-autofill:focus {
   /* Grundlinie: Abstand der Logounterkante von der Kachelunterkante, in
      Anteilen der Feldhöhe. */
   --logo-abstand-unten: 5%;
+  /* Versatz auf die Schrift-Grundlinie, je Logo, als Anteil der eigenen
+     Logohöhe (translate in Prozent bezieht sich auf das Element selbst und
+     wächst deshalb an jedem Breakpoint mit).
+
+     Warum: Die Dateien sind auf ihre Gesamtform beschnitten, das Auge
+     liest aber die Unterkante der Schrift als Grundlinie. Bei Streaming
+     endet die Schrift an der Dateiunterkante. Bei Social ragt der Globus
+     unter dem Schriftzug hinaus, beim Shop sitzen ein kleines Detail und
+     der Beschnittrand darunter. Ohne Versatz stünden beide sichtbar höher.
+
+     Gemessen an den Dateien (letzte Zeile des Schriftblocks):
+       Social    Zeile 558 von 733, darunter 174 px = 23,7 %
+       Shop      Zeile 555 von 602, darunter  46 px =  7,6 %
+       Streaming Zeile 515 von 516, darunter   0 px
+     Ändert sich eine Logodatei, gehört dieser Wert neu gemessen. */
+  --logo-social-versatz: 23.7%;
+  --logo-shop-versatz: 7.6%;
   /* Höhe des Verlaufs unter dem Logo, als Faktor der Kachelhöhe (0,6 =
      60 %). Faktor statt Prozent, weil calc() nicht durch Prozent teilen
      kann. */
   --verlauf-hoehe: 0.6;
+
+  /* Hervorhebung. Die beiden Felder ohne Hervorhebung treten zurück:
+     entsättigt, deutlich abgedunkelt und leicht kleiner; das aktive Feld
+     in voller Farbe und leicht größer. Skaliert wird die Kachel, nicht das
+     ganze Feld: Ein vergrößertes Feld überlappte seinen Nachbarn, und das
+     Logo hat seine eigene Vergrößerung. */
+  --ruhe-helligkeit: 0.38;
+  --ruhe-saettigung: 0;
+  --ruhe-scale: 0.97;
+  --aktiv-scale: 1.03;
+  --hervorhebung-dauer: 400ms;
+
+  /* Auftakt beim ersten Besuch (siehe components/weiche/auftakt.ts). Die
+     Kacheln steigen nacheinander aus dem Schwarz auf, im Abstand
+     --auftakt-versatz; die Logos folgen ab --auftakt-logo-start im selben
+     Takt. Mit den Werten unten: Kacheln 0 bis 1000 ms, Logos 500 bis
+     1300 ms, danach setzt die Hervorhebung des ersten Feldes über
+     --hervorhebung-dauer ein, zusammen rund 1,7 s. */
+  --auftakt-versatz: 150ms;
+  --auftakt-kachel-dauer: 700ms;
+  --auftakt-kachel-scale: 0.94;
+  --auftakt-logo-start: 500ms;
+  --auftakt-logo-dauer: 500ms;
+  --auftakt-kurve: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Aufgelöste Werte für den aktuellen Breakpoint. */
   --kachel-breite: var(--kachel-breite-handy);
   --kachel-hoehe: var(--kachel-hoehe-handy);
   --logo-wortmarke: var(--logo-wortmarke-handy);
   --logo-quadrat: var(--logo-quadrat-handy);
+  --zoom-unschaerfe: var(--zoom-unschaerfe-handy);
 
   display: flex;
   flex-direction: column;
@@ -367,9 +437,15 @@ textarea:-webkit-autofill:focus {
   left: 50%;
   width: var(--kachel-breite);
   height: var(--kachel-hoehe);
-  transform: translate(-50%, -50%);
-  filter: grayscale(1) brightness(0.55);
-  transition: filter 400ms ease, transform 500ms ease;
+  /* translate und scale als eigene Eigenschaften, nicht in transform:
+     So kann der Auftakt scale animieren, ohne die Zentrierung zu
+     überschreiben, und Hervorhebung und Zoom teilen sich keine Liste. */
+  translate: -50% -50%;
+  scale: var(--ruhe-scale);
+  filter: saturate(var(--ruhe-saettigung)) brightness(var(--ruhe-helligkeit));
+  transition:
+    filter var(--hervorhebung-dauer) ease,
+    scale var(--hervorhebung-dauer) ease;
   -webkit-mask-image:
     linear-gradient(to right, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent),
     linear-gradient(to bottom, transparent, #000 var(--kachel-rand), #000 calc(100% - var(--kachel-rand)), transparent);
@@ -382,6 +458,7 @@ textarea:-webkit-autofill:focus {
 
 .weiche__feld--aktiv .weiche__medien {
   filter: none;
+  scale: var(--aktiv-scale);
 }
 
 .weiche__medien img,
@@ -394,15 +471,23 @@ textarea:-webkit-autofill:focus {
   object-position: center;
 }
 
-/* Das Video liegt über dem Standbild und wird erst sichtbar, wenn es
-   wirklich spielt (data-bereit setzt Weiche.tsx bei playing). So gibt es
-   keinen Moment mit falschem Poster oder schwarzem Bild. */
+/* Genau eine sichtbare Bildebene. Standbild und Video liegen beide in der
+   Kachel und folgen damit derselben Bewegung; sichtbar ist aber immer nur
+   eines. Solange das Video nicht spielt, steht das Standbild und das Video
+   ist unsichtbar. Sobald es spielt, setzt Weiche.tsx data-video-laeuft an
+   der Kachel: Das Video wird sichtbar und das Standbild verschwindet.
+
+   Bewusst hart, ohne Überblendung. Die Standbilder sind nicht das erste
+   Bild ihres Clips, sondern ein anderer Moment; eine Überblendung zeigte
+   beide halbtransparent übereinander, und das war das Doppelbild im Zoom. */
 .weiche__medien video {
   opacity: 0;
-  transition: opacity 400ms ease;
 }
-.weiche__medien video[data-bereit="1"] {
+.weiche__medien[data-video-laeuft] video {
   opacity: 1;
+}
+.weiche__medien[data-video-laeuft] picture {
+  visibility: hidden;
 }
 
 /* Verlauf von transparent nach Schwarz im unteren Teil der Kachel: die
@@ -417,6 +502,7 @@ textarea:-webkit-autofill:focus {
   transform: translateX(-50%);
   background: linear-gradient(to bottom, rgba(10, 10, 10, 0), #0a0a0a);
   pointer-events: none;
+  transition: opacity 500ms ease;
 }
 
 /* Das Logo steht auf einer gemeinsamen Grundlinie im unteren Drittel der
@@ -440,29 +526,49 @@ textarea:-webkit-autofill:focus {
 .weiche__feld--wortmarke .weiche__logo {
   width: var(--logo-wortmarke);
 }
+/* Schrift statt Dateiunterkante auf die Grundlinie, siehe Variablen oben.
+   translate ist eine eigene Eigenschaft und bleibt deshalb von transform
+   (Zentrierung, Vergrößerung) unberührt. */
+.weiche__feld--social .weiche__logo {
+  translate: 0 var(--logo-social-versatz);
+}
+.weiche__feld--shop .weiche__logo {
+  translate: 0 var(--logo-shop-versatz);
+}
 
 .weiche__feld--aktiv .weiche__logo {
   opacity: 1;
   transform: translateX(-50%) scale(1.08);
 }
 
-/* Nach der Wahl: das Ziel auf volle Größe, die anderen weg. */
+/* Nach der Wahl: Die anderen Felder blenden aus, das Layout bleibt stehen.
+   Die Kachel des Ziels bewegt allein Weiche.tsx (starteZoom), vom aktuellen
+   Stand aus; hier darf deshalb weder scale noch flex-grow wechseln, sonst
+   überlagerten sich wieder zwei Bewegungen. Das Ziel darf über sein Feld
+   hinauswachsen und liegt dazu über den Nachbarn; die Weiche selbst
+   schneidet an der Bildschirmkante ab. */
 .weiche--gewaehlt .weiche__feld {
-  flex-grow: 0.001;
   opacity: 0;
   pointer-events: none;
   transition-duration: 500ms;
 }
 .weiche--gewaehlt .weiche__feld--ziel {
-  flex-grow: 1;
   opacity: 1;
+  overflow: visible;
+  z-index: 2;
 }
-.weiche--gewaehlt .weiche__feld--ziel .weiche__medien {
-  transform: translate(-50%, -50%) scale(1.15);
+/* Der Verlauf hat seitlich harte Kanten und stünde über dem aufgezogenen,
+   hellen Bild als dunkler Kasten. Er verschwindet deshalb sofort mit der
+   Wahl, VOR der Bewegung und ohne Übergang; eine Ausblendung über die
+   Dauer des Zooms ließ ihn kurz als Rechteck aufblitzen. Beim Zurück-Knopf
+   kehrt er über den normalen Übergang wieder. */
+.weiche--gewaehlt .weiche__feld--ziel .weiche__verlauf {
+  opacity: 0;
+  transition: none;
 }
-.weiche--gewaehlt .weiche__feld--ziel .weiche__logo {
-  transform: translateX(-50%) scale(1.2);
-}
+/* Das Logo des Ziels bewegt ebenfalls allein Weiche.tsx (starteZoom): von
+   seiner Grundlinie in die Mitte, zusammen mit dem Zoom. Hier steht bewusst
+   keine eigene Regel mehr, sonst liefe darunter eine zweite Bewegung. */
 
 @media (min-width: 768px) {
   .weiche {
@@ -470,6 +576,7 @@ textarea:-webkit-autofill:focus {
     --kachel-hoehe: var(--kachel-hoehe-desktop);
     --logo-wortmarke: var(--logo-wortmarke-desktop);
     --logo-quadrat: var(--logo-quadrat-desktop);
+    --zoom-unschaerfe: var(--zoom-unschaerfe-desktop);
     flex-direction: row;
   }
   /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
@@ -479,12 +586,55 @@ textarea:-webkit-autofill:focus {
   }
 }
 
+/* ── Auftakt ─────────────────────────────────────────────────────────────
+   Nur solange das Attribut am html-Element steht. Die Keyframes nennen nur
+   den Anfang: Das Ende ist der Ruhezustand, den die Regeln oben ohnehin
+   setzen, einschließlich --ruhe-scale. fill-mode backwards hält jede Kachel
+   und jedes Logo bis zu seinem Einsatz unsichtbar. */
+@keyframes weiche-auftakt-kachel {
+  from {
+    opacity: 0;
+    scale: var(--auftakt-kachel-scale);
+  }
+}
+@keyframes weiche-auftakt-logo {
+  from {
+    opacity: 0;
+  }
+}
+html[data-weiche-auftakt] .weiche__medien {
+  animation: weiche-auftakt-kachel var(--auftakt-kachel-dauer) var(--auftakt-kurve)
+    calc(var(--i, 0) * var(--auftakt-versatz)) backwards;
+}
+html[data-weiche-auftakt] .weiche__logo {
+  animation: weiche-auftakt-logo var(--auftakt-logo-dauer) ease
+    calc(var(--auftakt-logo-start) + var(--i, 0) * var(--auftakt-versatz)) backwards;
+}
+/* Während des Auftakts ist kein Feld hervorgehoben: Alle drei steigen in
+   ihren Ruhezustand auf, erst danach wird das erste aktiv. */
+html[data-weiche-auftakt] .weiche__feld--aktiv {
+  flex-grow: 1;
+}
+html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__medien {
+  filter: saturate(var(--ruhe-saettigung)) brightness(var(--ruhe-helligkeit));
+  scale: var(--ruhe-scale);
+}
+html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
+  opacity: 0.7;
+  transform: translateX(-50%) scale(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .weiche__feld,
   .weiche__medien,
   .weiche__medien video,
   .weiche__logo {
     transition: none;
+  }
+  /* Das Skript startet den Auftakt hier gar nicht; dies ist das zweite Netz. */
+  html[data-weiche-auftakt] .weiche__medien,
+  html[data-weiche-auftakt] .weiche__logo {
+    animation: none;
   }
 }
 

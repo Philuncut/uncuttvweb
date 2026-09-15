@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Footer from "@/components/Footer";
 import StartContent from "@/components/weiche/StartContent";
 import Weiche from "@/components/weiche/Weiche";
+import { AUFTAKT_SKRIPT } from "@/components/weiche/auftakt";
 import { getShopCatalog } from "@/lib/shop-catalog";
 import type { ShopListProduct } from "@/lib/types";
 
@@ -50,6 +51,11 @@ export default async function StartPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
+      {/* Entscheidet vor dem ersten Bild, ob der Auftakt läuft, und muss
+          deshalb VOR der Weiche stehen. Siehe components/weiche/auftakt.ts.
+          Kommt man per clientseitiger Navigation hierher, führt React das
+          Skript nicht aus; dann steht die Weiche ohne Auftakt da. */}
+      <script dangerouslySetInnerHTML={{ __html: AUFTAKT_SKRIPT }} />
       <Weiche />
       <main>
         <StartContent products={neueste} />

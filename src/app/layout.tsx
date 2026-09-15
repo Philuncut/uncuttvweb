@@ -53,9 +53,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning: Auf /start setzt das Inline-Skript des
+    // Auftakts (components/weiche/auftakt.ts) das Attribut
+    // data-weiche-auftakt am html-Element, bevor React hydriert. Das
+    // Attribut steht damit im DOM, aber nicht im gerenderten Markup, und
+    // der Entwicklungsmodus meldet eine Abweichung. Die Unterdrückung gilt
+    // nur für die Attribute dieses einen Elements, nicht für Kinder.
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark overflow-x-hidden`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col pt-[60px]">
         <PayPalRecoveryBoot />
