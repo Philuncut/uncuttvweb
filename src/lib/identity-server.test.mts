@@ -127,6 +127,21 @@ describe("identityLogin", () => {
     assert.deepEqual(result.failure, { kind: "rejected" });
   });
 
+  it("meldet 403 als unbestätigte Adresse, nicht als Ausfall", async () => {
+    antwort = () =>
+      json(403, {
+        message: "Bitte bestätige zuerst den Link in der Willkommensmail.",
+        error: "Forbidden",
+        statusCode: 403,
+      });
+
+    const result = await identityLogin("gast@example.com", "richtig");
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.deepEqual(result.failure, { kind: "unconfirmed" });
+  });
+
   it("meldet 429 als gebremst", async () => {
     antwort = () => json(429, { message: "Zu viele Versuche." });
 
@@ -248,6 +263,7 @@ describe("identityFailureResponse", () => {
     assert.equal(identityFailureResponse({ kind: "out-of-sync" }).status, 409);
     assert.equal(identityFailureResponse({ kind: "rate-limited" }).status, 429);
     assert.equal(identityFailureResponse({ kind: "invalid" }).status, 400);
+    assert.equal(identityFailureResponse({ kind: "unconfirmed" }).status, 403);
     assert.equal(identityFailureResponse({ kind: "unavailable" }).status, 503);
   });
 
@@ -256,6 +272,18 @@ describe("identityFailureResponse", () => {
       code?: string;
     };
     assert.equal(body.code, "password_out_of_sync");
+  });
+
+  it("markiert die unbestätigte Adresse maschinenlesbar und nennt die Willkommensmail", async () => {
+    const body = (await identityFailureResponse({ kind: "unconfirmed" }).json()) as {
+      code?: string;
+      error: string;
+    };
+    assert.equal(body.code, "email_unconfirmed");
+    assert.match(body.error, /Willkommensmail/);
+    // Weder wie ein falsches Passwort noch wie ein Ausfall.
+    assert.equal(/passwort/i.test(body.error), false);
+    assert.equal(/nicht möglich/i.test(body.error), false);
   });
 
   it("lässt einen Ausfall nicht wie ein falsches Passwort klingen", async () => {

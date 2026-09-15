@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect, type FormEvent } from "react";
+import { useState, useCallback, useEffect, useMemo, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PasswordToggleInput } from "@/components/PasswordToggleInput";
 import { PasswordResyncForm } from "@/components/PasswordResyncForm";
 import { useCart } from "@/lib/CartContext";
+import { useLanguage } from "@/lib/LanguageContext";
+import { createT } from "@/lib/translations";
 
 /** Validates and resolves the post-login redirect target. */
 function resolveRedirectTarget(searchParams: { get(name: string): string | null }): string {
@@ -54,6 +56,8 @@ export default function AuthForms() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { repriceCartForWholesale } = useCart();
+  const { language } = useLanguage();
+  const t = useMemo(() => createT(language), [language]);
   const [tab, setTab] = useState<Tab>("login");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -127,6 +131,16 @@ export default function AuthForms() {
           return;
         }
 
+        // Passwort richtig, Adresse noch nicht bestätigt: Der Nutzer soll in
+        // sein Postfach schauen, nicht das Passwort erneut probieren. Der
+        // Text kommt aus den Übersetzungen, weil er hier in beiden Sprachen
+        // gezeigt wird; ein falsches Passwort bleibt der Servertext (401).
+        if (res.status === 403 && data.code === "email_unconfirmed") {
+          setError(t("LOGIN_EMAIL_UNCONFIRMED"));
+          setLoading(false);
+          return;
+        }
+
         if (!res.ok) {
           setError(data.error || "Anmeldung fehlgeschlagen.");
           setLoading(false);
@@ -167,7 +181,7 @@ export default function AuthForms() {
         setLoading(false);
       }
     },
-    [router, redirectTo, repriceCartForWholesale]
+    [router, redirectTo, repriceCartForWholesale, t]
   );
 
   const handleLogin = useCallback(

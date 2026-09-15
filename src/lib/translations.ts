@@ -566,6 +566,13 @@ const translations: Record<string, Record<string, string>> = {
   BEARBEITEN: { de: "BEARBEITEN", en: "EDIT" },
   ABBRECHEN: { de: "ABBRECHEN", en: "CANCEL" },
   NOCH_KEINE_BESTELLUNGEN: { de: "Noch keine Bestellungen.", en: "No orders yet." },
+  // Anmeldung: Passwort richtig, Adresse unbestätigt (403 mit code
+  // email_unconfirmed aus /api/auth/login). Die übrigen Anmeldefehler kommen
+  // als fertiger Text vom Server.
+  LOGIN_EMAIL_UNCONFIRMED: {
+    de: "Deine E-Mail-Adresse ist noch nicht bestätigt. Bitte klick auf den Link in der Willkommensmail.",
+    en: "Your email address hasn't been confirmed yet. Please click the link in your welcome email.",
+  },
 
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },

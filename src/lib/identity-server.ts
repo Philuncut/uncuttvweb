@@ -38,6 +38,13 @@ export type IdentityFailure =
   | { kind: "rate-limited" }
   /** Eingabe abgelehnt, etwa ein zu kurzes neues Passwort. */
   | { kind: "invalid"; message?: string }
+  /**
+   * Passwort richtig, Mailadresse noch nicht bestätigt. Der Dienst meldet
+   * das seit September 2026 mit 403; vorher ging es als 401 unter. Der
+   * Nutzer muss den Link in der Willkommensmail anklicken, nicht warten
+   * und nicht das Passwort ändern.
+   */
+  | { kind: "unconfirmed" }
   /** Dienst oder WordPress nicht erreichbar, oder nicht konfiguriert. */
   | { kind: "unavailable" };
 
@@ -146,6 +153,12 @@ async function post(
 function failureFor(antwort: Antwort | null): IdentityFailure {
   if (!antwort) return { kind: "unavailable" };
   if (antwort.status === 401) return { kind: "rejected" };
+  // 403 kommt vom Dienst nur für die unbestätigte Adresse, und nur nachdem
+  // Supabase das Passwort angenommen hat. Der Rumpf trägt dazu allein den
+  // Hinweistext, keinen Code; der Status ist die verlässlichere Angabe.
+  // Bis hierher fiel der Fall auf "unavailable" durch, und der Nutzer las
+  // "derzeit nicht möglich, später erneut versuchen".
+  if (antwort.status === 403) return { kind: "unconfirmed" };
   if (antwort.status === 429) return { kind: "rate-limited" };
   if (antwort.status === 400) {
     const message =
@@ -301,6 +314,18 @@ export function identityFailureResponse(failure: IdentityFailure): NextResponse 
       return NextResponse.json(
         { error: "Zu viele Versuche. Bitte warte einen Moment." },
         { status: 429 }
+      );
+    case "unconfirmed":
+      // Wie beim Abgleichfall ein maschinenlesbarer Code: Die Anmeldemaske
+      // zeigt darauf den Text in der Sprache des Nutzers (LanguageContext),
+      // `error` bleibt als deutscher Rückfall für Aufrufer ohne die Weiche.
+      return NextResponse.json(
+        {
+          error:
+            "Deine E-Mail-Adresse ist noch nicht bestätigt. Bitte klick auf den Link in der Willkommensmail.",
+          code: "email_unconfirmed",
+        },
+        { status: 403 }
       );
     case "invalid":
       return NextResponse.json(
