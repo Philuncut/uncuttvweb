@@ -425,6 +425,8 @@ textarea:-webkit-autofill:focus {
   --logo-quadrat: var(--logo-quadrat-handy);
   --zoom-unschaerfe: var(--zoom-unschaerfe-handy);
 
+  /* Bezug für den Claim (.weiche__claim), der absolut über den Kacheln liegt. */
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -711,8 +713,34 @@ textarea:-webkit-autofill:focus {
     transform: translateY(var(--hinweis-atem-weg));
   }
 }
+/* Claim über den Kacheln. Liegt absolut im schwarzen Rand über der ersten
+   Kachel: am Desktop mittig in der Lücke über den drei Feldern (15 % der
+   Feldhöhe, der Text sitzt in deren Mitte), am Handy knapp unter der
+   Oberkante über dem ersten Band. Kein Klickziel: pointer-events none, die
+   Felder darunter bleiben in voller Fläche bedienbar, und die Logos sitzen
+   unten in den Kacheln, weit weg. Schrift wie die Hinweiszeile: gesperrte
+   Versalien, gedämpftes Weiß. */
+.weiche__claim {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0 16px 0 calc(16px + 0.14em);
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  text-wrap: balance;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
 /* Mit der Wahl tritt der Hinweis zurück; die Kachel zieht darüber auf. */
-.weiche--gewaehlt .weiche__hinweis {
+.weiche--gewaehlt .weiche__hinweis,
+.weiche--gewaehlt .weiche__claim {
   opacity: 0;
 }
 
@@ -730,6 +758,15 @@ textarea:-webkit-autofill:focus {
   }
   .weiche__hinweis-zeile1 {
     font-size: 11px;
+  }
+  /* Desktop: mittig in der schwarzen Lücke über den Kacheln. Die Lücke ist
+     (1 - --kachel-faktor) / 2 der Feldhöhe, das Feld ist die Weiche ohne
+     Hinweiszeile; die halbe Zeilenhöhe zieht den Text auf die Mitte. */
+  .weiche__claim {
+    top: calc((100dvh - var(--hinweis-gesamt)) * (1 - var(--kachel-faktor)) / 2 - 0.7em);
+    font-size: clamp(11px, 1.05vw, 15px);
+    letter-spacing: 0.22em;
+    padding-left: calc(16px + 0.22em);
   }
   /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
      und Logo, nicht Fläche. */
@@ -763,7 +800,8 @@ textarea:-webkit-autofill:focus {
 }
 /* Die Hinweiszeile als Letztes, nur Einblendung. Ihr Ende beendet den
    Auftakt (Weiche.tsx). */
-html[data-weiche-auftakt] .weiche__hinweis {
+html[data-weiche-auftakt] .weiche__hinweis,
+html[data-weiche-auftakt] .weiche__claim {
   animation: weiche-auftakt-hinweis var(--auftakt-hinweis-dauer) ease var(--auftakt-hinweis-start) backwards;
 }
 html[data-weiche-auftakt] .weiche__medien {
@@ -810,7 +848,8 @@ html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
   /* Das Skript startet den Auftakt hier gar nicht; dies ist das zweite Netz. */
   html[data-weiche-auftakt] .weiche__medien,
   html[data-weiche-auftakt] .weiche__logo,
-  html[data-weiche-auftakt] .weiche__hinweis {
+  html[data-weiche-auftakt] .weiche__hinweis,
+  html[data-weiche-auftakt] .weiche__claim {
     animation: none;
   }
 }
@@ -821,4 +860,100 @@ html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
     --logo-wortmarke-handy: min(58vw, 30vh);
     --logo-quadrat-handy: min(42vw, 20vh);
   }
+  @media (min-width: 768px) {
+    .weiche__claim {
+      top: calc((100vh - var(--hinweis-gesamt)) * (1 - var(--kachel-faktor)) / 2 - 0.7em);
+    }
+  }
+}
+
+/* ── Altersabfrage auf der Weiche (components/weiche/Altersabfrage.tsx) ──
+   Fest über allem, auch über dem Cookie-Banner (z-index 199999): Solange
+   sie steht, ist nichts dahinter bedienbar. Stil wie die Weiche: Schwarz,
+   gesperrte Versalien, Rot für die eine Handlung. */
+.altersabfrage {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.altersabfrage__feld {
+  width: min(100%, 440px);
+  padding: 32px 28px 28px;
+  border: 1px solid #222;
+  border-radius: 6px;
+  background: #0f0f0f;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8);
+  text-align: center;
+}
+.altersabfrage__marke {
+  margin: 0 0 14px;
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.32em;
+  padding-left: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+.altersabfrage__titel {
+  margin: 0 0 12px;
+  font-size: clamp(20px, 2.2vw, 26px);
+  line-height: 1.2;
+  font-weight: 600;
+  color: #fff;
+  text-wrap: balance;
+}
+.altersabfrage__text {
+  margin: 0 0 24px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.8);
+  text-wrap: pretty;
+}
+.altersabfrage__knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.altersabfrage__knopf {
+  flex: 1 1 150px;
+  padding: 12px 18px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.altersabfrage__knopf--ja {
+  border: 1px solid #c0392b;
+  background: #c0392b;
+  color: #fff;
+}
+.altersabfrage__knopf--ja:hover,
+.altersabfrage__knopf--ja:focus-visible {
+  background: #a93226;
+  border-color: #a93226;
+}
+.altersabfrage__knopf--nein {
+  border: 1px solid #333;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+}
+.altersabfrage__knopf--nein:hover,
+.altersabfrage__knopf--nein:focus-visible {
+  border-color: #666;
+  color: #fff;
+}
+.altersabfrage__knopf:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }

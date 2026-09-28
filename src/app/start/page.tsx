@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Footer from "@/components/Footer";
 import StartContent from "@/components/weiche/StartContent";
 import Weiche from "@/components/weiche/Weiche";
+import Altersabfrage from "@/components/weiche/Altersabfrage";
 import { AUFTAKT_SKRIPT } from "@/components/weiche/auftakt";
 import { getShopCatalog } from "@/lib/shop-catalog";
 import { startAuswahl } from "@/lib/shop-sections";
@@ -57,6 +58,9 @@ export default async function StartPage() {
           Skript nicht aus; dann steht die Weiche ohne Auftakt da. */}
       <script dangerouslySetInnerHTML={{ __html: AUFTAKT_SKRIPT }} />
       <Weiche />
+      {/* Altersabfrage, nur hier. Rein clientseitig: Im Server-HTML fehlt
+          sie, Suchmaschinen lesen die Seite weiter ungehindert. */}
+      <Altersabfrage />
       <main>
         <StartContent products={produkte} />
       </main>

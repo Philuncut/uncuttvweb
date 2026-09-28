@@ -617,6 +617,19 @@ const translations: Record<string, Record<string, string>> = {
     en: "The independent platform for extreme cinema.",
   },
   START_HINWEIS_WEITER: { de: "Weiter nach unten", en: "Scroll down" },
+  // Claim über den Kacheln: bewusst in beiden Sprachen Englisch.
+  START_CLAIM: {
+    de: "The #1 Portal for Independent, Arthouse and Underground Movies.",
+    en: "The #1 Portal for Independent, Arthouse and Underground Movies.",
+  },
+  // Altersabfrage, nur auf der Weiche
+  START_ALTER_TITEL: { de: "Bist du volljährig?", en: "Are you of age?" },
+  START_ALTER_TEXT: {
+    de: "Diese Seite enthält Inhalte, die nur für Erwachsene geeignet sind. Bist du mindestens 18 Jahre alt?",
+    en: "This site contains content suitable for adults only. Are you at least 18 years old?",
+  },
+  START_ALTER_JA: { de: "Ja, ich bin 18", en: "Yes, I am 18" },
+  START_ALTER_NEIN: { de: "Nein", en: "No" },
 
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },

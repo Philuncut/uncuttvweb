@@ -774,6 +774,11 @@ export default function Weiche() {
       className={"weiche" + (gewaehlt !== null ? " weiche--gewaehlt" : "")}
       aria-label={t("START_WEICHE_LABEL")}
     >
+      {/* Claim über den Kacheln, in beiden Sprachen Englisch. Liegt absolut
+          im schwarzen Rand über der ersten Kachel und ist kein Klickziel
+          (pointer-events none in globals.css); blendet im Auftakt mit der
+          Hinweiszeile ein und tritt mit der Wahl zurück. */}
+      <p className="weiche__claim">{t("START_CLAIM")}</p>
       {/* Die Kachelreihe. Sie ist um die Hinweiszeile kürzer als der
           Bildschirm; die Kacheln behalten trotzdem ihre Größe, siehe
           --kachel-hoehe in globals.css. */}
