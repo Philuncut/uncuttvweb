@@ -287,6 +287,73 @@ export async function identityChangePassword(
   };
 }
 
+export type IdentityResetRequestResult =
+  | { ok: true }
+  | { ok: false; failure: IdentityFailure };
+
+/**
+ * Passwortmail über den Dienst anfordern.
+ *
+ * Vorher ging diese Anfrage an wp-login.php?action=lostpassword: WordPress
+ * schickte seine eigene Mail, der Nutzer setzte auf der WordPress-Seite ein
+ * neues Passwort, und Supabase behielt das alte. Danach kam er im Shop
+ * hinein, in der App und auf uncuttv.app aber nicht mehr. Der Dienst
+ * verschickt die Mail aus Supabase; der Link führt auf `redirectTo` mit
+ * einer Wiederherstellungssitzung, und das neue Passwort setzt der Dienst
+ * an beiden Stellen (siehe identityChangePasswordWithRecovery).
+ *
+ * `redirectTo` muss beim Dienst in ALLOWED_ORIGINS stehen, sonst lehnt er
+ * mit 400 ab. Der Dienst antwortet für jede Adresse gleich (202), auch für
+ * unbekannte: Ob jemand Kunde ist, lässt sich so nicht erfragen.
+ */
+export async function identityRequestPasswordReset(
+  email: string,
+  redirectTo: string,
+  requestHeaders?: Headers
+): Promise<IdentityResetRequestResult> {
+  const antwort = await post(
+    "/auth/password-reset",
+    { email, redirectTo },
+    requestHeaders
+  );
+
+  if (antwort && antwort.status >= 200 && antwort.status < 300) {
+    return { ok: true };
+  }
+  return { ok: false, failure: failureFor(antwort) };
+}
+
+/**
+ * Passwort nach dem Reset-Link setzen, ohne altes Passwort.
+ *
+ * Der Dienst verlangt dafür eine frische Wiederherstellungssitzung: das
+ * access_token aus dem Fragment der Mail-Adresse, höchstens 15 Minuten alt
+ * (Claim amr.method otp). Alles andere weist er mit 401 ab. Mit
+ * wordpressToken: true kommt das WordPress-JWT mit, damit der Nutzer im
+ * Shop gleich angemeldet ist.
+ */
+export async function identityChangePasswordWithRecovery(
+  accessToken: string,
+  newPassword: string,
+  requestHeaders?: Headers
+): Promise<IdentityChangePasswordResult> {
+  const antwort = await post(
+    "/auth/change-password",
+    { accessToken, newPassword, wordpressToken: true },
+    requestHeaders
+  );
+
+  if (!antwort || antwort.status !== 200) {
+    return { ok: false, failure: failureFor(antwort) };
+  }
+
+  const wordpress = wordpressField(antwort.body);
+  return {
+    ok: true,
+    wordpressToken: wordpress?.status === "ok" ? wordpress.token : null,
+  };
+}
+
 /**
  * Die HTTP-Antwort zu einem Fehler des Dienstes.
  *
