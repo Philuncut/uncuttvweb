@@ -27,15 +27,18 @@ import Claim from "./Claim";
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=at.uncuttv.mobile";
 
 /**
- * Offizielle Badge-Grafik je Sprache, unter public/weiche. Die deutsche
- * Fassung ("Jetzt bei Google Play") liegt noch nicht vor; bis dahin zeigt
- * auch Deutsch die englische. Sobald googleplay-de.png da ist, nur diese
- * Zeile umstellen.
+ * Offizielle Badge-Grafiken je Sprache, unter public/weiche: "Jetzt bei
+ * Google Play" und "Get it on Google Play", beide von Googles Badge-Seite
+ * (play.google.com/intl/en_us/badges/, *_badge_web_generic.png, 646 x 250
+ * mit durchsichtigem Rand). Unverändert, wie die Richtlinien es verlangen.
  */
 const PLAY_BADGE: Record<"de" | "en", string> = {
-  de: "googleplay-en.png",
+  de: "googleplay-de.png",
   en: "googleplay-en.png",
 };
+/** Maße der beiden Dateien, für next/image. */
+const PLAY_BADGE_BREITE = 646;
+const PLAY_BADGE_HOEHE = 250;
 import {
   AUFTAKT_ATTRIBUT,
   AUFTAKT_HOECHSTDAUER_MS,
@@ -793,9 +796,9 @@ export default function Weiche() {
       className={"weiche" + (gewaehlt !== null ? " weiche--gewaehlt" : "")}
       aria-label={t("START_WEICHE_LABEL")}
     >
-      {/* Claim über den Kacheln, drei Fassungen zum Vergleich (?claim=1|2|3),
-          siehe Claim.tsx. Absolut oben mittig, kein Klickziel; kommt im
-          Auftakt herein und bleibt danach stehen. */}
+      {/* Claim über den Kacheln als Titelkarte, siehe Claim.tsx. Absolut
+          oben mittig, kein Klickziel; kommt im Auftakt herein und bleibt
+          danach stehen. */}
       <Claim />
       {/* Die Kachelreihe. Sie ist um die Hinweiszeile kürzer als der
           Bildschirm; die Kacheln behalten trotzdem ihre Größe, siehe
@@ -919,8 +922,8 @@ export default function Weiche() {
           <Image
             src={`/weiche/${PLAY_BADGE[language]}`}
             alt=""
-            width={811}
-            height={241}
+            width={PLAY_BADGE_BREITE}
+            height={PLAY_BADGE_HOEHE}
             sizes="140px"
           />
         </a>

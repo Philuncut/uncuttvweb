@@ -406,11 +406,13 @@ textarea:-webkit-autofill:focus {
   /* Hinweiszeile unter den Kacheln: feste Höhe, zwei Zeilen und ein Pfeil.
      Am Handy bewusst knapp, weil der Platz dort aus den schwarzen Abständen
      zwischen den Bändern kommt. Der Pfeil atmet um --hinweis-atem-weg. */
-  --hinweis-hoehe-handy: clamp(134px, 18dvh, 156px);
-  --hinweis-hoehe-desktop: clamp(146px, 19dvh, 186px);
+  --hinweis-hoehe-handy: clamp(142px, 19dvh, 164px);
+  --hinweis-hoehe-desktop: clamp(154px, 20dvh, 194px);
   /* Google-Play-Badge in der Hinweiszeile (weiche__play). Google verlangt
-     mindestens 40 px Höhe und Freiraum von einem Viertel der Höhe. */
-  --play-badge-hoehe: 40px;
+     mindestens 40 px Höhe und Freiraum von einem Viertel der Höhe. Die
+     offiziellen Dateien tragen einen durchsichtigen Rand von rund einem
+     Sechstel; 48 px Bildhöhe ergeben rund 40 px sichtbares Badge. */
+  --play-badge-hoehe: 48px;
   /* Luft zwischen Pfeil und unterem Bildschirmrand, zusätzlich zur
      Sicherheitszone des Geräts. Hält den Pfeil von Browser- und
      Systemleiste fern. */
@@ -753,12 +755,12 @@ textarea:-webkit-autofill:focus {
    Breite in zwei Zeilen fällt; text-wrap balance hält beide gleich lang.
 
    Bleibt stehen, auch nach der Wahl. Nur der Hinweis unten tritt zurück. */
-/* Drei Fassungen zum Vergleich, gewählt über ?claim=1|2|3 in
-   components/weiche/Claim.tsx. Gemeinsam: absolut oben mittig über den
-   Feldern, kein Klickziel (pointer-events none), reines Weiß mit dezentem
-   Schatten für helle Videostellen, kein Verlaufsbalken. Bebas Neue kommt
-   als --font-bebas aus next/font, nur in Claim.tsx geladen. Handy-Werte
-   hier, Desktop im Media Query unten. Rot ist das Markenrot des Shops. */
+/* Claim über den Kacheln als Titelkarte (components/weiche/Claim.tsx):
+   absolut oben mittig über den Feldern, kein Klickziel (pointer-events
+   none), reines Weiß mit dezentem Schatten für helle Videostellen, kein
+   Verlaufsbalken. Bebas Neue kommt als --font-bebas aus next/font, nur in
+   Claim.tsx geladen. Handy-Werte hier, Desktop im Media Query unten. Rot
+   ist das Markenrot des Shops. */
 .claim {
   position: absolute;
   top: 0;
@@ -782,15 +784,11 @@ textarea:-webkit-autofill:focus {
   font-style: normal;
   color: #c0392b;
 }
-.claim__filter {
-  position: absolute;
-}
-
-/* Fassung 1, Titelkarte: kleine, weit gesperrte Zeile oben, Hauptzeile in
-   Bebas Neue mit roten Schrägstrichen und je einer feinen roten Linie
-   links und rechts, kleine Zeile unten. Die Linien sind Pseudoelemente
-   der Hauptzeile und fahren im Auftakt von außen nach innen. */
-.claim--1 .claim__klein {
+/* Titelkarte: kleine, weit gesperrte Zeile oben, Hauptzeile in Bebas Neue
+   mit roten Schrägstrichen und je einer feinen roten Linie links und
+   rechts, kleine Zeile unten. Die Linien sind Pseudoelemente der
+   Hauptzeile und fahren im Auftakt von außen nach innen. */
+.claim .claim__klein {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   font-size: 10px;
   line-height: 1.4;
@@ -799,7 +797,7 @@ textarea:-webkit-autofill:focus {
   padding-left: 0.42em;
   color: rgba(255, 255, 255, 0.88);
 }
-.claim--1 .claim__haupt {
+.claim .claim__haupt {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -807,8 +805,8 @@ textarea:-webkit-autofill:focus {
   max-width: 980px;
   margin: 5px auto 3px;
 }
-.claim--1 .claim__haupt::before,
-.claim--1 .claim__haupt::after {
+.claim .claim__haupt::before,
+.claim .claim__haupt::after {
   content: "";
   flex: 1 1 0;
   min-width: 0;
@@ -817,119 +815,24 @@ textarea:-webkit-autofill:focus {
   background: #c0392b;
   box-shadow: 0 0 6px rgba(192, 57, 43, 0.6);
 }
-.claim--1 .claim__haupt::before {
+.claim .claim__haupt::before {
   transform-origin: left center;
 }
-.claim--1 .claim__haupt::after {
+.claim .claim__haupt::after {
   transform-origin: right center;
 }
-.claim--1 .claim__titel {
+.claim .claim__titel {
   font-family: var(--font-bebas), Impact, "Arial Narrow", sans-serif;
   font-size: clamp(18px, 5.4vw, 22px);
   line-height: 1;
   letter-spacing: 0.07em;
   white-space: nowrap;
 }
-.claim--1 .claim__titel em {
+.claim .claim__titel em {
   margin: 0 0.12em;
   font-weight: 400;
 }
 
-/* Fassung 2, Stempel: eine schmale, helle Zeile in Geist, davor "#1" als
-   roter Stempel, leicht schräg, mit rauem Rand über den SVG-Filter in
-   Claim.tsx (Rauschen verschiebt die Kanten). Kein Bild. */
-.claim--2 .claim__zeile {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35em 0.7em;
-  max-width: 30em;
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-  font-size: clamp(12px, 3.4vw, 14px);
-  line-height: 1.45;
-  font-weight: 300;
-  letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.94);
-}
-.claim--2 .claim__text {
-  text-wrap: balance;
-}
-.claim--2 .claim__stempel {
-  display: inline-block;
-  padding: 0.06em 0.26em 0;
-  border: 0.14em solid #c0392b;
-  border-radius: 0.14em;
-  font-size: 1.95em;
-  line-height: 1.05;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  color: #c0392b;
-  text-shadow: none;
-  transform: rotate(-7deg);
-  filter: url(#claim-stempel-rau);
-  /* Abgenutzt: die Fläche ist an zwei Stellen etwas schwächer gedeckt. */
-  mask-image:
-    radial-gradient(ellipse 60% 70% at 30% 40%, #000 60%, rgba(0, 0, 0, 0.55) 100%),
-    radial-gradient(ellipse 50% 60% at 75% 70%, #000 50%, rgba(0, 0, 0, 0.6) 100%);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    radial-gradient(ellipse 60% 70% at 30% 40%, #000 60%, rgba(0, 0, 0, 0.55) 100%),
-    radial-gradient(ellipse 50% 60% at 75% 70%, #000 50%, rgba(0, 0, 0, 0.6) 100%);
-  -webkit-mask-composite: source-in;
-}
-
-/* Fassung 3, Glitch: zwei Zeilen Bebas Neue. Die Geisterbilder in Rot und
-   Blau sind Pseudoelemente mit demselben Text (data-text), im Ruhezustand
-   unsichtbar; im Auftakt und danach alle 9 s ganz kurz versetzt und in
-   zwei waagrechten Streifen sichtbar. Darüber Filmkorn aus einem
-   SVG-Rauschen, ohne Bilddatei. */
-.claim--3 .claim__zeilen {
-  position: relative;
-  display: inline-block;
-  font-family: var(--font-bebas), Impact, "Arial Narrow", sans-serif;
-  font-size: clamp(20px, 5.8vw, 24px);
-  line-height: 1.06;
-  letter-spacing: 0.05em;
-}
-.claim--3 .claim__zeile {
-  display: block;
-}
-.claim--3 .claim__zeilen::before,
-.claim--3 .claim__zeilen::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  white-space: pre-line;
-  text-shadow: none;
-  opacity: 0;
-  pointer-events: none;
-}
-.claim--3 .claim__zeilen::before {
-  color: #ff3b3b;
-  mix-blend-mode: screen;
-}
-.claim--3 .claim__zeilen::after {
-  color: #3d8bff;
-  mix-blend-mode: screen;
-}
-/* Leichter Glitch im Betrieb, alle 9 s für rund 250 ms. */
-.claim--3 .claim__zeilen::before {
-  animation: claim-glitch-leicht-rot 9s linear 3s infinite;
-}
-.claim--3 .claim__zeilen::after {
-  animation: claim-glitch-leicht-blau 9s linear 3s infinite;
-}
-.claim--3::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='k'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.4 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23k)'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
-  opacity: 0.16;
-  mix-blend-mode: soft-light;
-  pointer-events: none;
-}
 /* Mit der Wahl tritt der Hinweis zurück; die Kachel zieht darüber auf. */
 .weiche--gewaehlt .weiche__hinweis {
   opacity: 0;
@@ -950,36 +853,27 @@ textarea:-webkit-autofill:focus {
   .weiche__hinweis-zeile1 {
     font-size: 11px;
   }
-  /* Desktop-Maße der drei Claim-Fassungen: rund 60 % der früheren
-     Headline, oben mittig über den drei Feldern. */
+  /* Desktop-Maße der Titelkarte: oben mittig über den drei Feldern,
+     Hauptzeile höchstens 42 px. */
   .claim {
     padding-top: calc(env(safe-area-inset-top, 0px) + 3.5vh);
   }
-  .claim--1 .claim__klein {
+  .claim .claim__klein {
     font-size: 12px;
     letter-spacing: 0.5em;
     padding-left: 0.5em;
   }
-  .claim--1 .claim__haupt {
+  .claim .claim__haupt {
     gap: 18px;
     margin: 8px auto 5px;
   }
-  .claim--1 .claim__haupt::before,
-  .claim--1 .claim__haupt::after {
+  .claim .claim__haupt::before,
+  .claim .claim__haupt::after {
     max-width: 220px;
   }
-  .claim--1 .claim__titel {
+  .claim .claim__titel {
     font-size: clamp(24px, 2.6vw, 42px);
     letter-spacing: 0.09em;
-  }
-  .claim--2 .claim__zeile {
-    font-size: clamp(13px, 1.15vw, 18px);
-    letter-spacing: 0.18em;
-    gap: 0.4em 0.8em;
-  }
-  .claim--3 .claim__zeilen {
-    font-size: clamp(22px, 2.5vw, 40px);
-    letter-spacing: 0.06em;
   }
   /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
      und Logo, nicht Fläche. */
@@ -1011,7 +905,7 @@ textarea:-webkit-autofill:focus {
     opacity: 0;
   }
 }
-/* Claim, Fassung 1: Flackern wie ein anspringender Projektor. steps(1)
+/* Claim: Flackern wie ein anspringender Projektor. steps(1)
    hält jeden Wert, bis der nächste kommt: Sprünge, kein Verlauf. */
 @keyframes claim-flackern {
   0% {
@@ -1039,191 +933,21 @@ textarea:-webkit-autofill:focus {
     transform: scaleX(0);
   }
 }
-/* Claim, Fassung 2: der Stempel wird aufgedrückt. Die Drehung steht in
-   jedem Schritt, sonst würde sie von der Animation überschrieben. */
-@keyframes claim-stempel {
-  0% {
-    opacity: 0;
-    transform: rotate(-7deg) scale(1.4);
-  }
-  55% {
-    opacity: 1;
-    transform: rotate(-7deg) scale(0.94);
-  }
-  78% {
-    transform: rotate(-7deg) scale(1.04);
-  }
-  100% {
-    transform: rotate(-7deg) scale(1);
-  }
-}
-/* Claim, Fassung 3: kräftiger Glitch im Auftakt. Die Geisterbilder werden
-   in zwei waagrechten Streifen sichtbar (clip-path) und seitlich versetzt,
-   der Text selbst ruckt kurz. */
-@keyframes claim-glitch-ruck {
-  0% {
-    opacity: 0;
-    transform: none;
-  }
-  8% {
-    opacity: 1;
-    transform: translateX(3px);
-  }
-  20% {
-    transform: translateX(-2px);
-  }
-  32% {
-    transform: translateX(1px);
-  }
-  44%,
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes claim-glitch-stark-rot {
-  0% {
-    opacity: 0;
-  }
-  8% {
-    opacity: 0.9;
-    transform: translateX(-5px);
-    clip-path: inset(8% 0 58% 0);
-  }
-  20% {
-    transform: translateX(4px);
-    clip-path: inset(62% 0 6% 0);
-  }
-  32% {
-    transform: translateX(-3px);
-    clip-path: inset(30% 0 42% 0);
-  }
-  44% {
-    opacity: 0.6;
-    transform: translateX(2px);
-    clip-path: inset(50% 0 20% 0);
-  }
-  56%,
-  100% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-}
-@keyframes claim-glitch-stark-blau {
-  0% {
-    opacity: 0;
-  }
-  8% {
-    opacity: 0.9;
-    transform: translateX(5px);
-    clip-path: inset(48% 0 12% 0);
-  }
-  20% {
-    transform: translateX(-4px);
-    clip-path: inset(4% 0 70% 0);
-  }
-  32% {
-    transform: translateX(3px);
-    clip-path: inset(56% 0 14% 0);
-  }
-  44% {
-    opacity: 0.6;
-    transform: translateX(-2px);
-    clip-path: inset(18% 0 52% 0);
-  }
-  56%,
-  100% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-}
-/* Leichter Glitch im Betrieb: 9 s Zyklus, davon rund 250 ms sichtbar,
-   kaum merklich. */
-@keyframes claim-glitch-leicht-rot {
-  0%,
-  100% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-  0.6% {
-    opacity: 0.55;
-    transform: translateX(-2px);
-    clip-path: inset(22% 0 62% 0);
-  }
-  1.6% {
-    transform: translateX(2px);
-    clip-path: inset(64% 0 16% 0);
-  }
-  2.8% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-}
-@keyframes claim-glitch-leicht-blau {
-  0%,
-  100% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-  0.6% {
-    opacity: 0.55;
-    transform: translateX(2px);
-    clip-path: inset(58% 0 20% 0);
-  }
-  1.6% {
-    transform: translateX(-2px);
-    clip-path: inset(10% 0 72% 0);
-  }
-  2.8% {
-    opacity: 0;
-    transform: none;
-    clip-path: inset(0);
-  }
-}
 /* Die Hinweiszeile als Letztes, nur Einblendung. Ihr Ende beendet den
    Auftakt (Weiche.tsx). */
 html[data-weiche-auftakt] .weiche__hinweis {
   animation: weiche-auftakt-hinweis var(--auftakt-hinweis-dauer) ease var(--auftakt-hinweis-start) backwards;
 }
-/* Claim im Auftakt, je Fassung. Alle beginnen mit den Logos ab
-   --auftakt-logo-start und stehen danach; keiner tritt mit der Wahl
-   zurück.
-   1 Titelkarte: Projektor-Flackern (drei Helligkeitssprünge, steps statt
-     Verlauf), die roten Linien fahren von außen nach innen.
-   2 Stempel: die Zeile blendet ein, "#1" wird aufgedrückt (1,4 auf 1 mit
-     kleinem Nachwippen).
-   3 Glitch: einmal kräftig mit Farbversatz und zwei Streifen, dazu ein
-     kurzer Ruck des Textes selbst. */
-html[data-weiche-auftakt] .claim--1 {
+/* Claim im Auftakt: beginnt mit den Logos ab --auftakt-logo-start und
+   steht danach; er tritt mit der Wahl nicht zurück. Projektor-Flackern
+   (drei Helligkeitssprünge, steps statt Verlauf), dann fahren die roten
+   Linien von außen nach innen. */
+html[data-weiche-auftakt] .claim {
   animation: claim-flackern 700ms steps(1, end) var(--auftakt-logo-start) backwards;
 }
-html[data-weiche-auftakt] .claim--1 .claim__haupt::before,
-html[data-weiche-auftakt] .claim--1 .claim__haupt::after {
+html[data-weiche-auftakt] .claim .claim__haupt::before,
+html[data-weiche-auftakt] .claim .claim__haupt::after {
   animation: claim-linie 650ms var(--auftakt-kurve) calc(var(--auftakt-logo-start) + 450ms) backwards;
-}
-html[data-weiche-auftakt] .claim--2 .claim__text {
-  animation: weiche-auftakt-logo var(--auftakt-logo-dauer) ease var(--auftakt-logo-start) backwards;
-}
-html[data-weiche-auftakt] .claim--2 .claim__stempel {
-  animation: claim-stempel 480ms cubic-bezier(0.2, 0.9, 0.3, 1.25) calc(var(--auftakt-logo-start) + 400ms) backwards;
-}
-html[data-weiche-auftakt] .claim--3 .claim__zeilen {
-  animation: claim-glitch-ruck 600ms steps(1, end) var(--auftakt-logo-start) backwards;
-}
-html[data-weiche-auftakt] .claim--3 .claim__zeilen::before {
-  animation:
-    claim-glitch-stark-rot 600ms steps(1, end) var(--auftakt-logo-start) backwards,
-    claim-glitch-leicht-rot 9s linear calc(var(--auftakt-logo-start) + 3s) infinite;
-}
-html[data-weiche-auftakt] .claim--3 .claim__zeilen::after {
-  animation:
-    claim-glitch-stark-blau 600ms steps(1, end) var(--auftakt-logo-start) backwards,
-    claim-glitch-leicht-blau 9s linear calc(var(--auftakt-logo-start) + 3s) infinite;
 }
 html[data-weiche-auftakt] .weiche__medien {
   animation: weiche-auftakt-kachel var(--auftakt-kachel-dauer) var(--auftakt-kurve)
@@ -1272,17 +996,11 @@ html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
   html[data-weiche-auftakt] .weiche__hinweis {
     animation: none;
   }
-  /* Claim: kein Flackern, kein Stempeln, kein Glitch, auch nicht im
-     Betrieb. Die Geisterbilder bleiben ganz weg. */
+  /* Claim: kein Flackern, die Linien stehen sofort. */
   .claim,
-  .claim *,
   .claim ::before,
   .claim ::after {
     animation: none !important;
-  }
-  .claim--3 .claim__zeilen::before,
-  .claim--3 .claim__zeilen::after {
-    display: none;
   }
 }
 
