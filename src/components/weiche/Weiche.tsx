@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import { TEXTTEIL_ID } from "./StartContent";
+import Claim from "./Claim";
 
 /**
  * Die Android-App (Handy und Tablet) bei Google Play. NICHT die TV-App
@@ -792,21 +793,10 @@ export default function Weiche() {
       className={"weiche" + (gewaehlt !== null ? " weiche--gewaehlt" : "")}
       aria-label={t("START_WEICHE_LABEL")}
     >
-      {/* Claim über den Kacheln, in beiden Sprachen Englisch: die Headline
-          der Weiche. Liegt absolut oben mittig über den Feldern und ist kein
-          Klickziel (pointer-events none in globals.css); kommt im Auftakt
-          kräftig herein und bleibt danach stehen. "#1" steht in Markenrot,
-          deshalb wird der Text um diese Stelle herum aufgeteilt. */}
-      <p className="weiche__claim">
-        {t("START_CLAIM")
-          .split("#1")
-          .map((teil, i, alle) => (
-            <span key={i}>
-              {teil}
-              {i < alle.length - 1 && <em>#1</em>}
-            </span>
-          ))}
-      </p>
+      {/* Claim über den Kacheln, drei Fassungen zum Vergleich (?claim=1|2|3),
+          siehe Claim.tsx. Absolut oben mittig, kein Klickziel; kommt im
+          Auftakt herein und bleibt danach stehen. */}
+      <Claim />
       {/* Die Kachelreihe. Sie ist um die Hinweiszeile kürzer als der
           Bildschirm; die Kacheln behalten trotzdem ihre Größe, siehe
           --kachel-hoehe in globals.css. */}
