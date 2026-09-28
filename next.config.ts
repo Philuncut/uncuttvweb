@@ -28,15 +28,16 @@ function redirectTrailingOnly(
 }
 
 /**
- * Startseite → Shop. Vorher stand das als redirect() in src/app/page.tsx
- * und lief damit als Serverfunktion mit eigenem Rundlauf (gemessen
- * 0,28 s). Als Konfigurationsregel wird es am Edge beantwortet.
- * Abfrageparameter (UTM, Kampagnen) reicht Next bei redirects durch.
- * 307 wie bisher, damit Browser die Umleitung nicht dauerhaft merken.
+ * Startseite → Weiche (/start). Bis zum Launch der Weiche ging es nach
+ * /shop. Vorher stand das als redirect() in src/app/page.tsx und lief
+ * damit als Serverfunktion mit eigenem Rundlauf (gemessen 0,28 s). Als
+ * Konfigurationsregel wird es am Edge beantwortet. Abfrageparameter (UTM,
+ * Kampagnen) reicht Next bei redirects durch. 307 wie bisher, damit
+ * Browser die Umleitung nicht dauerhaft merken.
  */
 const homeRedirect = {
   source: "/",
-  destination: "/shop",
+  destination: "/start",
   permanent: false,
 } as const;
 

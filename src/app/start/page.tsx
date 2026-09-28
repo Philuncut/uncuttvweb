@@ -12,9 +12,8 @@ import type { ShopListProduct } from "@/lib/types";
  * /start — die Weiche zwischen den drei UncutTV-Auftritten: Streaming
  * (uncuttv.app), Shop (/shop) und Social (tv.uncuttv.at).
  *
- * Noch nicht die Startseite: Die Umleitung von / nach /shop in
- * next.config.ts bleibt, bis die Weiche live geht. Bis dahin ist die Seite
- * nirgends verlinkt und steht auf noindex, siehe `robots` unten.
+ * Die Startseite: / leitet in next.config.ts hierher (307). Die Seite wird
+ * normal indexiert und steht in der Sitemap.
  *
  * Die Seite selbst hat keinen Zugriff auf Cookies oder Kopfzeilen und kann
  * deshalb statisch gebaut werden; die Produkte kommen aus demselben
@@ -28,10 +27,6 @@ export const metadata: Metadata = {
   title: "UncutTV — Streaming, Shop und Social",
   description:
     "Das unabhängige Filmlabel aus Österreich: ungekürzte Filme im Streaming, Mediabooks und Blu-rays im Shop, Videos und Livestreams bei Social. Wähle deinen Einstieg.",
-  // VOR DEM LAUNCH ENTFERNEN: Solange /start nicht verlinkt ist, soll die
-  // Seite nicht im Index landen. Sobald sie die Startseite wird, fällt
-  // dieser Block weg und die Seite wird normal indexiert.
-  robots: { index: false, follow: false },
 };
 
 /** Wie viele Produkte unter der Weiche stehen. */
