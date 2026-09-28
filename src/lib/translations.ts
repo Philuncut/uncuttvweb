@@ -630,6 +630,11 @@ const translations: Record<string, Record<string, string>> = {
   },
   START_ALTER_JA: { de: "Ja, ich bin 18", en: "Yes, I am 18" },
   START_ALTER_NEIN: { de: "Nein", en: "No" },
+  // Google-Play-Badge in der Hinweiszeile: die Android-App
+  START_PLAY_ALT: {
+    de: "Jetzt bei Google Play: die UncutTV-App für Android (öffnet in neuem Tab)",
+    en: "Get it on Google Play: the UncutTV app for Android (opens in a new tab)",
+  },
 
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },

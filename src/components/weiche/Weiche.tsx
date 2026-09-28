@@ -17,6 +17,24 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
 import { TEXTTEIL_ID } from "./StartContent";
+
+/**
+ * Die Android-App (Handy und Tablet) bei Google Play. NICHT die TV-App
+ * (at.uncuttv.app, Android TV und Fire TV); die gehört nicht auf die
+ * Weiche.
+ */
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=at.uncuttv.mobile";
+
+/**
+ * Offizielle Badge-Grafik je Sprache, unter public/weiche. Die deutsche
+ * Fassung ("Jetzt bei Google Play") liegt noch nicht vor; bis dahin zeigt
+ * auch Deutsch die englische. Sobald googleplay-de.png da ist, nur diese
+ * Zeile umstellen.
+ */
+const PLAY_BADGE: Record<"de" | "en", string> = {
+  de: "googleplay-en.png",
+  en: "googleplay-en.png",
+};
 import {
   AUFTAKT_ATTRIBUT,
   AUFTAKT_HOECHSTDAUER_MS,
@@ -774,11 +792,21 @@ export default function Weiche() {
       className={"weiche" + (gewaehlt !== null ? " weiche--gewaehlt" : "")}
       aria-label={t("START_WEICHE_LABEL")}
     >
-      {/* Claim über den Kacheln, in beiden Sprachen Englisch. Liegt absolut
-          im schwarzen Rand über der ersten Kachel und ist kein Klickziel
-          (pointer-events none in globals.css); blendet im Auftakt mit der
-          Hinweiszeile ein und tritt mit der Wahl zurück. */}
-      <p className="weiche__claim">{t("START_CLAIM")}</p>
+      {/* Claim über den Kacheln, in beiden Sprachen Englisch: die Headline
+          der Weiche. Liegt absolut oben mittig über den Feldern und ist kein
+          Klickziel (pointer-events none in globals.css); kommt im Auftakt
+          kräftig herein und bleibt danach stehen. "#1" steht in Markenrot,
+          deshalb wird der Text um diese Stelle herum aufgeteilt. */}
+      <p className="weiche__claim">
+        {t("START_CLAIM")
+          .split("#1")
+          .map((teil, i, alle) => (
+            <span key={i}>
+              {teil}
+              {i < alle.length - 1 && <em>#1</em>}
+            </span>
+          ))}
+      </p>
       {/* Die Kachelreihe. Sie ist um die Hinweiszeile kürzer als der
           Bildschirm; die Kacheln behalten trotzdem ihre Größe, siehe
           --kachel-hoehe in globals.css. */}
@@ -888,6 +916,24 @@ export default function Weiche() {
       <div ref={hinweisRef} className="weiche__hinweis">
         <p className="weiche__hinweis-zeile1">{t("START_HINWEIS_ZEILE1")}</p>
         <p className="weiche__hinweis-zeile2">{t("START_HINWEIS_ZEILE2")}</p>
+        {/* Die Android-App bei Google Play. Neuer Tab, ohne Bezug auf den
+            Öffner. Das Bild trägt keinen eigenen Alt-Text, der Link sagt,
+            was er ist; so liest ein Screenreader es nur einmal. */}
+        <a
+          className="weiche__play"
+          href={PLAY_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t("START_PLAY_ALT")}
+        >
+          <Image
+            src={`/weiche/${PLAY_BADGE[language]}`}
+            alt=""
+            width={811}
+            height={241}
+            sizes="140px"
+          />
+        </a>
         <button
           type="button"
           className={"weiche__pfeil" + (pfeilWeg ? " weiche__pfeil--weg" : "")}

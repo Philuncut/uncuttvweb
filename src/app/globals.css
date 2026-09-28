@@ -406,8 +406,11 @@ textarea:-webkit-autofill:focus {
   /* Hinweiszeile unter den Kacheln: feste Höhe, zwei Zeilen und ein Pfeil.
      Am Handy bewusst knapp, weil der Platz dort aus den schwarzen Abständen
      zwischen den Bändern kommt. Der Pfeil atmet um --hinweis-atem-weg. */
-  --hinweis-hoehe-handy: clamp(88px, 12dvh, 104px);
-  --hinweis-hoehe-desktop: clamp(96px, 13dvh, 132px);
+  --hinweis-hoehe-handy: clamp(134px, 18dvh, 156px);
+  --hinweis-hoehe-desktop: clamp(146px, 19dvh, 186px);
+  /* Google-Play-Badge in der Hinweiszeile (weiche__play). Google verlangt
+     mindestens 40 px Höhe und Freiraum von einem Viertel der Höhe. */
+  --play-badge-hoehe: 40px;
   /* Luft zwischen Pfeil und unterem Bildschirmrand, zusätzlich zur
      Sicherheitszone des Geräts. Hält den Pfeil von Browser- und
      Systemleiste fern. */
@@ -697,6 +700,28 @@ textarea:-webkit-autofill:focus {
   height: 16px;
   animation: weiche-pfeil-atmen var(--hinweis-atem-dauer) ease-in-out infinite;
 }
+/* Google-Play-Badge: die Android-App (at.uncuttv.mobile, nicht die
+   TV-App). Sitzt zwischen den Textzeilen und dem Pfeil, klar klickbar,
+   mit dem Freiraum, den Google verlangt. Die Grafik bleibt unverändert;
+   nur die Höhe wird gesetzt, die Breite folgt dem Seitenverhältnis. */
+.weiche__play {
+  display: inline-flex;
+  height: var(--play-badge-hoehe);
+  margin: calc(var(--play-badge-hoehe) / 4) 0 2px;
+  border-radius: 6px;
+  outline-offset: 3px;
+  opacity: 0.92;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.weiche__play:hover,
+.weiche__play:focus-visible {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+.weiche__play img {
+  height: 100%;
+  width: auto;
+}
 /* Nach eigenem Scrollen: ausblenden, dann ganz weg, kommt nicht wieder. */
 .weiche__pfeil--weg {
   opacity: 0;
@@ -713,34 +738,50 @@ textarea:-webkit-autofill:focus {
     transform: translateY(var(--hinweis-atem-weg));
   }
 }
-/* Claim über den Kacheln. Liegt absolut im schwarzen Rand über der ersten
-   Kachel: am Desktop mittig in der Lücke über den drei Feldern (15 % der
-   Feldhöhe, der Text sitzt in deren Mitte), am Handy knapp unter der
-   Oberkante über dem ersten Band. Kein Klickziel: pointer-events none, die
-   Felder darunter bleiben in voller Fläche bedienbar, und die Logos sitzen
-   unten in den Kacheln, weit weg. Schrift wie die Hinweiszeile: gesperrte
-   Versalien, gedämpftes Weiß. */
+/* Claim über den Kacheln: die Headline der Weiche. Groß, fett, reines
+   Weiß, "#1" in Markenrot. Liegt absolut oben mittig über den Feldern; wo
+   er in die Kacheln hineinragt, trifft er deren weich auslaufenden oberen
+   Rand, nie die Logos, die unten sitzen. Kein Klickziel: pointer-events
+   none, die Felder darunter bleiben in voller Fläche bedienbar.
+
+   Lesbarkeit über hellen Videostellen: ein Verlauf von Schwarz nach
+   durchsichtig hinter dem Text (background) und ein weicher Schatten an
+   der Schrift. Schrift wie die Überschriften im Shop: Geist in 900,
+   Versalien, eng gesetzt (die Marke hat keine eigene kondensierte Schrift).
+
+   Zwei Zeilen: Die Schriftgröße ist so gewählt, dass der Satz ab 360 px
+   Breite in zwei Zeilen fällt; text-wrap balance hält beide gleich lang.
+
+   Bleibt stehen, auch nach der Wahl. Nur der Hinweis unten tritt zurück. */
 .weiche__claim {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  top: 0;
   left: 0;
   right: 0;
   z-index: 2;
   margin: 0;
-  padding: 0 16px 0 calc(16px + 0.14em);
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 28px;
   text-align: center;
-  font-size: 10px;
-  line-height: 1.35;
-  letter-spacing: 0.14em;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-size: clamp(17px, 4.6vw, 30px);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.01em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
+  color: #fff;
+  text-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.9),
+    0 6px 24px rgba(0, 0, 0, 0.7);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.45) 55%, rgba(0, 0, 0, 0) 100%);
   text-wrap: balance;
   pointer-events: none;
-  transition: opacity 200ms ease;
+}
+.weiche__claim em {
+  font-style: normal;
+  color: #c0392b;
 }
 /* Mit der Wahl tritt der Hinweis zurück; die Kachel zieht darüber auf. */
-.weiche--gewaehlt .weiche__hinweis,
-.weiche--gewaehlt .weiche__claim {
+.weiche--gewaehlt .weiche__hinweis {
   opacity: 0;
 }
 
@@ -759,14 +800,13 @@ textarea:-webkit-autofill:focus {
   .weiche__hinweis-zeile1 {
     font-size: 11px;
   }
-  /* Desktop: mittig in der schwarzen Lücke über den Kacheln. Die Lücke ist
-     (1 - --kachel-faktor) / 2 der Feldhöhe, das Feld ist die Weiche ohne
-     Hinweiszeile; die halbe Zeilenhöhe zieht den Text auf die Mitte. */
+  /* Desktop: oben mittig über den drei Feldern, groß. 4,5 vw ergibt ab
+     etwa 1000 px Breite zwei Zeilen; über 1600 px greift der Deckel. */
   .weiche__claim {
-    top: calc((100dvh - var(--hinweis-gesamt)) * (1 - var(--kachel-faktor)) / 2 - 0.7em);
-    font-size: clamp(11px, 1.05vw, 15px);
-    letter-spacing: 0.22em;
-    padding-left: calc(16px + 0.22em);
+    padding: calc(env(safe-area-inset-top, 0px) + 3.5vh) 6vw 44px;
+    font-size: clamp(32px, 4.5vw, 72px);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
   }
   /* Am Desktop bleiben alle drei gleich breit; die Hervorhebung ist Farbe
      und Logo, nicht Fläche. */
@@ -798,11 +838,22 @@ textarea:-webkit-autofill:focus {
     opacity: 0;
   }
 }
+@keyframes weiche-auftakt-claim {
+  from {
+    opacity: 0;
+    scale: 0.9;
+  }
+}
 /* Die Hinweiszeile als Letztes, nur Einblendung. Ihr Ende beendet den
    Auftakt (Weiche.tsx). */
-html[data-weiche-auftakt] .weiche__hinweis,
-html[data-weiche-auftakt] .weiche__claim {
+html[data-weiche-auftakt] .weiche__hinweis {
   animation: weiche-auftakt-hinweis var(--auftakt-hinweis-dauer) ease var(--auftakt-hinweis-start) backwards;
+}
+/* Der Claim kommt kräftig: Einblenden und leichtes Hochskalieren, mit den
+   Logos ab --auftakt-logo-start, etwas länger als eine Kachel. Danach
+   steht er. */
+html[data-weiche-auftakt] .weiche__claim {
+  animation: weiche-auftakt-claim 800ms var(--auftakt-kurve) var(--auftakt-logo-start) backwards;
 }
 html[data-weiche-auftakt] .weiche__medien {
   animation: weiche-auftakt-kachel var(--auftakt-kachel-dauer) var(--auftakt-kurve)
@@ -859,11 +910,6 @@ html[data-weiche-auftakt] .weiche__feld--aktiv .weiche__logo {
   .weiche {
     --logo-wortmarke-handy: min(58vw, 30vh);
     --logo-quadrat-handy: min(42vw, 20vh);
-  }
-  @media (min-width: 768px) {
-    .weiche__claim {
-      top: calc((100vh - var(--hinweis-gesamt)) * (1 - var(--kachel-faktor)) / 2 - 0.7em);
-    }
   }
 }
 
