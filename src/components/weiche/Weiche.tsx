@@ -25,20 +25,50 @@ import Claim from "./Claim";
  * Weiche.
  */
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=at.uncuttv.mobile";
+/** Die iOS-App "UncutTV Community" im App Store (seit 2026-10-01 live). */
+const APP_STORE_URL = "https://apps.apple.com/app/id6814831836";
+
+/**
+ * Sichtbare Höhe beider Store-Badges in px. Apple verlangt, dass sein Badge
+ * nicht kleiner ist als andere Store-Badges daneben, und mindestens 40 px
+ * hoch; Google verlangt ebenfalls mindestens 40 px. Beide Badges werden
+ * daher auf dieselbe sichtbare Höhe gebracht.
+ */
+const STORE_BADGE_SICHTBAR_PX = 40;
 
 /**
  * Offizielle Badge-Grafiken je Sprache, unter public/weiche: "Jetzt bei
  * Google Play" und "Get it on Google Play", beide von Googles Badge-Seite
  * (play.google.com/intl/en_us/badges/, *_badge_web_generic.png, 646 x 250
  * mit durchsichtigem Rand). Unverändert, wie die Richtlinien es verlangen.
+ *
+ * Der durchsichtige Rand ist je Datei verschieden groß (sichtbar: de 192 px,
+ * en 168 px von 250 px Höhe). sichtbar nennt den Anteil, damit die Bildhöhe
+ * so gesetzt werden kann, dass das sichtbare Badge STORE_BADGE_SICHTBAR_PX
+ * hoch wird, gleich hoch wie das Apple-Badge.
  */
-const PLAY_BADGE: Record<"de" | "en", string> = {
-  de: "googleplay-de.png",
-  en: "googleplay-en.png",
+const PLAY_BADGE: Record<"de" | "en", { datei: string; sichtbar: number }> = {
+  de: { datei: "googleplay-de.png", sichtbar: 192 / 250 },
+  en: { datei: "googleplay-en.png", sichtbar: 168 / 250 },
 };
 /** Maße der beiden Dateien, für next/image. */
 const PLAY_BADGE_BREITE = 646;
 const PLAY_BADGE_HOEHE = 250;
+
+/**
+ * Offizielle App-Store-Badges je Sprache, schwarze Variante als SVG von
+ * Apples Badge-Dienst (tools.applemediaservices.com, "Laden im App Store"
+ * de-de und "Download on the App Store" en-us). Unverändert; die SVGs haben
+ * keinen eigenen Rand, den Freiraum von einem Viertel der Höhe gibt der
+ * Abstand in .weiche__stores.
+ */
+const APP_STORE_BADGE: Record<"de" | "en", string> = {
+  de: "appstore-de.svg",
+  en: "appstore-en.svg",
+};
+/** viewBox der SVGs: 119.66407 x 40. */
+const APP_STORE_BADGE_BREITE = 120;
+const APP_STORE_BADGE_HOEHE = 40;
 import {
   AUFTAKT_ATTRIBUT,
   AUFTAKT_HOECHSTDAUER_MS,
@@ -909,24 +939,48 @@ export default function Weiche() {
       <div ref={hinweisRef} className="weiche__hinweis">
         <p className="weiche__hinweis-zeile1">{t("START_HINWEIS_ZEILE1")}</p>
         <p className="weiche__hinweis-zeile2">{t("START_HINWEIS_ZEILE2")}</p>
-        {/* Die Android-App bei Google Play. Neuer Tab, ohne Bezug auf den
-            Öffner. Das Bild trägt keinen eigenen Alt-Text, der Link sagt,
-            was er ist; so liest ein Screenreader es nur einmal. */}
-        <a
-          className="weiche__play"
-          href={PLAY_STORE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={t("START_PLAY_ALT")}
-        >
-          <Image
-            src={`/weiche/${PLAY_BADGE[language]}`}
-            alt=""
-            width={PLAY_BADGE_BREITE}
-            height={PLAY_BADGE_HOEHE}
-            sizes="140px"
-          />
-        </a>
+        {/* Die Apps: links App Store (iOS), rechts Google Play (Android).
+            Nebeneinander, bei Platzmangel untereinander (flex-wrap). Neuer
+            Tab, ohne Bezug auf den Öffner. Die Bilder tragen keinen eigenen
+            Alt-Text, der Link sagt, was er ist; so liest ein Screenreader es
+            nur einmal. */}
+        <div className="weiche__stores">
+          <a
+            className="weiche__store weiche__appstore"
+            href={APP_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t("START_APPSTORE_ALT")}
+          >
+            <Image
+              src={`/weiche/${APP_STORE_BADGE[language]}`}
+              alt=""
+              width={APP_STORE_BADGE_BREITE}
+              height={APP_STORE_BADGE_HOEHE}
+              sizes="120px"
+            />
+          </a>
+          <a
+            className="weiche__store weiche__play"
+            href={PLAY_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t("START_PLAY_ALT")}
+            style={
+              {
+                "--play-badge-hoehe": `${STORE_BADGE_SICHTBAR_PX / PLAY_BADGE[language].sichtbar}px`,
+              } as CSSProperties
+            }
+          >
+            <Image
+              src={`/weiche/${PLAY_BADGE[language].datei}`}
+              alt=""
+              width={PLAY_BADGE_BREITE}
+              height={PLAY_BADGE_HOEHE}
+              sizes="160px"
+            />
+          </a>
+        </div>
         <button
           type="button"
           className={"weiche__pfeil" + (pfeilWeg ? " weiche__pfeil--weg" : "")}

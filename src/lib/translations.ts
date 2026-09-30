@@ -635,6 +635,11 @@ const translations: Record<string, Record<string, string>> = {
     de: "Jetzt bei Google Play: die UncutTV-App für Android (öffnet in neuem Tab)",
     en: "Get it on Google Play: the UncutTV app for Android (opens in a new tab)",
   },
+  // App-Store-Badge in der Hinweiszeile: die iOS-App "UncutTV Community"
+  START_APPSTORE_ALT: {
+    de: "Laden im App Store",
+    en: "Download on the App Store",
+  },
 
   // Händler
   HAENDLERPORTAL: { de: "HÄNDLERPORTAL", en: "DEALER PORTAL" },

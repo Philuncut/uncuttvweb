@@ -408,11 +408,16 @@ textarea:-webkit-autofill:focus {
      zwischen den Bändern kommt. Der Pfeil atmet um --hinweis-atem-weg. */
   --hinweis-hoehe-handy: clamp(142px, 19dvh, 164px);
   --hinweis-hoehe-desktop: clamp(154px, 20dvh, 194px);
-  /* Google-Play-Badge in der Hinweiszeile (weiche__play). Google verlangt
-     mindestens 40 px Höhe und Freiraum von einem Viertel der Höhe. Die
-     offiziellen Dateien tragen einen durchsichtigen Rand von rund einem
-     Sechstel; 48 px Bildhöhe ergeben rund 40 px sichtbares Badge. */
-  --play-badge-hoehe: 48px;
+  /* Store-Badges in der Hinweiszeile (weiche__stores): App Store und
+     Google Play. Beide verlangen mindestens 40 px sichtbare Höhe und
+     Freiraum von einem Viertel der Höhe; Apple verlangt zudem, dass sein
+     Badge nicht kleiner ist als andere. --store-badge-hoehe ist die
+     sichtbare Höhe (die Apple-SVGs haben keinen Rand). Die Google-Dateien
+     tragen einen durchsichtigen Rand, der je Sprache verschieden groß ist;
+     Weiche.tsx setzt --play-badge-hoehe darum je Sprache so, dass das
+     sichtbare Google-Badge ebenfalls --store-badge-hoehe hoch wird. */
+  --store-badge-hoehe: 40px;
+  --play-badge-hoehe: 52px;
   /* Luft zwischen Pfeil und unterem Bildschirmrand, zusätzlich zur
      Sicherheitszone des Geräts. Hält den Pfeil von Browser- und
      Systemleiste fern. */
@@ -702,27 +707,42 @@ textarea:-webkit-autofill:focus {
   height: 16px;
   animation: weiche-pfeil-atmen var(--hinweis-atem-dauer) ease-in-out infinite;
 }
-/* Google-Play-Badge: die Android-App (at.uncuttv.mobile, nicht die
-   TV-App). Sitzt zwischen den Textzeilen und dem Pfeil, klar klickbar,
-   mit dem Freiraum, den Google verlangt. Die Grafik bleibt unverändert;
-   nur die Höhe wird gesetzt, die Breite folgt dem Seitenverhältnis. */
-.weiche__play {
+/* Store-Badges: links App Store (iOS-App "UncutTV Community"), rechts
+   Google Play (Android-App at.uncuttv.mobile, nicht die TV-App). Sitzen
+   zwischen den Textzeilen und dem Pfeil, nebeneinander; wird es zu eng,
+   fallen sie untereinander. Der Abstand (gap) ist zugleich der Freiraum
+   von einem Viertel der Badge-Höhe, den beide Stores verlangen. Die
+   Grafiken bleiben unverändert; nur die Höhe wird gesetzt, die Breite
+   folgt dem Seitenverhältnis. */
+.weiche__stores {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  margin: calc(var(--store-badge-hoehe) / 4) 0 2px;
+}
+.weiche__store {
   display: inline-flex;
-  height: var(--play-badge-hoehe);
-  margin: calc(var(--play-badge-hoehe) / 4) 0 2px;
   border-radius: 6px;
   outline-offset: 3px;
   opacity: 0.92;
   transition: opacity 200ms ease, transform 200ms ease;
 }
-.weiche__play:hover,
-.weiche__play:focus-visible {
+.weiche__store:hover,
+.weiche__store:focus-visible {
   opacity: 1;
   transform: translateY(-1px);
 }
-.weiche__play img {
+.weiche__store img {
   height: 100%;
   width: auto;
+}
+.weiche__appstore {
+  height: var(--store-badge-hoehe);
+}
+.weiche__play {
+  height: var(--play-badge-hoehe);
 }
 /* Nach eigenem Scrollen: ausblenden, dann ganz weg, kommt nicht wieder. */
 .weiche__pfeil--weg {
