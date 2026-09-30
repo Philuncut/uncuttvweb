@@ -54,3 +54,5 @@ händlerzugänge.txt
 /*.png
 
 !.env.example
+
+tmp-mail-preview/

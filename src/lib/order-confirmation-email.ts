@@ -28,6 +28,19 @@ const SHOP_KONTO_URL = "https://uncuttv.at/konto";
 
 export { CUSTOMER_FROM, BANK_CUSTOMER_FROM, OFFICE_FROM, OFFICE_TO };
 
+/**
+ * Werbebanner "Jetzt streamen auf UncutTV" unter der Bestellübersicht.
+ * Nur in Kundenmails an Endkunden (nicht Wholesale, nicht Office).
+ * Bild liegt extern in der WordPress-Mediathek (1200×400), kein Anhang.
+ */
+export const STREAMING_BANNER_IMAGE_URL =
+  "https://wp.uncuttv.at/wp-content/uploads/2026/09/uncuttv-mail-banner.jpg";
+export const STREAMING_BANNER_LINK_URL =
+  "https://uncuttv.app/?utm_source=shop&utm_medium=email&utm_campaign=bestellbestaetigung";
+export const STREAMING_BANNER_ALT = "Jetzt streamen auf UncutTV";
+export const STREAMING_BANNER_TEXT =
+  "Jetzt 7 Tage gratis streamen auf uncuttv.app";
+
 type WooAddress = {
   first_name?: string;
   last_name?: string;
@@ -339,9 +352,28 @@ function invoiceDownloadHint(orderId: number): string {
   return `https://uncuttv.at/api/orders/invoice?order_id=${orderId}`;
 }
 
+export function buildStreamingBannerHtml(): string {
+  const href = escapeHtml(STREAMING_BANNER_LINK_URL);
+  return `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:24px 0 0;">
+        <tr>
+          <td align="center" style="padding:0;">
+            <a href="${href}" target="_blank" rel="noopener" style="display:block;text-decoration:none;">
+              <img src="${escapeHtml(STREAMING_BANNER_IMAGE_URL)}" alt="${escapeHtml(STREAMING_BANNER_ALT)}" width="600" height="200" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;" />
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:10px 0 0;font-size:14px;line-height:1.5;">
+            <a href="${href}" target="_blank" rel="noopener" style="color:#c0392b;text-decoration:underline;">${escapeHtml(STREAMING_BANNER_TEXT)}</a>
+          </td>
+        </tr>
+      </table>`;
+}
+
 export function buildCustomerEmailHtml(
   order: OrderConfirmationWooOrder,
-  opts: { pdfAttached: boolean; orderId: number }
+  opts: { pdfAttached: boolean; orderId: number; isWholesale: boolean }
 ): string {
   const orderNumber = asString(order.number) || String(opts.orderId);
   const currency = (asString(order.currency) || "EUR").toUpperCase();
@@ -434,6 +466,8 @@ export function buildCustomerEmailHtml(
           </td>
         </tr>
       </table>
+
+      ${opts.isWholesale === false ? buildStreamingBannerHtml() : ""}
 
       <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 8px;">Versandadresse</h3>
       <p style="font-size:14px;line-height:1.6;color:#ccc;margin:0;">${formatAddress(order.shipping ?? order.billing)}</p>
@@ -671,6 +705,8 @@ export function buildBankTransferEmailHtml(
           <td style="padding:12px 0;color:#c0392b;font-weight:bold;font-size:16px;text-align:right;">${formatPrice(parsePrice(total))}</td>
         </tr>
       </table>
+
+      ${isWholesale === false ? buildStreamingBannerHtml() : ""}
 
       ${invoiceNote}
 

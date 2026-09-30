@@ -51,7 +51,8 @@ function buildCustomerHtml(
   order: OrderConfirmationWooOrder,
   orderId: number,
   options: SendOrderConfirmationWithPdfOptions,
-  pdfAttached: boolean
+  pdfAttached: boolean,
+  isWholesale: boolean
 ): string {
   const orderNumber = asString(order.number) || String(orderId);
 
@@ -62,7 +63,7 @@ function buildCustomerHtml(
     });
   }
 
-  return buildCustomerEmailHtml(order, { pdfAttached, orderId });
+  return buildCustomerEmailHtml(order, { pdfAttached, orderId, isWholesale });
 }
 
 function customerEmailSubject(
@@ -129,7 +130,7 @@ export async function sendOrderConfirmationWithPdf(
       from: customerFromAddress(options),
       to,
       subject: customerEmailSubject(order, orderId, options),
-      html: buildCustomerHtml(order, orderId, options, !!pdf),
+      html: buildCustomerHtml(order, orderId, options, !!pdf, isWholesale),
     };
 
     if (pdf) {
