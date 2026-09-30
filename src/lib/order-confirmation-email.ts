@@ -33,13 +33,30 @@ export { CUSTOMER_FROM, BANK_CUSTOMER_FROM, OFFICE_FROM, OFFICE_TO };
  * Nur in Kundenmails an Endkunden (nicht Wholesale, nicht Office).
  * Bild liegt extern in der WordPress-Mediathek (1200×400), kein Anhang.
  */
-export const STREAMING_BANNER_IMAGE_URL =
-  "https://wp.uncuttv.at/wp-content/uploads/2026/09/uncuttv-mail-banner.jpg";
-export const STREAMING_BANNER_LINK_URL =
+export type StreamingBannerLocale = "de" | "en";
+
+export const STREAMING_BANNER_LINK_BASE =
   "https://uncuttv.app/?utm_source=shop&utm_medium=email&utm_campaign=bestellbestaetigung";
-export const STREAMING_BANNER_ALT = "Jetzt streamen auf UncutTV";
-export const STREAMING_BANNER_TEXT =
-  "Jetzt 7 Tage gratis streamen auf uncuttv.app";
+
+export const STREAMING_BANNER: Record<
+  StreamingBannerLocale,
+  { imageUrl: string; alt: string; text: string; linkUrl: string }
+> = {
+  de: {
+    imageUrl:
+      "https://wp.uncuttv.at/wp-content/uploads/2026/09/uncuttv-mail-banner.jpg",
+    alt: "Jetzt streamen auf UncutTV",
+    text: "Jetzt 7 Tage gratis streamen auf uncuttv.app",
+    linkUrl: `${STREAMING_BANNER_LINK_BASE}&utm_content=de`,
+  },
+  en: {
+    imageUrl:
+      "https://wp.uncuttv.at/wp-content/uploads/2026/09/uncuttv-mail-banner-en.jpg",
+    alt: "Stream now on UncutTV",
+    text: "Stream free for 7 days on uncuttv.app",
+    linkUrl: `${STREAMING_BANNER_LINK_BASE}&utm_content=en`,
+  },
+};
 
 type WooAddress = {
   first_name?: string;
@@ -352,20 +369,25 @@ function invoiceDownloadHint(orderId: number): string {
   return `https://uncuttv.at/api/orders/invoice?order_id=${orderId}`;
 }
 
-export function buildStreamingBannerHtml(): string {
-  const href = escapeHtml(STREAMING_BANNER_LINK_URL);
+/**
+ * Sprache folgt der Sprachentscheidung der jeweiligen Vorlage: Die Bank-Mail
+ * kennt ein Locale (Shop-Sprache), die Sofortzahlungs-Mail ist immer deutsch.
+ */
+export function buildStreamingBannerHtml(locale: StreamingBannerLocale): string {
+  const banner = STREAMING_BANNER[locale] ?? STREAMING_BANNER.de;
+  const href = escapeHtml(banner.linkUrl);
   return `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:24px 0 0;">
         <tr>
           <td align="center" style="padding:0;">
             <a href="${href}" target="_blank" rel="noopener" style="display:block;text-decoration:none;">
-              <img src="${escapeHtml(STREAMING_BANNER_IMAGE_URL)}" alt="${escapeHtml(STREAMING_BANNER_ALT)}" width="600" height="200" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;" />
+              <img src="${escapeHtml(banner.imageUrl)}" alt="${escapeHtml(banner.alt)}" width="600" height="200" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;" />
             </a>
           </td>
         </tr>
         <tr>
           <td align="center" style="padding:10px 0 0;font-size:14px;line-height:1.5;">
-            <a href="${href}" target="_blank" rel="noopener" style="color:#c0392b;text-decoration:underline;">${escapeHtml(STREAMING_BANNER_TEXT)}</a>
+            <a href="${href}" target="_blank" rel="noopener" style="color:#c0392b;text-decoration:underline;">${escapeHtml(banner.text)}</a>
           </td>
         </tr>
       </table>`;
@@ -467,7 +489,7 @@ export function buildCustomerEmailHtml(
         </tr>
       </table>
 
-      ${opts.isWholesale === false ? buildStreamingBannerHtml() : ""}
+      ${opts.isWholesale === false ? buildStreamingBannerHtml("de") : ""}
 
       <h3 style="font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin:24px 0 8px;">Versandadresse</h3>
       <p style="font-size:14px;line-height:1.6;color:#ccc;margin:0;">${formatAddress(order.shipping ?? order.billing)}</p>
@@ -706,7 +728,7 @@ export function buildBankTransferEmailHtml(
         </tr>
       </table>
 
-      ${isWholesale === false ? buildStreamingBannerHtml() : ""}
+      ${isWholesale === false ? buildStreamingBannerHtml(locale) : ""}
 
       ${invoiceNote}
 

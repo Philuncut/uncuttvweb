@@ -1,7 +1,9 @@
 /**
- * Schickt Beispiel-Bestellbestätigungen (Sofortzahlung + Banküberweisung,
- * jeweils Endkunde) über Resend an office@uncuttv.at, damit der Banner
- * "Jetzt streamen auf UncutTV" in echten Mailprogrammen geprüft werden kann.
+ * Schickt Beispiel-Bestellbestätigungen (Sofortzahlung deutsch, Banküberweisung
+ * deutsch und englisch, jeweils Endkunde) über Resend an office@uncuttv.at,
+ * damit der Banner "Jetzt streamen auf UncutTV" in echten Mailprogrammen
+ * geprüft werden kann. Die Sofortzahlungs-Mail kennt keine Sprache und ist
+ * immer deutsch, daher gibt es von ihr keine englische Variante.
  *
  * Usage: npx tsx src/scripts/send-test-order-mail.ts [--dry-run]
  *   --dry-run          schreibt nur HTML-Dateien nach ./tmp-mail-preview/, sendet nichts
@@ -106,6 +108,31 @@ async function main() {
         { pdfAttached: false, orderId: order.id }
       ),
       file: "bank-b2c.html",
+    },
+    {
+      from: BANK_CUSTOMER_FROM,
+      subject:
+        "[TEST Banner EN] Order confirmation bank transfer #TEST-999999",
+      html: buildBankTransferEmailHtml(
+        order.number,
+        {
+          customerName: "Erika Muster",
+          items: [
+            {
+              id: 101,
+              name: "VHS Underground Mediabook Cover F",
+              qty: 1,
+              price: "34.90",
+            },
+            { id: 102, name: "Catcall Blu-Ray Amaray", qty: 1, price: "24.90" },
+          ],
+          total: "64.80",
+          isWholesale: false,
+          locale: "en",
+        },
+        { pdfAttached: false, orderId: order.id }
+      ),
+      file: "bank-b2c-en.html",
     },
   ];
 

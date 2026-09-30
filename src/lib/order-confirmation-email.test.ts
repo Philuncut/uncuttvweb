@@ -5,10 +5,9 @@ import {
   buildCustomerEmailHtml,
   buildInvoiceResendEmailHtml,
   buildOfficeEmailHtml,
-  STREAMING_BANNER_ALT,
-  STREAMING_BANNER_IMAGE_URL,
-  STREAMING_BANNER_TEXT,
+  STREAMING_BANNER,
   type OrderConfirmationWooOrder,
+  type StreamingBannerLocale,
 } from "@/lib/order-confirmation-email";
 
 /**
@@ -18,6 +17,10 @@ import {
  * Endkunden. Händler (Wholesale) und die Office-Mail bleiben ohne Banner.
  * Das Bild wird extern geladen, der Link trägt die UTM-Parameter, und ein
  * Textlink darunter fängt Mailprogramme ohne Bilder auf.
+ *
+ * Sprache: Die Bank-Mail folgt der Shop-Sprache (locale), die
+ * Sofortzahlungs-Mail ist immer deutsch und bekommt daher immer den
+ * deutschen Banner.
  */
 
 const ORDER: OrderConfirmationWooOrder = {
@@ -45,53 +48,59 @@ const ORDER: OrderConfirmationWooOrder = {
 
 const BANK_DETAILS = {
   customerName: "Erika Muster",
-  items: [{ id: 101, name: "VHS Underground Mediabook", qty: 1, price: "29.90" }],
+  items: [
+    { id: 101, name: "VHS Underground Mediabook", qty: 1, price: "29.90" },
+  ],
   total: "34.90",
-  locale: "de" as const,
 };
 
-const EXPECTED_HREF =
-  'href="https://uncuttv.app/?utm_source=shop&amp;utm_medium=email&amp;utm_campaign=bestellbestaetigung"';
+const UTM_BASE =
+  "https://uncuttv.app/?utm_source=shop&amp;utm_medium=email&amp;utm_campaign=bestellbestaetigung";
 
-function assertBannerPresent(html: string) {
+const ANY_BANNER_MARKERS = [
+  STREAMING_BANNER.de.imageUrl,
+  STREAMING_BANNER.en.imageUrl,
+  "utm_campaign=bestellbestaetigung",
+];
+
+function assertBannerPresent(html: string, locale: StreamingBannerLocale) {
+  const banner = STREAMING_BANNER[locale];
+  const other = STREAMING_BANNER[locale === "de" ? "en" : "de"];
+  assert.ok(html.includes(`src="${banner.imageUrl}"`), "Bild-URL fehlt");
+  assert.ok(html.includes(`alt="${banner.alt}"`), "Alt-Text fehlt");
   assert.ok(
-    html.includes(`src="${STREAMING_BANNER_IMAGE_URL}"`),
-    "Bild-URL fehlt"
+    html.includes(`href="${UTM_BASE}&amp;utm_content=${locale}"`),
+    "Link mit UTM-Parametern und utm_content fehlt"
   );
-  assert.ok(html.includes(`alt="${STREAMING_BANNER_ALT}"`), "Alt-Text fehlt");
-  assert.ok(html.includes(EXPECTED_HREF), "Link mit UTM-Parametern fehlt");
-  assert.ok(html.includes(`>${STREAMING_BANNER_TEXT}</a>`), "Textlink fehlt");
+  assert.ok(html.includes(`>${banner.text}</a>`), "Textlink fehlt");
   assert.ok(html.includes('width="600"'), "Anzeigebreite 600 px fehlt");
   assert.ok(html.includes("max-width:600px"), "max-width 600 px fehlt");
   assert.ok(
     !html.includes("cid:") && !html.includes("data:image"),
     "Bild darf kein Anhang und keine Data-URI sein"
   );
+  assert.ok(!html.includes(other.imageUrl), "falsches Sprachbild");
+  assert.ok(!html.includes(other.text), "falscher Sprachtext");
 }
 
 function assertBannerAbsent(html: string) {
-  assert.ok(
-    !html.includes(STREAMING_BANNER_IMAGE_URL),
-    "Banner-Bild darf nicht erscheinen"
-  );
-  assert.ok(
-    !html.includes("utm_campaign=bestellbestaetigung"),
-    "Banner-Link darf nicht erscheinen"
-  );
+  for (const marker of ANY_BANNER_MARKERS) {
+    assert.ok(!html.includes(marker), `Banner darf nicht erscheinen: ${marker}`);
+  }
 }
 
 describe("Sofortzahlung (Stripe/PayPal): Bestellbestätigung", () => {
-  it("zeigt Endkunden den Banner unter der Bestellübersicht", () => {
+  it("zeigt Endkunden den deutschen Banner unter der Bestellübersicht", () => {
     const html = buildCustomerEmailHtml(ORDER, {
       pdfAttached: true,
       orderId: 4711,
       isWholesale: false,
     });
-    assertBannerPresent(html);
+    assertBannerPresent(html, "de");
 
     const overview = html.indexOf("Bestellübersicht");
     const total = html.indexOf("Gesamt");
-    const banner = html.indexOf(STREAMING_BANNER_IMAGE_URL);
+    const banner = html.indexOf(STREAMING_BANNER.de.imageUrl);
     const shipping = html.indexOf("Versandadresse");
     assert.ok(
       overview > -1 && total > overview,
@@ -99,6 +108,16 @@ describe("Sofortzahlung (Stripe/PayPal): Bestellbestätigung", () => {
     );
     assert.ok(banner > total, "Banner muss nach der Gesamtzeile stehen");
     assert.ok(banner < shipping, "Banner muss vor der Versandadresse stehen");
+  });
+
+  it("kennt keine Sprache und bleibt daher immer deutsch", () => {
+    const html = buildCustomerEmailHtml(ORDER, {
+      pdfAttached: false,
+      orderId: 4711,
+      isWholesale: false,
+    });
+    assert.ok(!html.includes(STREAMING_BANNER.en.imageUrl));
+    assert.ok(html.includes("utm_content=de"));
   });
 
   it("zeigt Händlern (Wholesale) keinen Banner", () => {
@@ -116,16 +135,16 @@ describe("Sofortzahlung (Stripe/PayPal): Bestellbestätigung", () => {
 });
 
 describe("Banküberweisung: Bestellbestätigung", () => {
-  it("zeigt Endkunden den Banner unter der Bestellübersicht", () => {
+  it("zeigt deutschen Endkunden den deutschen Banner unter der Bestellübersicht", () => {
     const html = buildBankTransferEmailHtml(
       "4711",
-      { ...BANK_DETAILS, isWholesale: false },
+      { ...BANK_DETAILS, isWholesale: false, locale: "de" },
       { pdfAttached: false, orderId: 4711 }
     );
-    assertBannerPresent(html);
+    assertBannerPresent(html, "de");
 
     const overview = html.indexOf("Bestellübersicht");
-    const banner = html.indexOf(STREAMING_BANNER_IMAGE_URL);
+    const banner = html.indexOf(STREAMING_BANNER.de.imageUrl);
     const invoiceNote = html.indexOf("Die Rechnung folgt");
     const iban = html.indexOf("IBAN");
     assert.ok(iban < overview, "Bankdaten stehen vor der Übersicht");
@@ -136,13 +155,34 @@ describe("Banküberweisung: Bestellbestätigung", () => {
     );
   });
 
-  it("zeigt Händlern (Wholesale) keinen Banner", () => {
+  it("zeigt englischen Endkunden den englischen Banner unter der Bestellübersicht", () => {
     const html = buildBankTransferEmailHtml(
       "4711",
-      { ...BANK_DETAILS, isWholesale: true },
+      { ...BANK_DETAILS, isWholesale: false, locale: "en" },
       { pdfAttached: false, orderId: 4711 }
     );
-    assertBannerAbsent(html);
+    assertBannerPresent(html, "en");
+
+    const overview = html.indexOf("Order summary");
+    const banner = html.indexOf(STREAMING_BANNER.en.imageUrl);
+    const invoiceNote = html.indexOf("Die Rechnung folgt");
+    assert.ok(overview > -1, "englische Übersicht fehlt");
+    assert.ok(banner > overview, "Banner muss nach der Übersicht stehen");
+    assert.ok(
+      banner < invoiceNote,
+      "Banner muss vor dem Rechnungshinweis stehen"
+    );
+  });
+
+  it("zeigt Händlern (Wholesale) keinen Banner, egal in welcher Sprache", () => {
+    for (const locale of ["de", "en"] as const) {
+      const html = buildBankTransferEmailHtml(
+        "4711",
+        { ...BANK_DETAILS, isWholesale: true, locale },
+        { pdfAttached: false, orderId: 4711 }
+      );
+      assertBannerAbsent(html);
+    }
   });
 });
 
