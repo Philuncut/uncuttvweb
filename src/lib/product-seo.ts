@@ -3,6 +3,7 @@ import type { WooProduct } from "@/lib/types";
 import { HAENDLER_OUT_OF_PRINT_CATEGORY_SLUGS } from "@/lib/haendler-filter";
 import { parsePrice } from "@/lib/parse-price";
 import { formatPrice } from "@/lib/format-price";
+import { verpackungVon } from "@/lib/verpackung";
 
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
@@ -24,13 +25,13 @@ const PRODUCT_TITLE_TEMPLATES = {
       : `${name} - Jetzt vorbestellen | UncutTV`,
   outofprint: (name: string) => `${name} - Out of Print | UncutTV`,
   sale: (name: string) => `${name} - Sale Angebot | UncutTV`,
-  instock: (name: string, limitation?: string) => {
+  instock: (name: string, limitation?: string, verpackung = "Mediabook") => {
     if (limitation) {
       return `${name} - Limited ${limitation} Stück | UncutTV`;
     }
     const suffix = /\bbundle\b/i.test(name)
       ? " - Limited Edition | UncutTV"
-      : " - Limited Edition Mediabook | UncutTV";
+      : ` - Limited Edition ${verpackung} | UncutTV`;
     return `${name}${suffix}`;
   },
 } as const;
@@ -148,6 +149,9 @@ export function buildProductTitle(product: WooProductSeo): string {
         ? limitation
         : undefined;
 
+  if (status === "instock") {
+    return PRODUCT_TITLE_TEMPLATES.instock(product.name, templateArg, verpackungVon(product));
+  }
   return PRODUCT_TITLE_TEMPLATES[status](product.name, templateArg);
 }
 
@@ -163,16 +167,20 @@ function buildDescriptionFallback(
     sale_price: "",
     price: product.regular_price || product.price,
   });
+  // Die tatsächliche Verpackung: aus den Angaben des Steuerpults, sonst aus
+  // dem Namen, sonst Mediabook. Formulierungen so, dass jede Verpackung
+  // hineinpasst ("Limited Edition Scanavo", "limitierte Auflage, Hartbox").
+  const verpackung = verpackungVon(product);
 
   switch (status) {
     case "vorverkauf":
-      return `${name} jetzt vorbestellen im UncutTV Shop. Limited Edition Mediabook, Cover-Variante, Vorverkauf ab ${price}.`;
+      return `${name} jetzt vorbestellen im UncutTV Shop. Limited Edition ${verpackung}, Cover-Variante, Vorverkauf ab ${price}.`;
     case "outofprint":
-      return `${name} - vergriffenes Mediabook im UncutTV Shop. Letzte Restbestände der limitierten Edition, nicht mehr nachproduziert.`;
+      return `${name} - vergriffen im UncutTV Shop (${verpackung}). Letzte Restbestände der limitierten Edition, nicht mehr nachproduziert.`;
     case "sale":
-      return `${name} im Sale - jetzt ${price} statt ${regular}. Limited Edition Mediabook im UncutTV Shop.`;
+      return `${name} im Sale - jetzt ${price} statt ${regular}. Limited Edition ${verpackung} im UncutTV Shop.`;
     default:
-      return `${name} - limitiertes Mediabook im offiziellen UncutTV Shop. Jetzt für ${price} bestellen, sofort lieferbar.`;
+      return `${name} - limitierte Auflage, ${verpackung}, im offiziellen UncutTV Shop. Jetzt für ${price} bestellen, sofort lieferbar.`;
   }
 }
 

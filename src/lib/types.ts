@@ -53,4 +53,14 @@ export const SHOP_LIST_FIELDS = [
   "categories",
 ] as const;
 
-export type ShopListProduct = Pick<WooProduct, (typeof SHOP_LIST_FIELDS)[number]>;
+export type ShopListProduct = Pick<WooProduct, (typeof SHOP_LIST_FIELDS)[number]> & {
+  /**
+   * Aus dem Meta-Feld uncuttv_angaben des Steuerpults, auf dem Server
+   * abgeleitet (shop-catalog.ts): der Filmtitel ohne Verpackung und Cover,
+   * und die Verpackung. Fehlen bei Produkten aus dem alten Dashboard; die
+   * Gruppierung fällt dann auf den Namen zurück. Das Meta-Feld selbst geht
+   * nicht an den Client.
+   */
+  film_titel?: string | null;
+  verpackung?: string | null;
+};

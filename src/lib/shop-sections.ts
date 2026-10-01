@@ -40,24 +40,41 @@ export function vorverkaufProdukte(products: ShopListProduct[]): ShopListProduct
 
 /**
  * Wo im Produktnamen der Filmtitel endet: an der ersten Angabe zu Format,
- * Ausstattung oder Cover. WooCommerce kennt keine Verbindung zwischen den
- * Varianten eines Films (alles einfache Produkte, ohne Elternprodukt, Tags
- * oder durchgehende SKU); verlässlich ist nur dieser Aufbau des Namens,
- * etwa "Fear Cabin 2-Disc-Mediabook (DVD + Blu-ray) Mediabook Cover F" oder
- * "Mudbrick Amaray". "Medi?a" fängt die Schreibung "Medabook" mit ab.
+ * Ausstattung oder Cover. Das ist der RÜCKFALL für Produkte aus dem alten
+ * Dashboard oder aus WordPress. Produkte aus dem Steuerpult tragen den
+ * Filmtitel in uncuttv_angaben (film_titel am Listenprodukt), dort wird
+ * nicht geraten.
+ *
+ * WooCommerce kennt keine Verbindung zwischen den Varianten eines Films
+ * (alles einfache Produkte, ohne Elternprodukt, Tags oder durchgehende
+ * SKU); verlässlich ist nur dieser Aufbau des Namens, etwa "Fear Cabin
+ * 2-Disc-Mediabook (DVD + Blu-ray) Mediabook Cover F" oder "Mudbrick
+ * Amaray". "Medi?a" fängt die Schreibung "Medabook" mit ab. Die
+ * Verpackungen hier entsprechen der Liste in verpackung.ts.
  */
 const FORMAT_ANGABE =
-  /\s(?:\d+-Disc-)?(?:Medi?a\s?-?book|Amaray|Blu-?Ray|UHD|DVD|Hartbox|Pappschuber|Feelbook|Woodbox|Holzbox|Handsigniert|Ultra\s+Limit|Cover\s+[A-Z]\b)/i;
+  /\s(?:\d+-Disc-)?(?:Medi?a\s?-?book|Amaray|Scanavo|Steelbook|Retro-?VHS-?Box|VHS\b|Blu-?Ray|UHD|DVD|Hartbox|Pappschuber|Feelbook|Woodbox|Holzbox|Digipa[ck]k?|Handsigniert|Ultra\s+Limit|Cover\s+[A-Z]\b)/i;
 
 /** Einzelstücke nennen ihren Film hinter "inkl.". */
 const INKLUSIVE = /\binkl\.?\s+/i;
 
-function titelTeil(name: string): string {
+function titelTeil(name: string, anfangGehoertZumTitel = true): string {
   // Mit vorangestelltem Leerzeichen, damit auch eine Angabe ganz am Anfang
   // zählt ("Mediabook Cover C" hinter "inkl." ergibt einen leeren Titel).
   const text = " " + name;
   const treffer = text.search(FORMAT_ANGABE);
-  return treffer >= 0 ? text.slice(0, treffer) : text;
+  if (treffer < 0) return text;
+  // Steht die Verpackung ganz vorn im NAMEN, gehört sie zum Titel ("VHS
+  // Underground Mediabook Cover A", "Scanavo: Underground Files …"): dann
+  // zählt erst die nächste Angabe dahinter. Hinter "inkl." gilt das nicht
+  // ("inkl. Mediabook Cover A" nennt keinen Film).
+  if (treffer === 0 && anfangGehoertZumTitel) {
+    const wort = text.match(FORMAT_ANGABE)?.[0] ?? "";
+    const rest = text.slice(wort.length);
+    const naechster = rest.search(FORMAT_ANGABE);
+    return naechster >= 0 ? text.slice(0, wort.length + naechster) : text;
+  }
+  return text.slice(0, treffer);
 }
 
 function vergleichsform(text: string): string {
@@ -79,12 +96,30 @@ function vergleichsform(text: string): string {
  * zählt zu Fear Cabin; nennt es hinter "inkl." keinen Titel, gilt der Teil
  * davor.
  */
-export function filmSchluessel(name: string): string {
+export function filmSchluessel(
+  produkt: string | { name: string; film_titel?: string | null }
+): string {
+  // Aus dem Steuerpult: der Filmtitel steht in den Angaben -- ohne
+  // Verpackung und Cover, aber mit allem, was der Titel selbst enthält
+  // ("EINZELSTÜCK: … inkl. Conditio Germania MB-Cover C"). Deshalb läuft
+  // auch er durch die inkl.-Regel.
+  if (typeof produkt !== "string") {
+    const titel = produkt.film_titel?.trim();
+    if (titel) return schluesselAusName(titel) || vergleichsform(produkt.name);
+  }
+  return schluesselAusName(typeof produkt === "string" ? produkt : produkt.name);
+}
+
+function schluesselAusName(name: string): string {
   const inkl = name.search(INKLUSIVE);
   if (inkl >= 0) {
     const danach = name.slice(inkl).replace(INKLUSIVE, "");
-    const film = vergleichsform(titelTeil(danach));
-    if (film) return film;
+    // Ein einzelnes Wort hinter "inkl." ist Beigabe (Poster, Booklet),
+    // kein Film. Erst ab zwei Wörtern gilt es als Verweis auf den Film.
+    if (danach.trim().split(/\s+/).length >= 2) {
+      const film = vergleichsform(titelTeil(danach, false));
+      if (film) return film;
+    }
     return vergleichsform(titelTeil(name.slice(0, inkl))) || vergleichsform(name);
   }
   return vergleichsform(titelTeil(name)) || vergleichsform(name);
@@ -107,7 +142,7 @@ export function startAuswahl(products: ShopListProduct[], anzahl: number): ShopL
   const nimm = (liste: ShopListProduct[]) => {
     for (const p of liste) {
       if (auswahl.length >= anzahl) return;
-      const film = filmSchluessel(p.name);
+      const film = filmSchluessel(p);
       if (filme.has(film)) continue;
       filme.add(film);
       auswahl.push(p);

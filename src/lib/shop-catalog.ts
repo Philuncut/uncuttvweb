@@ -5,6 +5,7 @@ import {
   type ShopListProduct,
   type WooCategory,
 } from "@/lib/types";
+import { angabenAus, packungName, type MetaZeile } from "@/lib/verpackung";
 
 /**
  * Der gecachte Katalog des Shops: Produkte und Kategorien in einem Eintrag.
@@ -35,7 +36,12 @@ const SHOP_CATALOG_REVALIDATE_SECONDS = 60;
  * alle Bildattribute; und sollte `_fields` einmal ignoriert werden, darf
  * trotzdem nichts Überflüssiges ins HTML wandern.
  */
-function toShopListProduct(product: ShopListProduct): ShopListProduct {
+type RohProdukt = ShopListProduct & { meta_data?: MetaZeile[] };
+
+function toShopListProduct(product: RohProdukt): ShopListProduct {
+  // Aus den Angaben des Steuerpults nur zwei kurze Felder; das Meta-Feld
+  // mit der ganzen Beschreibung als JSON bleibt hier auf dem Server.
+  const angaben = angabenAus(product.meta_data);
   return {
     id: product.id,
     name: product.name,
@@ -56,8 +62,13 @@ function toShopListProduct(product: ShopListProduct): ShopListProduct {
       name: cat.name,
       slug: cat.slug,
     })),
+    film_titel: angaben?.produktname ?? null,
+    verpackung: angaben ? packungName(angaben) : null,
   };
 }
+
+/** Was von WooCommerce geholt wird: die Listenfelder plus das Meta-Feld, das hier abgeleitet wird. */
+const KATALOG_FELDER = [...SHOP_LIST_FIELDS, "meta_data"].join(",");
 
 export type ShopCatalog = {
   /** In der Reihenfolge von WooCommerce: neueste zuerst. */
@@ -68,9 +79,9 @@ export type ShopCatalog = {
 export const getShopCatalog = unstable_cache(
   async (): Promise<ShopCatalog> => {
     const [rawProducts, categories] = await Promise.all([
-      wooFetchAll<ShopListProduct>("/products", {
+      wooFetchAll<RohProdukt>("/products", {
         per_page: "100",
-        _fields: SHOP_LIST_FIELDS.join(","),
+        _fields: KATALOG_FELDER,
       }),
       wooFetch<WooCategory[]>("/products/categories", {
         per_page: "100",
@@ -79,6 +90,6 @@ export const getShopCatalog = unstable_cache(
     ]);
     return { products: rawProducts.map(toShopListProduct), categories };
   },
-  ["shop-catalog", SHOP_LIST_FIELDS.join(",")],
+  ["shop-catalog", KATALOG_FELDER, "film_titel"],
   { revalidate: SHOP_CATALOG_REVALIDATE_SECONDS, tags: [SHOP_CATALOG_TAG] }
 );
