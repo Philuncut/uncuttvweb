@@ -81,9 +81,43 @@ export default function DatenschutzPage() {
             </p>
           </section>
 
+          {/* ENTWURF, noch nicht anwaltlich freigegeben (cookiefreie
+              Reichweitenmessung, 3. Oktober 2026). Die zu pruefenden
+              Stellen sind mit "ENTWURF -- ANWALT" markiert. Dieselbe
+              Messung laeuft auf uncuttv.app und UncutTV Social; Technik:
+              src/lib/visitor-stats.ts. */}
           <section>
             <h2 className="mb-2 text-base font-bold text-white">
-              5. Newsletter
+              5. Reichweitenmessung ohne Cookies
+            </h2>
+            {/* ENTWURF -- ANWALT: Neuer Abschnitt, insgesamt pruefen. GA4 und Meta Pixel (nur mit Einwilligung) sind in dieser Erklaerung bisher nicht einzeln beschrieben. */}
+            <p>
+              Wir zählen, wie viele Besucher unsere Seiten aufrufen, mit einer eigenen Messung, die ohne Cookies auskommt. Dabei speichern wir nichts auf Ihrem Gerät und lesen dort nichts aus – kein Cookie, kein lokaler Speicher. Die Messung läuft unabhängig vom Cookie-Banner. An Werbe- oder Analysedienste wie Meta oder Google geben wir diese Daten nicht weiter.
+            </p>
+            <p className="mt-2">
+              Erfasst werden: die aufgerufene Seite und der Zeitpunkt des Aufrufs, die Website, von der Sie gekommen sind (Referrer), Kampagnenparameter aus der aufgerufenen Adresse (UTM-Parameter), das Land, aus dem der Aufruf kommt, Gerätetyp und Browser sowie – wenn Sie angemeldet sind – die Kennung Ihres Kundenkontos.
+            </p>
+            {/* ENTWURF -- ANWALT: Einordnung der Tageskennung (Hash aus IP-Adresse, User-Agent, Angebot und taeglich geloeschtem Zufallswert) -- anonym oder pseudonym? Es gibt keinen Zugriff auf das Endgeraet; nach unserer Sicht daher kein Fall des § 165 Abs. 3 TKG 2021. */}
+            <p className="mt-2">
+              Ihre IP-Adresse speichern wir für diese Messung nicht. Um Besucher eines Tages nur einmal zu zählen, bilden wir aus IP-Adresse, Browserkennung (User-Agent) und einem täglich wechselnden Zufallswert einen Hashwert (SHA-256). Den Zufallswert löschen wir nach Ablauf des Tages. Danach lässt sich der Hashwert weder auf Sie zurückführen noch mit Aufrufen an anderen Tagen verbinden.
+            </p>
+            {/* ENTWURF -- ANWALT: Zuordnung der Aufrufe zum Konto angemeldeter Nutzer ueber drei Angebote hinweg -- traegt Art. 6 Abs. 1 lit. f DSGVO, oder braucht es eine Einwilligung? */}
+            <p className="mt-2">
+              Sind Sie angemeldet, halten wir zusätzlich fest, an welchen Tagen Ihr Konto welches unserer Angebote genutzt hat – diesen Shop, die Streaming-Plattform auf uncuttv.app und UncutTV Social. So erkennen wir, wie viele Konten mehrere unserer Angebote nutzen. Ausgewertet wird das nur in zusammengefassten Zahlen, nicht für einzelne Personen.
+            </p>
+            {/* ENTWURF -- ANWALT: Speicherdauern pruefen (90 und 400 Tage sind technisch so gesetzt). Der Speicherort (Supabase als Auftragsverarbeiter) ist in dieser Erklaerung sonst nicht genannt. */}
+            <p className="mt-2">
+              Einzelne Seitenaufrufe löschen wir nach 90 Tagen. Die Angabe, an welchen Tagen ein Konto welches Angebot genutzt hat, löschen wir nach 400 Tagen. Dauerhaft bleiben nur zusammengefasste Tageszahlen ohne Personenbezug. Die Daten liegen in unserer Datenbank bei unserem Auftragsverarbeiter Supabase auf Servern in der EU.
+            </p>
+            {/* ENTWURF -- ANWALT: Rechtsgrundlage pruefen. Technisch offen: es gibt keinen Schalter fuer den Widerspruch (Opt-out); bei nicht angemeldeten Besuchern laesst er sich mangels Zuordnung nicht umsetzen, bei Konten nur von Hand. */}
+            <p className="mt-2">
+              Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO. Unser berechtigtes Interesse liegt darin, die Nutzung unserer Angebote zu messen und sie zu verbessern. Sie können dieser Verarbeitung jederzeit widersprechen (Art. 21 DSGVO); schreiben Sie dazu an office@uncuttv.at.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-base font-bold text-white">
+              6. Newsletter
             </h2>
             <p>
               Wenn Sie sich für unseren Newsletter anmelden, verwenden wir Ihre
@@ -98,7 +132,7 @@ export default function DatenschutzPage() {
 
           <section>
             <h2 className="mb-2 text-base font-bold text-white">
-              6. Weitergabe an Dritte
+              7. Weitergabe an Dritte
             </h2>
             <p>
               Eine Weitergabe personenbezogener Daten an Dritte erfolgt nur,
@@ -110,7 +144,7 @@ export default function DatenschutzPage() {
 
           <section>
             <h2 className="mb-2 text-base font-bold text-white">
-              7. Speicherdauer
+              8. Speicherdauer
             </h2>
             <p>
               Personenbezogene Daten werden nur so lange gespeichert, wie dies
@@ -122,7 +156,7 @@ export default function DatenschutzPage() {
 
           <section>
             <h2 className="mb-2 text-base font-bold text-white">
-              8. Ihre Rechte
+              9. Ihre Rechte
             </h2>
             <p>Sie haben das Recht auf:</p>
             <ul className="mt-2 list-inside list-disc space-y-1">
@@ -147,7 +181,7 @@ export default function DatenschutzPage() {
 
           <section>
             <h2 className="mb-2 text-base font-bold text-white">
-              9. Beschwerderecht
+              10. Beschwerderecht
             </h2>
             <p>
               Sie haben das Recht, sich bei der zuständigen Aufsichtsbehörde

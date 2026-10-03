@@ -8,6 +8,7 @@ import NavigationProgress from "@/components/NavigationProgress";
 import CookieConsent from "@/components/CookieConsent";
 import MetaPixel from "@/components/MetaPixel";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
+import VisitorCounter from "@/components/VisitorCounter";
 import PayPalRecoveryBoot from "@/components/PayPalRecoveryBoot";
 import Universum from "@/components/Universum";
 import "./globals.css";
@@ -76,6 +77,9 @@ export default function RootLayout({
             <CookieConsent />
             <MetaPixel />
             <GoogleAnalytics />
+            {/* Cookiefreie Besucherzählung: kein Cookie, nichts im Browser
+                gespeichert, deshalb unabhängig vom Banner. */}
+            <VisitorCounter />
             {/* Innerhalb des LanguageProvider, weil die Sprache mitgegeben wird. */}
             <Universum />
           </CartProvider>
