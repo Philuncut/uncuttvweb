@@ -500,8 +500,6 @@ export default function Navbar() {
             )}
             {!session?.isWholesale && (
               <>
-                <NavLink href="/blog">{t("BLOG")}</NavLink>
-                <Divider />
                 <NavLink href="/about">{t("ABOUT")}</NavLink>
                 <Divider />
               </>
@@ -930,22 +928,6 @@ export default function Navbar() {
 
           {!session?.isWholesale && (
             <>
-              <a
-                href="/blog"
-                className="menu-link menu-main-link"
-                style={{
-                  color: "white",
-                  fontSize: "2.2rem",
-                  fontWeight: "bold",
-                  textDecoration: "none",
-                  letterSpacing: "0.15em",
-                  textTransform: "uppercase",
-                  padding: "12px 32px",
-                  animationDelay: "0.32s",
-                }}
-              >
-                {t("BLOG")}
-              </a>
               <a
                 href="/about"
                 className="menu-link menu-main-link"

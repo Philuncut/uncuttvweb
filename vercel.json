@@ -9,14 +9,6 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cron/sync-youtube-videos",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/sync-vimeo-videos",
-      "schedule": "0 3 * * *"
-    },
-    {
       "path": "/api/cron/resend-pending-invoices",
       "schedule": "*/5 * * * *"
     }

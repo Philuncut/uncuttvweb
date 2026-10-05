@@ -18,7 +18,6 @@ const STATIC_PAGES: Array<{
   // Die Weiche: Ziel der Umleitung von /, seit dem Launch indexierbar.
   { path: "/start", priority: 1.0, changeFrequency: "weekly" },
   { path: "/shop", priority: 1.0, changeFrequency: "weekly" },
-  { path: "/blog", priority: 0.7, changeFrequency: "weekly" },
   { path: "/about", priority: 0.3, changeFrequency: "monthly" },
   { path: "/impressum", priority: 0.3, changeFrequency: "monthly" },
   { path: "/datenschutz", priority: 0.3, changeFrequency: "monthly" },

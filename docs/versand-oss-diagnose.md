@@ -292,10 +292,10 @@ Weitere Fundstellen:
   ([src/lib/notify-wholesale-order.ts:98–110](../src/lib/notify-wholesale-order.ts)), Texte
   „Steuerschuldnerschaft des Leistungsempfängers gem. Art. 196 MwStSystRL" (Zeile 207–211, 361–364),
   Banner „Wholesale EU — ausgewiesene MwSt (Zielland)" (Zeile 285–303).
-- Abandoned-Cart-, Wholesale-Reminder-, YouTube-Coupon- und Newsletter-Mails: **kein Empfängerland**,
+- Abandoned-Cart-, Wholesale-Reminder- und Newsletter-Mails: **kein Empfängerland**,
   nur statischer Absender „6094 Axams · Austria" + `ATU 81526957`
   (abandoned-cart-templates.ts:147–148; wholesale-reminder-templates.ts:92–93;
-  youtube-coupon-mail-template.ts:78; newsletter/subscribe/route.ts:70).
+  newsletter/subscribe/route.ts:70).
 - Meta CAPI erhält das Land (gehasht) aus Checkout und Woo-Order
   ([src/lib/meta-capi.ts:66](../src/lib/meta-capi.ts), meta-capi-purchase.ts:91–102,
   CheckoutForm.tsx:1291) — rein Marketing, keine Steuerwirkung.

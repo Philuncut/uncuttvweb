@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import VideoUtmCapture from "@/components/blog/VideoUtmCapture";
+import VideoUtmCapture from "@/components/VideoUtmCapture";
 import { wooFetch } from "@/lib/woocommerce";
 import type { WooProduct } from "@/lib/types";
 import {

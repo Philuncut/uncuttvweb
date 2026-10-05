@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Caveat } from "next/font/google";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
-import SectionHeader from "@/components/blog/SectionHeader";
+import SectionHeader from "@/components/about/SectionHeader";
 import { useFadeInOnScroll } from "@/hooks/useFadeInOnScroll";
 import type { WooProduct } from "@/lib/types";
 import { trackLead } from "@/lib/meta-pixel";

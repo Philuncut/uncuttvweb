@@ -57,7 +57,6 @@ const wordpressMigrationRedirects: RedirectRule[] = [
   ...redirectBoth("/profil", "/konto"),
   ...redirectBoth("/ueber-uns", "/about"),
   ...redirectBoth("/archiv", "/shop"),
-  redirectTrailingOnly("/blog", "/blog"),
 
   // --- Section 2: product categories → /shop ---
   {
@@ -83,15 +82,28 @@ const wordpressMigrationRedirects: RedirectRule[] = [
     permanent: true,
   },
 
-  // --- Section 3: blog categories → /blog ---
+  // --- Section 3: Videoblog und seine Kategorien ---
+  // Den Videoblog gibt es seit Oktober 2026 nicht mehr; Videos liegen auf
+  // UncutTV Social. Die alten Adressen leiten dauerhaft (308) dorthin um,
+  // damit Lesezeichen und Suchtreffer nicht ins Leere laufen.
+  {
+    source: "/blog",
+    destination: "https://tv.uncuttv.at",
+    permanent: true,
+  },
+  {
+    source: "/blog/:path*",
+    destination: "https://tv.uncuttv.at",
+    permanent: true,
+  },
   {
     source: "/category/:slug",
-    destination: "/blog",
+    destination: "https://tv.uncuttv.at",
     permanent: true,
   },
   {
     source: "/category/:slug/",
-    destination: "/blog",
+    destination: "https://tv.uncuttv.at",
     permanent: true,
   },
 
