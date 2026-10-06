@@ -125,6 +125,18 @@ export default function DatenschutzPage() {
               zu neuen Produkten, Angeboten und Neuigkeiten. Sie können sich
               jederzeit über den Abmeldelink in jeder E-Mail abmelden.
             </p>
+            {/* ENTWURF -- ANWALT: Absatz zum Double-Opt-in neu (6. Oktober 2026). Derselbe Newsletter laeuft auf uncuttv.app und UncutTV Social; Versand ueber Ghost. */}
+            <p className="mt-2">
+              Wir verwenden das Double-Opt-in-Verfahren: Nach der Eingabe Ihrer
+              Adresse erhalten Sie eine E-Mail mit einem Bestätigungslink. Erst
+              wenn Sie diesen Link anklicken, wird Ihre Adresse in den
+              Verteiler aufgenommen; ohne Bestätigung wird nichts gespeichert
+              und kein Newsletter verschickt. Zum Nachweis der Einwilligung
+              protokollieren wir den Zeitpunkt der Anmeldung und der
+              Bestätigung. Den Versand übernimmt Ghost (Ghost Foundation,
+              Singapur); die Übermittlung erfolgt auf Grundlage der
+              Standardvertragsklauseln der EU-Kommission.
+            </p>
             <p className="mt-2">
               Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO (Einwilligung).
             </p>

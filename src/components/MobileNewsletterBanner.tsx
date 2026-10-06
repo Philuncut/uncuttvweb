@@ -124,7 +124,7 @@ export default function MobileNewsletterBanner() {
     }
 
     function showSuccess() {
-      formEl.innerHTML = '<div style="border:1px solid #222;background:#111;padding:10px 12px;"><p style="font-size:12px;line-height:1.5;color:white;margin:0;"><span style="font-weight:bold;color:#c0392b;">Danke!</span> Dein Rabattcode <span style="font-weight:bold;color:#c0392b;">WELCOME10</span> kommt per E-Mail.</p></div>';
+      formEl.innerHTML = '<div style="border:1px solid #222;background:#111;padding:10px 12px;"><p style="font-size:12px;line-height:1.5;color:white;margin:0;"><span style="font-weight:bold;color:#c0392b;">Fast geschafft!</span> Bitte bestätige die Anmeldung in der Mail, die wir dir gerade geschickt haben. Danach kommt dein Rabattcode.</p></div>';
       formWrap.style.maxHeight = '120px';
       toggle.style.display = 'none';
     }

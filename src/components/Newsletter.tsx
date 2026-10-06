@@ -9,6 +9,8 @@ type NewsletterStatus = "idle" | "success" | "already" | "error";
 
 export default function Newsletter() {
   const [email, setEmail] = useState("");
+  // Honeypot: unsichtbares Feld, das nur Bots ausfuellen (siehe Formular).
+  const [website, setWebsite] = useState("");
   const [status, setStatus] = useState<NewsletterStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,7 +50,7 @@ export default function Newsletter() {
         const res = await fetch("/api/newsletter/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, website }),
         });
 
         let data: {
@@ -96,7 +98,7 @@ export default function Newsletter() {
         setLoading(false);
       }
     },
-    [email, language]
+    [email, website, language]
   );
 
   const renderRightColumn = () => {
@@ -124,6 +126,21 @@ export default function Newsletter() {
               }
               className="w-full border border-[#333] bg-[#111] px-4 py-4 text-sm text-white placeholder:text-[#555] outline-none focus:border-[#c0392b]"
             />
+            <div
+              aria-hidden="true"
+              className="absolute -left-[9999px] h-px w-px overflow-hidden"
+            >
+              <label htmlFor="newsletter-website">Website</label>
+              <input
+                id="newsletter-website"
+                type="text"
+                name="website"
+                tabIndex={-1}
+                autoComplete="off"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+              />
+            </div>
             <button
               type="submit"
               disabled={loading}
@@ -142,23 +159,17 @@ export default function Newsletter() {
         return (
           <div className="text-center lg:text-left">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/50">
-              {language === "en"
-                ? "YOUR DISCOUNT CODE:"
-                : "DEIN RABATTCODE:"}
+              {language === "en" ? "ALMOST THERE" : "FAST GESCHAFFT"}
             </p>
-            <p
-              className="mt-3 text-4xl font-black tracking-widest text-[#c0392b]"
-              style={{
-                textShadow:
-                  "0 0 20px rgba(192,57,43,0.6), 0 0 40px rgba(192,57,43,0.3)",
-              }}
-            >
-              WELCOME10
+            <p className="mt-3 text-base leading-relaxed text-white">
+              {language === "en"
+                ? "Please confirm your subscription in the email we have just sent you."
+                : "Bitte bestätige die Anmeldung in der Mail, die wir dir gerade geschickt haben."}
             </p>
             <p className="mt-4 text-sm text-white/40">
               {language === "en"
-                ? "Check your email"
-                : "Schau in dein Postfach"}
+                ? "Your discount code follows right after you confirm."
+                : "Dein Rabattcode kommt direkt nach der Bestätigung."}
             </p>
           </div>
         );
@@ -229,8 +240,8 @@ export default function Newsletter() {
             </p>
             <p className="mt-4 text-sm leading-relaxed text-white/50">
               {language === "en"
-                ? "Sign up for our newsletter and instantly receive your personal discount code."
-                : "Melde dich für unseren Newsletter an und erhalte sofort deinen persönlichen Rabattcode."}
+                ? "Sign up for our newsletter, confirm the email we send you, and your discount code is on its way."
+                : "Melde dich für unseren Newsletter an, bestätige die Mail von uns, und dein Rabattcode ist unterwegs."}
             </p>
             <p className="mt-3 text-[11px] text-white/20">
               {language === "en"

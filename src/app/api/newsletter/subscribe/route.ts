@@ -1,27 +1,49 @@
 import { NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
 import { getCartPersistAuth } from "@/lib/cart-persist-auth";
+import { requestNewsletterSignup } from "@/lib/newsletter";
 import { setNewsletterSubscribedCustomerMeta } from "@/lib/newsletter-customer-meta";
 
-const GHOST_API_URL = process.env.GHOST_API_URL;
-const GHOST_ADMIN_API_KEY = process.env.GHOST_ADMIN_API_KEY;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
+/**
+ * POST /api/newsletter/subscribe -- Body {"email", "website"}.
+ *
+ * Löst bei Ghost die Bestätigungsmail aus (Double-Opt-in, lib/newsletter.ts).
+ * Legt kein Mitglied mehr an und verschickt keine Willkommensmail; beides
+ * passiert erst nach dem Klick auf den Bestätigungslink (Ghost bzw.
+ * api/newsletter/ghost-webhook).
+ *
+ * Antwort: { success: true, pending: true } heißt "Bestätigungsmail ist
+ * unterwegs". Die Aufrufer (Newsletter-Block, Handy-Banner, Warenkorb,
+ * Kasse) lesen weiterhin "success". { success: false, error } sonst.
+ * alreadySubscribed gibt es nicht mehr: für eine schon eingetragene Adresse
+ * schickt Ghost eine Anmeldelink-Mail, ohne das zu verraten.
+ *
+ * "website" ist das Honeypot-Feld: unsichtbar im Formular, Menschen lassen
+ * es leer. Steht etwas drin, tun wir so, als wäre alles gut, und rufen
+ * Ghost gar nicht erst.
+ *
+ * Grenze je IP: ein kleiner Zähler im Speicher der Instanz.
+ */
+const LIMIT = 5;
+const WINDOW_MS = 10 * 60_000;
+const counts = new Map<string, { n: number; until: number }>();
 
-function createGhostToken(): string | null {
-  if (!GHOST_ADMIN_API_KEY) return null;
-  const parts = GHOST_ADMIN_API_KEY.split(":");
-  const id = parts.length >= 3 ? parts[parts.length - 2] : parts[0];
-  const secret = parts[parts.length - 1];
-  if (!id || !secret) return null;
-
-  const iat = Math.floor(Date.now() / 1000);
-  return jwt.sign(
-    { iat, exp: iat + 5 * 60, aud: "/admin/" },
-    Buffer.from(secret, "hex"),
-    { algorithm: "HS256", header: { alg: "HS256", kid: id, typ: "JWT" } }
-  );
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = counts.get(ip);
+  if (!entry || entry.until < now) {
+    counts.set(ip, { n: 1, until: now + WINDOW_MS });
+    return false;
+  }
+  entry.n += 1;
+  return entry.n > LIMIT;
 }
 
+/**
+ * Angemeldete Kunden: Vermerk am WooCommerce-Konto, damit der Shop den
+ * Newsletter-Hinweis nicht mehr zeigt. Er wird wie bisher beim Absenden
+ * gesetzt, nicht erst nach der Bestätigung: der Webhook kennt nur die
+ * Ghost-Adresse und kein WooCommerce-Konto.
+ */
 async function markNewsletterSubscribedForLoggedInCustomer(): Promise<void> {
   try {
     const auth = await getCartPersistAuth();
@@ -32,144 +54,44 @@ async function markNewsletterSubscribedForLoggedInCustomer(): Promise<void> {
   }
 }
 
-async function sendWelcomeEmail(email: string) {
-  if (!RESEND_API_KEY || RESEND_API_KEY === "your_resend_api_key") return;
-
-  const html = `
-    <div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#0a0a0a;color:#fff;padding:40px 32px;">
-      <h1 style="font-size:28px;font-weight:900;letter-spacing:0.05em;margin:0;">
-        <span style="color:#fff;">UNCUT</span><span style="color:#c0392b;">TV</span>
-      </h1>
-      <p style="color:#888;font-size:14px;margin-top:8px;">Europas kompromissloseste Horror-Plattform.</p>
-
-      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
-
-      <p style="font-size:16px;line-height:1.6;color:#ccc;">
-        Danke für deine Anmeldung zum UncutTV Newsletter!
-        Hier ist dein Rabattcode für <strong style="color:#fff;">10% auf deine erste Bestellung</strong>:
-      </p>
-
-      <div style="margin:32px 0;text-align:center;padding:24px;border:2px solid #c0392b;background:#111;">
-        <p style="font-size:12px;color:#888;margin:0 0 8px 0;text-transform:uppercase;letter-spacing:0.15em;">Dein Rabattcode</p>
-        <p style="font-size:32px;font-weight:900;color:#c0392b;margin:0;letter-spacing:0.1em;">WELCOME10</p>
-        <p style="font-size:11px;color:#555;margin:8px 0 0;">Einmal pro Kunde gültig · Beim Checkout einlösbar auf uncuttv.at</p>
-      </div>
-
-      <p style="font-size:14px;line-height:1.6;color:#888;">
-        Gib den Code beim Checkout ein und spare sofort 10%.
-      </p>
-
-      <a href="https://uncuttv.at/shop"
-         style="display:block;margin:32px 0 16px;padding:14px 24px;background:#c0392b;color:#fff;text-align:center;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:0.1em;">
-        JETZT STÖBERN →
-      </a>
-
-      <hr style="border:none;border-top:1px solid #222;margin:24px 0;" />
-
-      <p style="font-size:11px;color:#555;line-height:1.5;">
-        UncutTV GmbH · Kalchgruben 4/11 · 6094 Axams · Österreich<br/>
-        Du erhältst diese E-Mail, weil du dich für den UncutTV Newsletter angemeldet hast.
-      </p>
-    </div>
-  `;
-
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "UncutTV <office@uncuttv.at>",
-        to: [email],
-        subject: "Dein 10% Rabattcode für UncutTV",
-        html,
-      }),
-    });
-
-    if (res.ok) {
-      console.log("[Newsletter] Welcome email sent to:", email);
-    } else {
-      const err = await res.text();
-      console.error("[Newsletter] Resend error:", res.status, err.slice(0, 200));
-    }
-  } catch (err) {
-    console.error("[Newsletter] Failed to send welcome email:", err);
-  }
-}
-
 export async function POST(request: Request) {
   try {
-    const { email } = (await request.json()) as { email: string };
+    const ip = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || null;
+    if (rateLimited(ip ?? "unbekannt")) {
+      return NextResponse.json(
+        { success: false, error: "Zu viele Versuche. Bitte später noch einmal." },
+        { status: 429 }
+      );
+    }
 
-    if (!email || !email.includes("@")) {
+    const body = (await request.json().catch(() => null)) as {
+      email?: unknown;
+      website?: unknown;
+    } | null;
+
+    if (typeof body?.website === "string" && body.website.trim() !== "") {
+      return NextResponse.json({ success: true, pending: true });
+    }
+
+    const outcome = await requestNewsletterSignup(body?.email, ip);
+
+    if (outcome === "sent") {
+      await markNewsletterSubscribedForLoggedInCustomer();
+      return NextResponse.json({ success: true, pending: true });
+    }
+    if (outcome === "invalid") {
       return NextResponse.json(
         { success: false, error: "Ungültige E-Mail-Adresse." },
         { status: 400 }
       );
     }
-
-    if (!(GHOST_API_URL && GHOST_ADMIN_API_KEY)) {
-      console.log("[Newsletter] Ghost not configured, treating as success:", email);
-      await sendWelcomeEmail(email);
-      await markNewsletterSubscribedForLoggedInCustomer();
-      return NextResponse.json({ success: true });
+    if (outcome === "not_configured") {
+      console.error("[Newsletter] GHOST_API_URL fehlt");
     }
-
-    const token = createGhostToken();
-    if (!token) {
-      console.error("[Newsletter] Could not create Ghost admin token.");
-      return NextResponse.json({
-        success: false,
-        error: "Anmeldung fehlgeschlagen.",
-      });
-    }
-
-    const res = await fetch(`${GHOST_API_URL}/ghost/api/admin/members/`, {
-      method: "POST",
-      headers: {
-        Authorization: `Ghost ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        members: [
-          {
-            email,
-            subscribed: true,
-            labels: [{ name: "shop-subscriber" }],
-          },
-        ],
-      }),
-    });
-
-    if (res.ok) {
-      console.log("[Newsletter] New subscriber:", email);
-      await sendWelcomeEmail(email);
-      await markNewsletterSubscribedForLoggedInCustomer();
-      return NextResponse.json({ success: true });
-    }
-
-    if (res.status === 409 || res.status === 422) {
-      console.log("[Newsletter] Already subscribed:", email);
-      await markNewsletterSubscribedForLoggedInCustomer();
-      return NextResponse.json({
-        success: false,
-        alreadySubscribed: true,
-        error: "Du bist bereits angemeldet.",
-      });
-    }
-
-    const errSnippet = await res.text();
-    console.error(
-      "[Newsletter] Ghost member create failed:",
-      res.status,
-      errSnippet.slice(0, 200)
+    return NextResponse.json(
+      { success: false, error: "Anmeldung fehlgeschlagen." },
+      { status: 503 }
     );
-    return NextResponse.json({
-      success: false,
-      error: "Anmeldung fehlgeschlagen.",
-    });
   } catch (error) {
     console.error("[Newsletter] Error:", error);
     return NextResponse.json(
