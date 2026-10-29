@@ -34,7 +34,8 @@ export default function NavigationProgress() {
     <div
       style={{
         position: "fixed",
-        top: 0,
+        // Unter der Leiste des Verbunds (--universe-bar-height, ohne Leiste 0).
+        top: "var(--universe-bar-height, 0px)",
         left: 0,
         height: "3px",
         width: `${width}%`,

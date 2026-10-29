@@ -474,7 +474,10 @@ export default function ShopContent({
       <div
         ref={filterBarRef}
         id="shop-filter-bar"
-        className="relative sticky top-[60px] z-30 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-sm"
+        className="relative sticky z-30 border-b border-[#1a1a1a] bg-[#0a0a0a]/95 backdrop-blur-sm"
+        // Unter der festen Navbar (60 px), die ihrerseits unter der Leiste
+        // des Verbunds sitzt (--universe-bar-height, ohne Leiste 0).
+        style={{ top: "calc(60px + var(--universe-bar-height, 0px))" }}
       >
         {/* Right fade to indicate scrollability */}
         <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-16 bg-gradient-to-l from-[#0a0a0a] to-transparent" />

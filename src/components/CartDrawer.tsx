@@ -214,30 +214,27 @@ export default function CartDrawer() {
 
   return (
     <>
-      {/* data-uv-no-swipe: Im offenen Warenkorb wird nicht zum Nachbar-Auftritt
-          gewischt (@philuncut/universe). Der Übergang verschiebt body per
-          transform, damit wird body zum Bezugsrahmen für fixed — Backdrop und
-          Panel wanderten sonst mit der ganzen Seite mit, und ein Wisch quer
-          über die Positionen soll den Shop nicht verlassen. Geschlossen ist
-          das Attribut wirkungslos: der Backdrop nimmt keine Zeiger an, das
-          Panel steht außerhalb des Bildes. */}
+      {/* Backdrop und Schublade beginnen unter der Leiste des Verbunds
+          (@philuncut/universe, --universe-bar-height): die Leiste bleibt
+          sichtbar und bedienbar, auch bei offenem Warenkorb. Ohne Leiste
+          ist der Wert 0. */}
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-50 bg-black/70 transition-opacity duration-300 ${
+        className={`fixed inset-x-0 bottom-0 z-50 bg-black/70 transition-opacity duration-300 ${
           drawerOpen
             ? "pointer-events-auto opacity-100"
             : "pointer-events-none opacity-0"
         }`}
+        style={{ top: "var(--universe-bar-height, 0px)" }}
         onClick={closeDrawer}
-        data-uv-no-swipe
       />
 
       {/* Drawer panel */}
       <div
-        className={`fixed top-0 right-0 z-50 flex h-full w-full flex-col bg-[#111] transition-transform duration-300 ease-in-out sm:w-[420px] ${
+        className={`fixed right-0 z-50 flex w-full flex-col bg-[#111] transition-transform duration-300 ease-in-out sm:w-[420px] ${
           drawerOpen ? "translate-x-0" : "translate-x-full"
         }`}
-        data-uv-no-swipe
+        style={{ top: "var(--universe-bar-height, 0px)", height: "calc(100% - var(--universe-bar-height, 0px))" }}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#222] px-6 py-4">

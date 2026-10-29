@@ -80,7 +80,8 @@ export default function RootLayout({
             {/* Cookiefreie Besucherzählung: kein Cookie, nichts im Browser
                 gespeichert, deshalb unabhängig vom Banner. */}
             <VisitorCounter />
-            {/* Innerhalb des LanguageProvider, weil die Sprache mitgegeben wird. */}
+            {/* Die Leiste des Verbunds (Streaming | Shop | Social) ganz oben.
+                Innerhalb des LanguageProvider, weil die Sprache mitgegeben wird. */}
             <Universum />
           </CartProvider>
         </LanguageProvider>

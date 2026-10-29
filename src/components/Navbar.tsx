@@ -154,21 +154,17 @@ function MobileOverlayMenu({
 
   if (!mounted) return null;
 
-  // data-uv-no-swipe: Im offenen Menü wird nicht zum Nachbar-Auftritt
-  // gewischt (@philuncut/universe). Das Menü wandert beim Wischen sonst mit
-  // der ganzen Seite mit, weil body per transform verschoben wird und damit
-  // zum Bezugsrahmen für fixed wird — ein Wisch quer über die Liste soll das
-  // Menü nicht verlassen, sondern höchstens schließen.
+  // Beginnt unter der Leiste des Verbunds (@philuncut/universe,
+  // --universe-bar-height); ohne Leiste ist der Wert 0.
   return (
     <div
       className="md:hidden"
-      data-uv-no-swipe
       style={{
         position: "fixed",
-        top: 0,
+        top: "var(--universe-bar-height, 0px)",
         left: 0,
         width: "100vw",
-        height: "100vh",
+        height: "calc(100vh - var(--universe-bar-height, 0px))",
         backgroundColor: "#0a0a0a",
         zIndex: 9999,
         transform: open ? "translateY(0)" : "translateY(-100%)",
@@ -458,7 +454,9 @@ export default function Navbar() {
         className="flex w-full items-center justify-between px-6"
         style={{
           position: "fixed",
-          top: 0,
+          // Direkt unter der Leiste des Verbunds (@philuncut/universe);
+          // ohne Leiste (Schalter aus, Weiche) ist der Wert 0.
+          top: "var(--universe-bar-height, 0px)",
           left: 0,
           right: 0,
           zIndex: 10001,
@@ -747,19 +745,16 @@ export default function Navbar() {
         }}
       />
 
-      {/* Fullscreen mobile menu overlay — left-aligned cinematic style */}
-      {/* data-uv-no-swipe: Im offenen Menü wird nicht zum Nachbar-Auftritt
-          gewischt (@philuncut/universe), siehe MobileOverlayMenu. Geschlossen
-          (display: none) nimmt das Element ohnehin keine Gesten an. */}
+      {/* Fullscreen mobile menu overlay — left-aligned cinematic style.
+          Beginnt unter der Leiste des Verbunds (--universe-bar-height). */}
       <div
         id="mobile-menu"
-        data-uv-no-swipe
         style={{
           position: "fixed",
-          top: 0,
+          top: "var(--universe-bar-height, 0px)",
           left: 0,
           width: "100vw",
-          height: "100vh",
+          height: "calc(100vh - var(--universe-bar-height, 0px))",
           backgroundColor: "#0a0a0a",
           zIndex: 100000,
           display: "none",

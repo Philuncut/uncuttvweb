@@ -13,7 +13,7 @@
   "dependencies": {
     "@next/third-parties": "^16.2.6",
     "@paypal/react-paypal-js": "^9.1.0",
-    "@philuncut/universe": "^0.3.0",
+    "@philuncut/universe": "^0.6.0",
     "@stripe/react-stripe-js": "^6.4.0",
     "@stripe/stripe-js": "^9.6.0",
     "@supabase/supabase-js": "^2.105.4",
