@@ -41,6 +41,21 @@ import {
   type StoredCheckoutSyncPayload,
 } from "@/lib/checkout-order-extras";
 import {
+  holeOderErzeugeCheckoutKey,
+  leseOffeneBestellung,
+  loescheCheckoutKey,
+  merkeOffeneBestellung,
+} from "@/lib/checkout-session-key";
+
+/**
+ * Ergebnis von /api/checkout/prepare-order: Die Woo-Bestellung existiert als
+ * "pending" (oder war schon bezahlt). Erst danach darf die Zahlung bei
+ * Stripe bestaetigt werden; "processing" setzt spaeter nur der Server.
+ */
+type PrepareOrderResult =
+  | { ok: true; paid: boolean }
+  | { ok: false; message: string };
+import {
   clearMarketingUtmStorage,
   marketingUtmRequestField,
 } from "@/lib/marketing-utm";
@@ -54,20 +69,9 @@ import { getWorldCountriesForDropdown } from "@/lib/world-countries";
 import { FreeShippingTrigger } from "@/components/FreeShippingTrigger";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT, formatTranslation } from "@/lib/translations";
-import {
-  extractPayPalCaptureAmount,
-  extractPayPalCaptureId,
-  extractPayPalOrderId,
-  isValidCheckoutEmail,
-  resolvePayPalCheckoutEmail,
-} from "@/lib/paypal-capture";
-import {
-  reportPayPalOrphanAlert,
-  reportPayPalOrphanAlertBestEffort,
-} from "@/lib/paypal-orphan-alert-client";
+import { isValidCheckoutEmail } from "@/lib/paypal-capture";
 import {
   clearPayPalRecoveryRecord,
-  markPayPalRecoveryAlertSent,
   savePayPalRecoveryRecord,
 } from "@/lib/paypal-recovery-storage";
 import PreOrderMixedShippingBanner from "@/components/PreOrderMixedShippingBanner";
@@ -905,11 +909,19 @@ type CheckoutCustomerSnapshot = {
   state: string;
 };
 
+/**
+ * PayPal-Buttons. Seit Oktober 2026 legt der SERVER die PayPal-Order an
+ * (/api/paypal/create-order, Betrag aus der Woo-Bestellung) und fuehrt die
+ * Capture aus (/api/paypal/capture-order). Der im Browser gerechnete Betrag
+ * dient nur noch der Ratenzahlungs-Anzeige (PayPalMessages). Vorher lief
+ * beides im Browser; der Server konnte weder Betrag noch Zahlung pruefen.
+ */
 function PayPalButtonWrapper({
   totalPrice,
   couponDiscount,
   shippingAmount,
   resolvedOrderTotalEuro,
+  onCreateOrder,
   onApprove,
   onError,
   disabled,
@@ -921,14 +933,18 @@ function PayPalButtonWrapper({
   shippingAmount: number;
   /** Wenn gesetzt (z. B. Wholesale AT netto→brutto), dieser Betrag statt totalPrice + Versand + Gutschein. */
   resolvedOrderTotalEuro?: number | null;
-  onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
+  /** Legt Woo-Bestellung und PayPal-Order serverseitig an; liefert die PayPal-Order-ID. */
+  onCreateOrder: () => Promise<string>;
+  onApprove: (
+    data: { orderID: string },
+    actions: { restart?: () => void | Promise<void> }
+  ) => Promise<void>;
   onError: () => void;
   disabled?: boolean;
   /** Wholesale: block PayPal order creation until company + UID format are valid. */
   onBeforePayPalCreateOrder?: () => Promise<void>;
 }) {
   const { language } = useLanguage();
-  const t = useMemo(() => createT(language), [language]);
 
   const paypalScriptOptions = useMemo(
     () => ({
@@ -965,27 +981,13 @@ function PayPalButtonWrapper({
   ];
 
   // Memoize createOrder so PayPal doesn't reinitialize
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createOrder = useCallback(
-    async (_data: any, actions: any) => {
-      if (onBeforePayPalCreateOrder) {
-        await onBeforePayPalCreateOrder();
-      }
-      return await actions.order.create({
-        intent: "CAPTURE",
-        purchase_units: [
-          {
-            amount: {
-              currency_code: "EUR",
-              value: paypalOrderTotalEuro.toFixed(2),
-            },
-            description: t("CHECKOUT_PAYPAL_ORDER_DESCRIPTION"),
-          },
-        ],
-      });
-    },
-    [paypalOrderTotalEuro, onBeforePayPalCreateOrder, t]
-  );
+  const createOrder = useCallback(async () => {
+    if (onBeforePayPalCreateOrder) {
+      await onBeforePayPalCreateOrder();
+    }
+    // Serverseitig: Woo-Bestellung (pending) + PayPal-Order mit deren Betrag.
+    return await onCreateOrder();
+  }, [onBeforePayPalCreateOrder, onCreateOrder]);
 
   const paypalButtonStyle = {
     shape: "rect" as const,
@@ -1073,6 +1075,8 @@ type StripeClientSecretPaymentProps = {
   validateBeforeWalletPay: () => string | null;
   runWholesalePiPreflight: (piId: string | null) => Promise<boolean>;
   buildWalletSyncPayload: (piId: string) => StoredCheckoutSyncPayload;
+  /** Legt die Woo-Bestellung vor der Wallet-Zahlung als pending an. */
+  prepareOrder: (piId: string) => Promise<PrepareOrderResult>;
   t: (key: string) => string;
 };
 
@@ -1089,6 +1093,7 @@ const StripeClientSecretPayment = forwardRef<
     validateBeforeWalletPay,
     runWholesalePiPreflight,
     buildWalletSyncPayload,
+    prepareOrder,
     t,
   },
   ref
@@ -1172,6 +1177,18 @@ const StripeClientSecretPayment = forwardRef<
       }
 
       if (piId) {
+        // Bestellung VOR der Zahlung anlegen; der Webhook setzt sie auf bezahlt.
+        const vorbereitet = await prepareOrder(piId);
+        if (!vorbereitet.ok) {
+          onExpressError(vorbereitet.message);
+          event.paymentFailed?.({ reason: "fail", message: vorbereitet.message });
+          onExpressProcessing(false);
+          return;
+        }
+        if (vorbereitet.paid) {
+          onExpressSuccess(piId);
+          return;
+        }
         persistCheckoutSyncPayload(piId, buildWalletSyncPayload(piId));
       }
 
@@ -1208,6 +1225,7 @@ const StripeClientSecretPayment = forwardRef<
       validateBeforeWalletPay,
       runWholesalePiPreflight,
       buildWalletSyncPayload,
+      prepareOrder,
       onExpressProcessing,
       onExpressError,
       onExpressSuccess,
@@ -2012,9 +2030,15 @@ function CheckoutInner() {
         ? "/api/update-payment-intent"
         : "/api/create-payment-intent";
       const seq = ++piUpdateSeqRef.current;
+      // checkoutKey: Stripe-Idempotency-Key, damit ein doppelter Aufruf
+      // denselben PaymentIntent liefert (checkout-session-key.ts).
       const payload = useUpdate
         ? { ...paymentIntentRequestBody, paymentIntentId: piId, piUpdateSeq: seq }
-        : { ...paymentIntentRequestBody, piUpdateSeq: seq };
+        : {
+            ...paymentIntentRequestBody,
+            piUpdateSeq: seq,
+            checkoutKey: holeOderErzeugeCheckoutKey(),
+          };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -2309,11 +2333,77 @@ function CheckoutInner() {
     ]
   );
 
+  /**
+   * Woo-Bestellung VOR der Zahlung als pending anlegen (oder die offene
+   * Bestellung dieser Sitzung wiederverwenden). Liefert paid=true, wenn zu
+   * diesem PaymentIntent schon bezahlt wurde (Doppelklick nach Erfolg).
+   */
+  const prepareWooOrder = useCallback(
+    async (piId: string): Promise<PrepareOrderResult> => {
+      try {
+        const res = await fetch("/api/checkout/prepare-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentIntentId: piId,
+            checkoutKey: holeOderErzeugeCheckoutKey(),
+            orderIdHint: leseOffeneBestellung(),
+            customer: customerData,
+            items: cartMeta,
+            ...buildCheckoutOrderExtras(company, vat),
+            ...buildCheckoutShippingBody(checkoutShippingForWoo),
+            ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+            ...(isWholesale ? { isWholesale: true } : {}),
+            ...videoUtmRequestField(),
+            ...marketingUtmRequestField(),
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          orderId?: number;
+          state?: string;
+          error?: string;
+        };
+        if (!res.ok) {
+          console.error("[checkout] prepare-order failed", {
+            status: res.status,
+            pi: piId,
+            error: data.error,
+          });
+          return {
+            ok: false,
+            message: resolveCheckoutApiError(
+              data.error,
+              t,
+              "CHECKOUT_ERROR_ORDER_PREPARE_FAILED"
+            ),
+          };
+        }
+        if (typeof data.orderId === "number") merkeOffeneBestellung(data.orderId);
+        return { ok: true, paid: data.state === "paid" };
+      } catch {
+        return { ok: false, message: t("CHECKOUT_ERROR_CONNECTION") };
+      }
+    },
+    [
+      customerData,
+      cartMeta,
+      company,
+      vat,
+      checkoutShippingForWoo,
+      wholesaleReverseCharge,
+      isWholesale,
+      t,
+    ]
+  );
+
   const handleExpressSuccess = useCallback(
     async (paymentIntentId: string) => {
+      // Abgleich fuer die Erfolgsseite; verbindlich bezahlt setzt der Webhook.
       try {
         const syncBody = {
           paymentIntentId,
+          checkoutKey: holeOderErzeugeCheckoutKey(),
+          orderIdHint: leseOffeneBestellung(),
           customer: customerData,
           items: cartMeta,
           ...buildCheckoutOrderExtras(company, vat),
@@ -2335,6 +2425,7 @@ function CheckoutInner() {
       clearCart();
       clearVideoUtmStorage();
       clearMarketingUtmStorage();
+      loescheCheckoutKey();
       router.push("/bestellung/erfolg?payment_intent=" + paymentIntentId);
     },
     [
@@ -2416,6 +2507,28 @@ function CheckoutInner() {
           return;
         }
 
+        // Bestellung VOR der Kartenzahlung als pending anlegen. Auf
+        // "processing" setzt sie nur der Server nach gepruefter Zahlung.
+        if (!piId) {
+          setError(t("CHECKOUT_ERROR_PAYMENT_SETUP"));
+          setProcessing(false);
+          return;
+        }
+        const vorbereitet = await prepareWooOrder(piId);
+        if (!vorbereitet.ok) {
+          setError(vorbereitet.message);
+          setProcessing(false);
+          return;
+        }
+        if (vorbereitet.paid) {
+          clearCart();
+          clearVideoUtmStorage();
+          clearMarketingUtmStorage();
+          loescheCheckoutKey();
+          router.push("/bestellung/erfolg?payment_intent=" + piId);
+          return;
+        }
+
         const cardResult =
           await stripePiPaymentRef.current?.confirmCardPayment();
         if (!cardResult?.ok) {
@@ -2443,6 +2556,8 @@ function CheckoutInner() {
 
         const syncBody = {
           paymentIntentId: paidPiId,
+          checkoutKey: holeOderErzeugeCheckoutKey(),
+          orderIdHint: leseOffeneBestellung(),
           customer: customerData,
           ...buildCheckoutOrderExtras(company, vat),
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
@@ -2453,46 +2568,33 @@ function CheckoutInner() {
           items: cartMeta,
         };
 
+        // Abgleich, damit die Erfolgsseite die bezahlte Bestellung sofort
+        // zeigt. Schlaegt er fehl, ist das kein Fehler fuer den Kunden: Die
+        // Bestellung existiert bereits, und der Stripe-Webhook setzt sie auf
+        // bezahlt. Frueher blockierte ein Fehler hier die Erfolgsseite, und
+        // Wiederholungen legten neue Bestellungen an.
         try {
           const syncRes = await fetch("/api/sync-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(syncBody),
           });
-          const syncData = (await syncRes.json().catch(() => ({}))) as {
-            success?: boolean;
-            orderNumber?: string;
-            message?: string;
-            error?: string;
-          };
-
-          if (!syncRes.ok || !syncData.success) {
-            console.error("[checkout/card] sync-order failed", {
+          if (syncRes.ok) {
+            markCheckoutPiSynced(paidPiId);
+          } else {
+            console.warn("[checkout/card] sync-order nicht ok, Webhook uebernimmt", {
               status: syncRes.status,
               pi: paidPiId,
-              items: cartMeta.length,
-              error: syncData.message ?? syncData.error,
             });
-            setError(
-              `${t("CHECKOUT_ERROR_ORDER_SYNC_FAILED")} (${paidPiId})`
-            );
-            setProcessing(false);
-            return;
           }
-
-          markCheckoutPiSynced(paidPiId);
         } catch (syncErr) {
-          console.error("[checkout/card] sync-order error", paidPiId, syncErr);
-          setError(
-            `${t("CHECKOUT_ERROR_ORDER_SYNC_FAILED")} (${paidPiId})`
-          );
-          setProcessing(false);
-          return;
+          console.warn("[checkout/card] sync-order Netzfehler, Webhook uebernimmt", paidPiId, syncErr);
         }
 
         clearCart();
         clearVideoUtmStorage();
         clearMarketingUtmStorage();
+        loescheCheckoutKey();
         router.push("/bestellung/erfolg?payment_intent=" + paidPiId);
       } else if (paymentMethod === "bank") {
         try {
@@ -2591,20 +2693,41 @@ function CheckoutInner() {
           }
         }
 
-        if (piIdForStorage) {
-          persistCheckoutSyncPayload(piIdForStorage, {
-            ...customerData,
-            items: cartMeta,
-            ...buildCheckoutOrderExtras(company, vat),
-            ...(checkoutShippingForWoo
-              ? { checkoutShipping: checkoutShippingForWoo }
-              : {}),
-            isReverseCharge: wholesaleReverseCharge,
-            ...(isWholesale ? { isWholesale: true } : {}),
-            ...videoUtmRequestField(),
-            ...marketingUtmRequestField(),
-          });
+        if (!piIdForStorage) {
+          setError(t("CHECKOUT_ERROR_PAYMENT_SETUP"));
+          setProcessing(false);
+          return;
         }
+
+        // Bestellung VOR der Weiterleitung zu Klarna/EPS anlegen; nach der
+        // Rueckkehr findet die Erfolgsseite sie, den Status setzt der Webhook.
+        const vorbereitet = await prepareWooOrder(piIdForStorage);
+        if (!vorbereitet.ok) {
+          setError(vorbereitet.message);
+          setProcessing(false);
+          return;
+        }
+        if (vorbereitet.paid) {
+          clearCart();
+          clearVideoUtmStorage();
+          clearMarketingUtmStorage();
+          loescheCheckoutKey();
+          router.push("/bestellung/erfolg?payment_intent=" + piIdForStorage);
+          return;
+        }
+
+        persistCheckoutSyncPayload(piIdForStorage, {
+          ...customerData,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(company, vat),
+          ...(checkoutShippingForWoo
+            ? { checkoutShipping: checkoutShippingForWoo }
+            : {}),
+          isReverseCharge: wholesaleReverseCharge,
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+          ...marketingUtmRequestField(),
+        });
 
         const { error: confirmError } = await stripe.confirmPayment({
           clientSecret,
@@ -2652,133 +2775,193 @@ function CheckoutInner() {
       piCouponSynced,
       checkoutShippingForWoo,
       couponCode,
+      prepareWooOrder,
       t,
       language,
     ]
   );
 
   // PayPal handlers
+  //
+  // Neuer Ablauf (Oktober 2026): createOrder ruft den Server, der die Woo-
+  // Bestellung als pending anlegt und die PayPal-Order mit deren Betrag
+  // erzeugt. onApprove ruft den Server, der die Capture ausfuehrt, prueft und
+  // die Bestellung auf bezahlt setzt. Beide Aufrufe sind wiederholbar; der
+  // Wiederanlauf nach Verbindungsabbruch (PayPalRecoveryBoot) ruft nur noch
+  // capture-order und kann keine zweite Bestellung mehr erzeugen.
+  const handlePayPalCreateOrder = useCallback(async (): Promise<string> => {
+    setError("");
+    const snap = checkoutCustomerRef.current;
+    const pflicht = [
+      snap.email,
+      snap.firstName,
+      snap.lastName,
+      snap.street,
+      snap.zip,
+      snap.city,
+      snap.country,
+    ];
+    if (pflicht.some((v) => !v.trim()) || !isValidCheckoutEmail(snap.email)) {
+      const msg = t("CHECKOUT_PAYPAL_ADDRESS_INCOMPLETE");
+      setError(msg);
+      throw new Error(msg);
+    }
+    const customer = {
+      email: snap.email.trim(),
+      firstName: snap.firstName.trim(),
+      lastName: snap.lastName.trim(),
+      street: snap.street.trim(),
+      zip: snap.zip.trim(),
+      city: snap.city.trim(),
+      country: snap.country.trim(),
+      ...(snap.state.trim() ? { state: snap.state.trim() } : {}),
+    };
+
+    let res: Response;
+    try {
+      res = await fetch("/api/paypal/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutKey: holeOderErzeugeCheckoutKey(),
+          orderIdHint: leseOffeneBestellung(),
+          customer,
+          items: cartMeta,
+          ...buildCheckoutOrderExtras(companyRef.current, vatRef.current),
+          ...buildCheckoutShippingBody(checkoutShippingForWoo),
+          ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
+          ...(isWholesale ? { isWholesale: true } : {}),
+          ...videoUtmRequestField(),
+          ...marketingUtmRequestField(),
+          ...(!isWholesale
+            ? { couponCode: couponCode ?? "", customerEmail: customer.email }
+            : {}),
+          locale: language,
+        }),
+      });
+    } catch {
+      const msg = t("CHECKOUT_ERROR_CONNECTION");
+      setError(msg);
+      throw new Error(msg);
+    }
+    const data = (await res.json().catch(() => ({}))) as {
+      paypalOrderId?: string;
+      orderId?: number;
+      error?: string;
+    };
+
+    if (res.status === 409 && data.error === "already_paid" && data.paypalOrderId) {
+      // Diese Sitzung hat schon bezahlt: direkt zur Erfolgsseite.
+      clearCart();
+      clearVideoUtmStorage();
+      clearMarketingUtmStorage();
+      loescheCheckoutKey();
+      router.push(
+        `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(`paypal_${data.paypalOrderId}`)}`
+      );
+      throw new Error("already_paid");
+    }
+    if (!res.ok || !data.paypalOrderId) {
+      console.error("[PayPal] create-order failed", { status: res.status, error: data.error });
+      const msg = resolveCheckoutApiError(
+        data.error,
+        t,
+        "CHECKOUT_ERROR_ORDER_PREPARE_FAILED"
+      );
+      setError(msg);
+      throw new Error(msg);
+    }
+    if (typeof data.orderId === "number") merkeOffeneBestellung(data.orderId);
+    return data.paypalOrderId;
+  }, [
+    cartMeta,
+    checkoutShippingForWoo,
+    wholesaleReverseCharge,
+    isWholesale,
+    couponCode,
+    language,
+    clearCart,
+    router,
+    t,
+  ]);
+
   const handlePayPalApprove = useCallback(
-    async (_data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => {
+    async (
+      data: { orderID: string },
+      actions: { restart?: () => void | Promise<void> }
+    ) => {
       setProcessing(true);
       setError("");
 
-      let captured: Record<string, unknown> | undefined;
-      try {
-        captured = (await actions.order?.capture()) as
-          | Record<string, unknown>
-          | undefined;
-      } catch (captureErr) {
-        console.error("[PayPal] capture failed:", captureErr);
-        setError(t("CHECKOUT_PAYPAL_FAILED"));
-        setProcessing(false);
-        return;
-      }
-
-      const paypalOrderId = extractPayPalOrderId(captured);
-      const captureId = extractPayPalCaptureId(captured);
-      const captureAmount = extractPayPalCaptureAmount(captured);
-      const formSnapshot = checkoutCustomerRef.current;
-      const payer = captured?.payer as { email_address?: string } | undefined;
-      const paypalEmail = resolvePayPalCheckoutEmail(
-        captured,
-        formSnapshot.email
-      );
-
+      const paypalOrderId = (data.orderID ?? "").trim();
       if (!paypalOrderId) {
-        console.error("[PayPal] Missing order id after capture", captured);
+        console.error("[PayPal] onApprove ohne orderID", data);
         setError(t("CHECKOUT_PAYPAL_FAILED"));
         setProcessing(false);
         return;
       }
+      const wooOrderId = leseOffeneBestellung();
 
-      if (!isValidCheckoutEmail(paypalEmail)) {
-        console.error("[PayPal] Empty email after capture, blocking sync", {
-          paypalOrderId,
-          captureId,
-          payerEmail: payer?.email_address,
-          formEmail: formSnapshot.email,
-        });
-        await reportPayPalOrphanAlert({
-          reason: "empty_email_pre_sync",
-          paypalOrderId,
-          captureId,
-          amount: captureAmount || undefined,
-          payerEmail: payer?.email_address,
-          formEmail: formSnapshot.email,
-        });
-        setError(
-          formatTranslation("CHECKOUT_PAYPAL_EMAIL_MISSING", language, {
-            orderId: paypalOrderId,
-          })
-        );
-        setProcessing(false);
-        return;
-      }
-
-      const paypalIntentId = `paypal_${paypalOrderId}`;
-      const customer = {
-        email: paypalEmail,
-        firstName: formSnapshot.firstName,
-        lastName: formSnapshot.lastName,
-        street: formSnapshot.street,
-        zip: formSnapshot.zip,
-        city: formSnapshot.city,
-        country: formSnapshot.country,
-        ...(formSnapshot.state.trim()
-          ? { state: formSnapshot.state.trim() }
-          : {}),
-      };
-
-      const paypalSyncBody = {
-        paymentIntentId: paypalIntentId,
-        customer,
-        items: cartMeta,
-        ...buildCheckoutOrderExtras(companyRef.current, vatRef.current),
-        ...buildCheckoutShippingBody(checkoutShippingForWoo),
-        ...(wholesaleReverseCharge ? { isReverseCharge: true } : {}),
-        ...(isWholesale ? { isWholesale: true } : {}),
-        ...videoUtmRequestField(),
-        ...marketingUtmRequestField(),
-        ...(!isWholesale
-          ? {
-              couponCode: couponCode ?? "",
-              customerEmail: paypalEmail,
-            }
-          : {}),
-      };
-
+      // Vor dem Serveraufruf merken: Geht die Antwort verloren, ruft
+      // PayPalRecoveryBoot beim naechsten Laden capture-order erneut (idempotent).
       savePayPalRecoveryRecord({
         paypalOrderId,
-        captureId,
-        captureAmount,
         savedAt: new Date().toISOString(),
-        syncBody: paypalSyncBody,
+        wooOrderId,
       });
 
       try {
-        const syncRes = await fetch("/api/sync-order", {
+        const res = await fetch("/api/paypal/capture-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(paypalSyncBody),
+          body: JSON.stringify({ paypalOrderId, orderIdHint: wooOrderId }),
         });
+        const result = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          pending?: boolean;
+          orderNumber?: string;
+          error?: string;
+          issue?: string;
+        };
 
-        if (!syncRes.ok) {
-          let errorData: Record<string, unknown> = {};
-          try {
-            errorData = (await syncRes.json()) as Record<string, unknown>;
-          } catch {
-            errorData = { message: await syncRes.text().catch(() => "") };
-          }
+        if (res.status === 402 && actions.restart) {
+          // Zahlungsmittel abgelehnt: PayPal laesst den Kunden ein anderes waehlen.
+          clearPayPalRecoveryRecord(paypalOrderId);
+          setProcessing(false);
+          await actions.restart();
+          return;
+        }
 
-          console.error("[PayPal] sync-order failed:", {
-            status: syncRes.status,
-            error: errorData,
+        if (res.status >= 500) {
+          // Capture koennte bei PayPal durch sein, unser Server kam nicht
+          // hinterher. Datensatz bleibt, Wiederanlauf traegt die Zahlung nach.
+          console.error("[PayPal] capture-order Serverfehler", {
+            status: res.status,
             paypalOrderId,
+            error: result.error,
           });
-
           setError(
-            formatTranslation("CHECKOUT_PAYPAL_SYNC_FAILED", language, {
+            formatTranslation("CHECKOUT_PAYPAL_NETWORK_RECOVERY", language, {
+              orderId: paypalOrderId,
+              captureId: paypalOrderId,
+            })
+          );
+          setProcessing(false);
+          return;
+        }
+
+        if (!res.ok) {
+          // Endgueltig abgelehnt (nicht gecaptured, Zuordnung unklar): nichts
+          // abgebucht, kein Wiederanlauf.
+          clearPayPalRecoveryRecord(paypalOrderId);
+          console.error("[PayPal] capture-order abgelehnt", {
+            status: res.status,
+            paypalOrderId,
+            error: result.error,
+            issue: result.issue,
+          });
+          setError(
+            formatTranslation("CHECKOUT_PAYPAL_CAPTURE_FAILED", language, {
               orderId: paypalOrderId,
             })
           );
@@ -2790,57 +2973,25 @@ function CheckoutInner() {
         clearCart();
         clearVideoUtmStorage();
         clearMarketingUtmStorage();
+        loescheCheckoutKey();
         router.push(
-          `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(paypalIntentId)}`
+          `/bestellung/erfolg?method=paypal&payment_intent=${encodeURIComponent(`paypal_${paypalOrderId}`)}`
         );
-      } catch (syncErr) {
-        const syncErrorMessage =
-          syncErr instanceof Error ? syncErr.message : String(syncErr);
-
-        console.error("[PayPal] sync-order network error:", {
+      } catch (netzErr) {
+        console.error("[PayPal] capture-order Netzfehler:", {
           paypalOrderId,
-          captureId,
-          error: syncErrorMessage,
+          error: netzErr instanceof Error ? netzErr.message : String(netzErr),
         });
-
-        const alertPayload = {
-          reason: "sync_order_network_exception",
-          paypalOrderId,
-          captureId,
-          amount: captureAmount || undefined,
-          email: paypalEmail,
-          syncError: syncErrorMessage,
-          cartItems: cartMeta,
-          rawBody: paypalSyncBody,
-        };
-
-        const beaconSent = reportPayPalOrphanAlertBestEffort(alertPayload, {
-          preferBeacon: true,
-        });
-        if (beaconSent) {
-          markPayPalRecoveryAlertSent(paypalOrderId);
-        }
-
         setError(
           formatTranslation("CHECKOUT_PAYPAL_NETWORK_RECOVERY", language, {
             orderId: paypalOrderId,
-            captureId: captureId || paypalOrderId,
+            captureId: paypalOrderId,
           })
         );
         setProcessing(false);
       }
     },
-    [
-      cartMeta,
-      clearCart,
-      router,
-      checkoutShippingForWoo,
-      wholesaleReverseCharge,
-      isWholesale,
-      couponCode,
-      language,
-      t,
-    ]
+    [clearCart, router, language, t]
   );
 
   if (items.length === 0) {
@@ -3457,6 +3608,7 @@ function CheckoutInner() {
                   validateBeforeWalletPay={validateBeforeWalletPay}
                   runWholesalePiPreflight={runWholesalePiPreflight}
                   buildWalletSyncPayload={buildWalletSyncPayload}
+                  prepareOrder={prepareWooOrder}
                   t={t}
                 />
                 <div className="mt-4 space-y-2">
@@ -3542,12 +3694,15 @@ function CheckoutInner() {
                       resolvedOrderTotalEuro={
                         wholesaleNonRcTotals?.grossTotal ?? null
                       }
+                      onCreateOrder={handlePayPalCreateOrder}
                       onApprove={handlePayPalApprove}
                       disabled={
-                        wholesaleCheckoutBlocked || shippingBlocksCheckout
+                        processing ||
+                        wholesaleCheckoutBlocked ||
+                        shippingBlocksCheckout
                       }
                       onError={() =>
-                        setError(t("CHECKOUT_PAYPAL_FAILED"))
+                        setError((aktuell) => aktuell || t("CHECKOUT_PAYPAL_FAILED"))
                       }
                       onBeforePayPalCreateOrder={async () => {
                         if (wholesaleCheckoutBlocked) {
@@ -3663,12 +3818,15 @@ function CheckoutInner() {
                           resolvedOrderTotalEuro={
                             wholesaleNonRcTotals?.grossTotal ?? null
                           }
+                          onCreateOrder={handlePayPalCreateOrder}
                           onApprove={handlePayPalApprove}
                           disabled={
-                            wholesaleCheckoutBlocked || shippingBlocksCheckout
+                            processing ||
+                            wholesaleCheckoutBlocked ||
+                            shippingBlocksCheckout
                           }
                           onError={() =>
-                            setError(t("CHECKOUT_PAYPAL_FAILED"))
+                            setError((aktuell) => aktuell || t("CHECKOUT_PAYPAL_FAILED"))
                           }
                           onBeforePayPalCreateOrder={async () => {
                             if (wholesaleCheckoutBlocked) {

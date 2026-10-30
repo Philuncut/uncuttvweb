@@ -1,7 +1,6 @@
 import type Stripe from "stripe";
 import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
-import { stripe } from "@/lib/stripe";
 import {
   shouldSendExplicitEuB2cLineAmounts,
   shouldSendExplicitNonEuLineAmounts,
@@ -18,7 +17,6 @@ import {
   buildEuB2cWooShippingTaxes,
 } from "@/lib/woo-vat-split";
 import { parsePrice } from "@/lib/parse-price";
-import { enqueueWholesaleOfficeNotification } from "@/lib/notify-wholesale-order";
 import {
   buildMarketingUtmOrderMeta,
   mergeMarketingUtmIntoMeta,
@@ -30,7 +28,6 @@ import {
   type OrderMetaEntry,
   type VideoUtmInput,
 } from "@/lib/video-utm-server";
-import { getCartItemsForSync } from "@/lib/cart-items-from-context";
 import {
   allocateDiscountCentsToLines,
   appendAppliedCouponOrderMeta,
@@ -85,20 +82,19 @@ export interface CreateWooOrderInput {
   syncContext?: WooOrderSyncContext;
 }
 
+/**
+ * Ergebnis einer Bestellanlage. `status` beschreibt den Zahlungszustand:
+ * "pending" = angelegt, Zahlung noch nicht serverseitig bestaetigt;
+ * "paid" = soeben als bezahlt verbucht; "already_paid" = war schon bezahlt;
+ * "amount_mismatch" = Zahlung da, Betrag passt nicht, Bestellung on-hold.
+ */
 export interface CreateWooOrderResult {
   orderId: number;
   orderNumber: string;
-  status: "created" | "already_existed";
+  status: "pending" | "paid" | "already_paid" | "amount_mismatch";
+  /** Summe der Woo-Bestellung in Cent (Grundlage fuer PayPal-Betrag und Abgleich). */
+  totalCents: number;
   wooOrder: unknown;
-}
-
-export class PaymentIntentNotSucceededError extends Error {
-  readonly code = "payment_intent_not_succeeded";
-
-  constructor(public readonly stripeStatus: string) {
-    super(`Payment Intent not succeeded (status: ${stripeStatus})`);
-    this.name = "PaymentIntentNotSucceededError";
-  }
 }
 
 type WooOrderRow = {
@@ -225,14 +221,28 @@ async function fetchWooCustomer(customerId: string): Promise<WooCustomer | null>
 
 type WooOrderListRow = WooOrderRow & { transaction_id?: string };
 
+/**
+ * Passt die Bestellung zur Zahlungsreferenz (`pi_...` oder `paypal_...`)?
+ * Gesucht wird in transaction_id, `_stripe_pi_id` und `_uncuttv_payment_ref`.
+ * Letzteres schreibt der Shop seit Oktober 2026 beim Anlegen der offenen
+ * Bestellung, damit auch unbezahlte Bestellungen gefunden werden (bei PayPal
+ * steht in transaction_id spaeter die Capture-ID, nicht die Order-ID).
+ */
 function orderMatchesStripePaymentIntent(
   order: WooOrderListRow,
   paymentIntentId: string
 ): boolean {
   if (order.transaction_id === paymentIntentId) return true;
   const meta = order.meta_data ?? [];
-  const piMeta = meta.find((m) => m.key === "_stripe_pi_id");
-  return asString(piMeta?.value) === paymentIntentId;
+  for (const m of meta) {
+    if (
+      (m.key === "_stripe_pi_id" || m.key === "_uncuttv_payment_ref") &&
+      asString(m.value) === paymentIntentId
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -256,6 +266,23 @@ export async function findWooOrderByStripePaymentIntentId(
       { cache: "no-store" }
     );
     for (const order of byMeta ?? []) {
+      if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
+        return order;
+      }
+    }
+
+    const byRef = await wooFetch<WooOrderListRow[]>(
+      "/orders",
+      {
+        meta_key: "_uncuttv_payment_ref",
+        meta_value: paymentIntentId,
+        per_page: "20",
+        orderby: "date",
+        order: "desc",
+      },
+      { cache: "no-store" }
+    );
+    for (const order of byRef ?? []) {
       if (orderMatchesStripePaymentIntent(order, paymentIntentId)) {
         return order;
       }
@@ -322,6 +349,8 @@ export type WooOrderForDetails = WooOrderRow & {
 
 export type OrderDetailsApiPayload = {
   woo_order_id: string;
+  /** Woo-Status (pending, processing, ...). "pending" = Zahlung noch nicht bestaetigt. */
+  orderStatus?: string;
   customerName: string;
   customerEmail: string;
   total: string;
@@ -382,6 +411,7 @@ export function mapWooOrderToOrderDetailsPayload(
 
   return {
     woo_order_id: String(order.id),
+    orderStatus: asString(order.status) || undefined,
     customerName,
     customerEmail: asString(billing.email),
     total: asString(order.total) || "0.00",
@@ -399,7 +429,19 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   cartItems: CartMeta[];
   billing: Record<string, string>;
   shipping: Record<string, string>;
+  /**
+   * Zahlungsreferenz (`pi_...` oder `paypal_...`). Wird NICHT mehr als
+   * transaction_id gesetzt (das macht erst markiereBestellungBezahlt mit dem
+   * geprueften Beleg), sondern als Meta `_uncuttv_payment_ref`, damit die
+   * offene Bestellung wiedergefunden wird.
+   */
   transactionId: string;
+  /** Zahlungsweg der Bestellung; bestimmt payment_method in Woo. Standard stripe. */
+  zahlungsart?: "stripe" | "paypal";
+  /** Kassen-Sitzung des Browsers (Idempotenz), Meta `_uncuttv_checkout_key`. */
+  checkoutKey?: string;
+  /** Fingerabdruck von Warenkorb und Adresse, Meta `_uncuttv_checkout_fingerprint`. */
+  fingerabdruck?: string;
   isReverseCharge: boolean;
   isWholesaleCheckout: boolean;
   billingOverrides?: Record<string, string>;
@@ -425,6 +467,9 @@ export async function createWooOrderFromCheckoutSync(
     billing,
     shipping,
     transactionId,
+    zahlungsart = "stripe",
+    checkoutKey,
+    fingerabdruck,
     isReverseCharge,
     isWholesaleCheckout,
     billingOverrides,
@@ -512,11 +557,16 @@ export async function createWooOrderFromCheckoutSync(
       ? allocateDiscountCentsToLines(cartItems, discountCents)
       : new Map<number, number>();
 
+  // Die Bestellung entsteht VOR der Zahlung als "pending". Auf "processing"
+  // geht sie ausschliesslich ueber markiereBestellungBezahlt (bestellung-
+  // zahlung.ts) mit serverseitig gepruefter Zahlung. Bis Oktober 2026 stand
+  // hier status processing + set_paid true, was unbezahlte und doppelte
+  // Bestellungen als "In Bearbeitung" erscheinen liess.
   const orderData: Record<string, unknown> = {
-    status: "processing",
-    payment_method: "stripe",
-    payment_method_title: "Stripe",
-    set_paid: true,
+    status: "pending",
+    payment_method: zahlungsart,
+    payment_method_title: zahlungsart === "paypal" ? "PayPal" : "Stripe",
+    set_paid: false,
     send_email: false,
     prices_include_tax: true,
     billing: mergedBilling,
@@ -569,7 +619,6 @@ export async function createWooOrderFromCheckoutSync(
         quantity: item.qty,
       };
     }),
-    transaction_id: transactionId,
   };
 
   const couponLines = buildWooCouponLines(
@@ -675,7 +724,22 @@ export async function createWooOrderFromCheckoutSync(
       discountCents,
     });
   }
-  if (mergedMeta && mergedMeta.length > 0) {
+  // Rueckweg von der Zahlung zur Bestellung und Idempotenz-Marker.
+  mergedMeta = [...(mergedMeta ?? [])];
+  if (transactionId.trim()) {
+    mergedMeta.push({ key: "_uncuttv_payment_ref", value: transactionId.trim() });
+  }
+  if (checkoutKey?.trim()) {
+    mergedMeta.push({ key: "_uncuttv_checkout_key", value: checkoutKey.trim() });
+  }
+  if (fingerabdruck?.trim()) {
+    mergedMeta.push({ key: "_uncuttv_checkout_fingerprint", value: fingerabdruck.trim() });
+  }
+  if (isWholesaleCheckout) {
+    // Damit der Webhook (ohne Sitzungs-Cookie) die Haendlerbestellung erkennt.
+    mergedMeta.push({ key: "_uncuttv_is_wholesale", value: "yes" });
+  }
+  if (mergedMeta.length > 0) {
     orderData.meta_data = mergedMeta;
   }
 
@@ -735,39 +799,20 @@ export async function createWooOrderFromCheckoutSync(
     }
   }
 
-  const mergedVatForNotify =
-    asString(vatFromFrontendMeta) || asString(profileVat);
-  const pmTitleRaw = asString(created.payment_method_title);
-  const paymentLabelForNotify =
-    !pmTitleRaw || pmTitleRaw.toLowerCase().includes("stripe")
-      ? "Stripe Kreditkarte"
-      : pmTitleRaw;
-
-  enqueueWholesaleOfficeNotification({
-    orderId: Number(created.id),
-    orderNumber: String(created.number ?? created.id),
-    billing: mergedBilling,
-    shipping,
-    items: cartItems,
-    checkoutShipping,
-    taxCountry,
-    isWholesaleCheckout,
-    isReverseCharge,
-    orderMeta: created.meta_data,
-    paymentMethodTitle: paymentLabelForNotify,
-    vatNumber: mergedVatForNotify || undefined,
-    wooCommerceBaseUrl: WOOCOMMERCE_URL,
-  });
+  // Die Office-Benachrichtigung fuer Haendlerbestellungen kommt erst nach
+  // bestaetigtem Zahlungseingang (nachZahlungseingang in bestellung-zahlung.ts),
+  // nicht mehr beim Anlegen der unbezahlten Bestellung.
 
   return {
     orderId: Number(created.id),
     orderNumber: String(created.number ?? created.id),
-    status: "created",
+    status: "pending",
+    totalCents: Math.round(parsePrice(String(created.total ?? "0")) * 100),
     wooOrder: created,
   };
 }
 
-function resolveCustomerFromPaymentIntent(
+export function resolveCustomerFromPaymentIntent(
   pi: Stripe.PaymentIntent,
   charge: Stripe.Charge | null,
   syncContext?: WooOrderSyncContext
@@ -817,7 +862,7 @@ function resolveCustomerFromPaymentIntent(
   return { billing, shipping: { ...billing } };
 }
 
-function resolveCheckoutShippingFromPi(
+export function resolveCheckoutShippingFromPi(
   pi: Stripe.PaymentIntent,
   syncContext?: WooOrderSyncContext
 ): CheckoutShippingInput | undefined {
@@ -837,89 +882,3 @@ function resolveCheckoutShippingFromPi(
   };
 }
 
-export async function createWooOrderFromPayment(
-  input: CreateWooOrderInput
-): Promise<CreateWooOrderResult> {
-  const paymentIntentId = input.paymentIntentId.trim();
-  if (!paymentIntentId.startsWith("pi_")) {
-    throw new Error("Ungültige Payment Intent ID.");
-  }
-
-  const existing = await findWooOrderByStripePaymentIntentId(paymentIntentId);
-  if (existing?.id) {
-    return {
-      orderId: Number(existing.id),
-      orderNumber: String(existing.number ?? existing.id),
-      status: "already_existed",
-      wooOrder: existing,
-    };
-  }
-
-  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
-    expand: ["latest_charge"],
-  });
-
-  if (pi.status !== "succeeded") {
-    throw new PaymentIntentNotSucceededError(pi.status);
-  }
-
-  const charge =
-    pi.latest_charge && typeof pi.latest_charge === "object"
-      ? pi.latest_charge
-      : null;
-  const chargeId =
-    charge?.id ??
-    (typeof pi.latest_charge === "string" ? pi.latest_charge : undefined);
-
-  const syncContext = input.syncContext;
-  const cartItems = getCartItemsForSync(
-    syncContext,
-    pi.metadata as Record<string, string> | undefined
-  );
-
-  const isReverseCharge =
-    syncContext?.isReverseCharge === true ||
-    pi.metadata?.is_reverse_charge === "true";
-  const isWholesaleCheckout =
-    syncContext?.isWholesale === true || pi.metadata?.is_wholesale === "true";
-
-  const { billing, shipping } = resolveCustomerFromPaymentIntent(
-    pi,
-    charge,
-    syncContext
-  );
-
-  const couponFromMeta =
-    (typeof pi.metadata?.coupon_code === "string" &&
-      pi.metadata.coupon_code.trim()) ||
-    undefined;
-
-  const discountCentsFromPi = (() => {
-    const raw = pi.metadata?.discount_amount_cents;
-    const n = parseInt(typeof raw === "string" ? raw : "", 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  })();
-
-  return createWooOrderFromCheckoutSync({
-    cartItems,
-    billing,
-    shipping,
-    transactionId: paymentIntentId,
-    isReverseCharge,
-    isWholesaleCheckout,
-    billingOverrides: syncContext?.billing,
-    meta_data: syncContext?.meta_data,
-    checkoutShipping: resolveCheckoutShippingFromPi(pi, syncContext),
-    videoUtm: syncContext?.videoUtm ?? {
-      source: pi.metadata?.utm_source,
-      videoId: pi.metadata?.utm_video_id,
-    },
-    marketingUtm: syncContext?.marketingUtm,
-    stripePiId: paymentIntentId,
-    stripeChargeId: chargeId,
-    couponCode: couponFromMeta,
-    stripeAmountCents:
-      typeof pi.amount === "number" ? pi.amount : undefined,
-    stripeDiscountCents: discountCentsFromPi,
-  });
-}

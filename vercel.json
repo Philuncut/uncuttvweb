@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/resend-pending-invoices",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/cancel-stale-pending-orders",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -1,3 +1,20 @@
+/**
+ * Wiederanlauf fuer PayPal-Zahlungen, deren Serverantwort den Browser nicht
+ * erreicht hat (Webview geschlossen, Netz weg).
+ *
+ * Diese Datei war die Mechanik hinter #6391 und #6392: Bei jedem Seitenaufruf
+ * schickte sie den gespeicherten Body erneut an /api/sync-order, und
+ * sync-order legte jedes Mal eine neue Bestellung an. Jetzt ruft sie fuer
+ * neue Datensaetze /api/paypal/capture-order auf, das die Capture
+ * serverseitig ausfuehrt bzw. wiederfindet und dieselbe Bestellung liefert,
+ * egal wie oft es gerufen wird. Alte Datensaetze (mit syncBody) gehen weiter
+ * an sync-order, das inzwischen bei PayPal prueft und Duplikate erkennt.
+ *
+ * Endgueltige Fehler (4xx ausser 5xx/Netz) loeschen den Datensatz nach dem
+ * Alarm, damit nicht bei jedem Seitenaufruf erneut gegen eine Wand gelaufen
+ * wird; 5xx und Netzfehler lassen ihn fuer den naechsten Versuch stehen.
+ */
+
 import {
   clearPayPalRecoveryRecord,
   listPayPalRecoveryRecords,
@@ -30,7 +47,25 @@ function extractCartItems(syncBody: unknown): CartMeta[] | undefined {
   return Array.isArray(items) ? items : undefined;
 }
 
-/** On app load: retry sync for captures that never reached the server. */
+async function wiederanlauf(record: PayPalRecoveryRecord): Promise<Response> {
+  if (record.syncBody && typeof record.syncBody === "object") {
+    return fetch("/api/sync-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(record.syncBody),
+    });
+  }
+  return fetch("/api/paypal/capture-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      paypalOrderId: record.paypalOrderId,
+      ...(record.wooOrderId ? { orderIdHint: record.wooOrderId } : {}),
+    }),
+  });
+}
+
+/** Beim Laden der Seite: Zahlungen nachtragen, deren Antwort verloren ging. */
 export async function retryPendingPayPalRecoveries(): Promise<void> {
   if (retryInFlight || typeof window === "undefined") return;
   retryInFlight = true;
@@ -41,35 +76,31 @@ export async function retryPendingPayPalRecoveries(): Promise<void> {
 
     for (const record of records) {
       try {
-        const syncRes = await fetch("/api/sync-order", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(record.syncBody),
-        });
+        const res = await wiederanlauf(record);
 
-        if (syncRes.ok) {
+        if (res.ok) {
           clearPayPalRecoveryRecord(record.paypalOrderId);
-          console.info(
-            "[PayPal recovery] sync succeeded on retry:",
-            record.paypalOrderId
-          );
+          console.info("[PayPal recovery] Zahlung nachgetragen:", record.paypalOrderId);
           continue;
         }
 
         let errorData: unknown = null;
         try {
-          errorData = await syncRes.json();
+          errorData = await res.json();
         } catch {
-          errorData = await syncRes.text().catch(() => "");
+          errorData = await res.text().catch(() => "");
         }
 
-        await alertRecoveryFailure(record, {
-          status: syncRes.status,
-          error: errorData,
-        });
+        await alertRecoveryFailure(record, { status: res.status, error: errorData });
+
+        if (res.status >= 400 && res.status < 500) {
+          // Endgueltig (Order nicht gecaptured, Zuordnung unklar, 409 bereits
+          // erledigt): nicht bei jedem Seitenaufruf wiederholen.
+          clearPayPalRecoveryRecord(record.paypalOrderId);
+        }
       } catch (networkErr) {
         console.warn(
-          "[PayPal recovery] retry still offline:",
+          "[PayPal recovery] weiterhin keine Verbindung:",
           record.paypalOrderId,
           networkErr
         );

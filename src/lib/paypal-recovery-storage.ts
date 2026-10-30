@@ -1,12 +1,23 @@
 const RECOVERY_KEY_PREFIX = "pending-paypal-recovery-";
 
+/**
+ * Wiederanlauf-Datensatz fuer eine PayPal-Zahlung, deren Serverantwort den
+ * Browser nicht erreicht hat. Neue Datensaetze (seit Oktober 2026) tragen
+ * nur die PayPal-Order-ID; der Wiederanlauf ruft /api/paypal/capture-order,
+ * das idempotent ist. Alte Datensaetze mit `syncBody` stammen von Browsern,
+ * die die Capture selbst ausgefuehrt haben; sie gehen weiter an
+ * /api/sync-order, das sie inzwischen verifiziert und ohne Duplikate
+ * verbucht.
+ */
 export type PayPalRecoveryRecord = {
   paypalOrderId: string;
   captureId?: string;
   captureAmount?: string;
   savedAt: string;
-  syncBody: unknown;
+  syncBody?: unknown;
   alertSent?: boolean;
+  /** Woo-Bestellnummer der offenen Bestellung, als Hinweis fuer den Server. */
+  wooOrderId?: number;
 };
 
 function recoveryKey(paypalOrderId: string): string {

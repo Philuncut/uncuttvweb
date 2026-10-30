@@ -72,6 +72,22 @@ export async function GET(request: Request) {
         await fetchOrderDetailsPayloadByReference(paymentIntentId);
       if (wcPayload) {
         const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+        // Seit die Bestellung VOR der Zahlung angelegt wird, existiert sie
+        // auch ohne Zahlung. Ohne Zahlungsversuch ist das keine Erfolgsseite.
+        const unbezahlt =
+          !wcPayload.orderStatus ||
+          ["pending", "cancelled", "failed"].includes(wcPayload.orderStatus);
+        const keinZahlungsvorgang =
+          pi.status === "requires_payment_method" ||
+          pi.status === "requires_confirmation" ||
+          pi.status === "requires_action" ||
+          pi.status === "canceled";
+        if (unbezahlt && keinZahlungsvorgang) {
+          return NextResponse.json(
+            { error: "payment_not_complete", message: "Zahlung nicht abgeschlossen." },
+            { status: 400 }
+          );
+        }
         const shippingMeta = parseInt(pi.metadata?.shipping_cents ?? "", 10);
         const shippingCents =
           wcPayload.shippingCents > 0

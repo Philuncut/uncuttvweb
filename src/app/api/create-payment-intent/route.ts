@@ -40,6 +40,21 @@ interface Body {
   videoUtm?: VideoUtmInput;
   /** Monotonic client counter — stale responses must not overwrite newer PI amounts. */
   piUpdateSeq?: number;
+  /**
+   * Kennung der Kassen-Sitzung (checkout-session-key.ts). Dient Stripe als
+   * Idempotency-Key: Zwei gleichzeitige Anfragen desselben Tabs (Doppel-
+   * Mount, Doppelklick) ergeben denselben PaymentIntent statt zweier.
+   */
+  checkoutKey?: string;
+}
+
+/** Stripe meldet idempotency_error, wenn derselbe Key mit anderen Parametern kommt. */
+function istIdempotenzKonflikt(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { type?: string }).type === "StripeIdempotencyError"
+  );
 }
 
 export async function POST(request: Request) {
@@ -56,7 +71,13 @@ export async function POST(request: Request) {
       shippingMethodTitle,
       videoUtm,
       piUpdateSeq,
+      checkoutKey,
     } = (await request.json()) as Body;
+
+    const idempotenzKey =
+      typeof checkoutKey === "string" && /^[a-f0-9]{16,64}$/.test(checkoutKey)
+        ? `pi-create-${checkoutKey}`
+        : undefined;
 
     const videoUtmMeta = await buildVideoUtmOrderMeta(videoUtm);
 
@@ -160,12 +181,13 @@ export async function POST(request: Request) {
     const couponMetaRecord = couponMeta as Record<string, string>;
     const cartSnapshotMeta = buildCartSnapshotMetadata(items);
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const piParams = {
       amount: totalCents,
       currency: "eur",
       automatic_payment_methods: { enabled: true },
       ...(stripeShipping ? { shipping: stripeShipping } : {}),
       metadata: {
+        ...(idempotenzKey ? { checkout_key: checkoutKey as string } : {}),
         cart_items_count: String(items.length),
         ...cartSnapshotMeta,
         coupon_code: couponMetaRecord.coupon_code ?? "",
@@ -190,7 +212,24 @@ export async function POST(request: Request) {
           ? { utm_video_title: String(videoUtmMeta[2].value) }
           : {}),
       },
-    });
+    };
+
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.create(
+        piParams,
+        idempotenzKey ? { idempotencyKey: idempotenzKey } : undefined
+      );
+    } catch (err) {
+      if (!idempotenzKey || !istIdempotenzKonflikt(err)) throw err;
+      // Gleicher Tab, geaenderte Parameter (z. B. nach Zurueck-Navigation):
+      // dann ohne Key anlegen. Der verwaiste PI ohne Zahlung ist harmlos;
+      // die Bestellung bleibt ueber den checkoutKey eindeutig.
+      console.warn(
+        `[PI] Idempotency-Konflikt fuer ${idempotenzKey}, lege ohne Key neu an`
+      );
+      paymentIntent = await stripe.paymentIntents.create(piParams);
+    }
 
     console.log(
       formatPiAmountLog(

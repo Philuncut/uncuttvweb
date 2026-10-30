@@ -29,6 +29,8 @@ interface OrderLineItem {
 
 interface OrderDetails {
   woo_order_id?: string;
+  /** Woo-Status; "pending" heisst: Zahlung noch nicht serverseitig bestaetigt. */
+  orderStatus?: string;
   customerName: string;
   customerEmail: string;
   total: string;
@@ -599,6 +601,12 @@ export default function OrderSuccess() {
         )}
         .
       </p>
+
+      {order?.orderStatus === "pending" && (
+        <p className="mx-auto mt-3 max-w-md text-sm text-yellow-500/80">
+          {t("ORDER_SUCCESS_PAYMENT_CONFIRMING")}
+        </p>
+      )}
 
       {order && order.items.length > 0 && (
         <div className="mx-auto mt-8 max-w-sm border border-[#222] bg-[#111] p-6 text-left">

@@ -17,7 +17,7 @@ import {
   normalizeCartMetaItems,
   parseCartItemsFromPiMetadata,
 } from "@/lib/cart-items-from-context";
-import { createWooOrderFromPayment } from "@/lib/wc-order-from-payment";
+import { verbucheStripeZahlung } from "@/lib/stripe-zahlung";
 import type { CartMeta, CheckoutShippingInput, CustomerInfo } from "@/lib/wc-order-from-payment";
 import Stripe from "stripe";
 
@@ -138,7 +138,8 @@ async function main() {
     }
   }
 
-  const result = await createWooOrderFromPayment({
+  const result = await verbucheStripeZahlung({
+      quelle: "Skript",
     paymentIntentId: piId,
     syncContext: {
       customer,

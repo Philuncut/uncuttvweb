@@ -1,26 +1,56 @@
-import { NextResponse } from "next/server";
+/**
+ * POST /api/sync-order
+ *
+ * Frueher: Der Browser meldete nach der Zahlung "ich habe bezahlt", und
+ * diese Route legte die WooCommerce-Bestellung sofort als processing mit
+ * set_paid an. Ohne Zahlungspruefung und ohne verlaessliche Idempotenz;
+ * so entstanden #6390 bis #6392.
+ *
+ * Jetzt ist die Route ein ABGLEICH, keine Zahlungsquelle mehr:
+ *
+ * - Stripe (`pi_...`): Bestellung zur Zahlung sicherstellen (normalerweise
+ *   schon ueber /api/checkout/prepare-order angelegt) und den PaymentIntent
+ *   frisch bei Stripe pruefen. Nur bei `succeeded` und passendem Betrag
+ *   wird sie bezahlt (stripe-zahlung.ts), dieselbe Logik wie im Webhook.
+ *   Ist der Webhook schneller, antwortet die Route einfach "already_paid".
+ *   Ist Stripe noch nicht durch, bleibt die Bestellung "pending" und der
+ *   Webhook erledigt den Rest.
+ *
+ * - PayPal (`paypal_...`): nur noch fuer Browser mit altem Code, die die
+ *   Capture selbst ausgefuehrt haben. Die Order wird bei PayPal geladen und
+ *   die Bestellung nur mit COMPLETED-Capture und ohne Duplikat verbucht
+ *   (paypal-zahlung.ts). Neue Clients gehen ueber /api/paypal/*.
+ *
+ * - Legacy Checkout Session (`cs_...`): Zahlung aus der Session (bei Stripe
+ *   geladen), Bestellung pending anlegen, dann ueber die geprueften
+ *   PaymentIntent-Daten verbuchen.
+ *
+ * Bestaetigungsmail und Haendler-Benachrichtigung laufen nach der Antwort
+ * (after), nur wenn die Bestellung hier gerade bezahlt wurde.
+ */
+
+import { NextResponse, after } from "next/server";
 import type { CartItem } from "@/lib/CartContext";
-import {
-  coerceStripeMetadata,
-  normalizeCartMetaItems,
-  parseCartItemsFromPiMetadata,
-} from "@/lib/cart-items-from-context";
+import { normalizeCartMetaItems } from "@/lib/cart-items-from-context";
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
 import type { MarketingUtmInput } from "@/lib/marketing-utm-server";
 import type { VideoUtmInput } from "@/lib/video-utm-server";
-import {
-  createWooOrderFromCheckoutSync,
-  createWooOrderFromPayment,
-  PaymentIntentNotSucceededError,
-  type CartMeta,
-  type CustomerInfo,
-  type CheckoutShippingInput,
-  type CreateWooOrderResult,
+import type {
+  CartMeta,
+  CustomerInfo,
+  CheckoutShippingInput,
+  CreateWooOrderResult,
 } from "@/lib/wc-order-from-payment";
 import type { OrderMetaEntry } from "@/lib/video-utm-server";
-import { sendOrderConfirmationWithPdf } from "@/lib/send-order-confirmation-with-pdf";
+import {
+  BestellungOhneArtikelFehler,
+  verbucheStripeZahlung,
+} from "@/lib/stripe-zahlung";
+import { verbucheAltePayPalZahlung } from "@/lib/paypal-zahlung";
+import { PayPalFehler } from "@/lib/paypal-server";
+import { nachZahlungseingang, type Zahlungsart } from "@/lib/bestellung-zahlung";
 import {
   estimateOrphanAmountEur,
   paypalOrderIdFromPaymentIntent,
@@ -29,9 +59,14 @@ import {
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 interface SyncBody {
   sessionId?: string;
   paymentIntentId?: string;
+  checkoutKey?: string;
+  orderIdHint?: number;
   customer?: CustomerInfo;
   items?: CartMeta[];
   billing?: Record<string, string>;
@@ -68,47 +103,38 @@ function cartMetaToCartItems(items: CartMeta[]): CartItem[] {
   }));
 }
 
-async function reverseChargeFromStripePaymentIntent(
-  piRef: string | { id?: string } | null | undefined
-): Promise<boolean> {
-  const id =
-    typeof piRef === "string"
-      ? piRef
-      : piRef && typeof piRef === "object"
-        ? piRef.id
-        : undefined;
-  if (!id || !id.startsWith("pi_")) {
-    return false;
-  }
-  try {
-    const pi = await stripe.paymentIntents.retrieve(id);
-    return pi.metadata?.is_reverse_charge === "true";
-  } catch {
-    return false;
-  }
-}
-
 function asString(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
   return String(value).trim();
 }
 
-function paymentTypeFromTransaction(transactionId: string): "paypal" | "stripe" {
-  return transactionId.startsWith("paypal_") ? "paypal" : "stripe";
+function checkoutKeyAus(body: SyncBody): string | undefined {
+  return typeof body.checkoutKey === "string" &&
+    /^[a-f0-9]{16,64}$/.test(body.checkoutKey)
+    ? body.checkoutKey
+    : undefined;
 }
 
-async function trySendOrderConfirmation(
-  result: CreateWooOrderResult,
-  transactionId = ""
-): Promise<void> {
-  try {
-    await sendOrderConfirmationWithPdf(result.orderId, {
-      paymentType: paymentTypeFromTransaction(transactionId),
-    });
-  } catch (mailError) {
-    console.error("[OrderMail] Failed to send confirmation:", mailError);
+function orderIdHintAus(body: SyncBody): number | undefined {
+  return typeof body.orderIdHint === "number" &&
+    Number.isFinite(body.orderIdHint) &&
+    body.orderIdHint > 0
+    ? body.orderIdHint
+    : undefined;
+}
+
+function antwort(result: CreateWooOrderResult, zahlungsart: Zahlungsart) {
+  if (result.status === "paid") {
+    after(() => nachZahlungseingang(result.orderId, zahlungsart));
   }
+  return NextResponse.json({
+    success: true,
+    orderId: result.orderId,
+    orderNumber: result.orderNumber,
+    status: result.status,
+    paid: result.status === "paid" || result.status === "already_paid",
+  });
 }
 
 async function reportPayPalSyncFailure(
@@ -147,48 +173,70 @@ async function reportPayPalSyncFailure(
   );
 }
 
+/** Bestelleingaben aus dem Browser-Body (PayPal-Altpfad und Legacy-Session). */
+async function bestellEingabenAusBody(
+  body: SyncBody,
+  cartItems: CartMeta[],
+  billing: Record<string, string>,
+  shipping: Record<string, string>,
+  isReverseCharge: boolean
+) {
+  const isWholesaleCheckout = body.isWholesale === true;
+
+  let couponCodeResolved: string | undefined;
+  let discountCents: number | undefined;
+  const codeTrimmed = body.couponCode?.trim();
+  if (codeTrimmed && !isWholesaleCheckout) {
+    const subtotalCents = cartItems.reduce(
+      (sum, item) =>
+        sum + Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty),
+      0
+    );
+    const applied = await applyCouponToSubtotalCents(
+      codeTrimmed,
+      subtotalCents,
+      cartMetaToCartItems(cartItems),
+      body.customerEmail?.trim() || body.customer?.email?.trim()
+    );
+    if (!applied.ok) {
+      const err = new Error(applied.error);
+      (err as Error & { code?: string }).code = "invalid_coupon";
+      throw err;
+    }
+    couponCodeResolved = applied.metadata.coupon_code;
+    discountCents = applied.discountCents;
+  }
+
+  return {
+    cartItems,
+    billing,
+    shipping,
+    isReverseCharge,
+    isWholesaleCheckout,
+    billingOverrides: body.billing,
+    meta_data: body.meta_data,
+    checkoutShipping: body.checkoutShipping,
+    videoUtm: body.videoUtm,
+    marketingUtm: body.marketingUtm,
+    couponCode: couponCodeResolved,
+    stripeDiscountCents: discountCents,
+  };
+}
+
 export async function POST(request: Request) {
   let body: SyncBody | undefined;
   try {
     body = (await request.json()) as SyncBody;
+    const ref = body.paymentIntentId?.trim() ?? "";
 
-    const isWholesaleCheckout = body.isWholesale === true;
-
-    if (body.paymentIntentId?.startsWith("pi_")) {
-      const piId = body.paymentIntentId.trim();
-      const pi = await stripe.paymentIntents.retrieve(piId);
-      const piMeta = coerceStripeMetadata(pi.metadata ?? undefined);
-
-      let cartItems = normalizeCartMetaItems(body.items);
-      if (cartItems.length === 0) {
-        cartItems = parseCartItemsFromPiMetadata(piMeta);
-      }
-
-      console.log(
-        `[sync-order] Stripe card sync pi=${piId} inBody=${body.items?.length ?? 0} ` +
-          `bodyNorm=${normalizeCartMetaItems(body.items).length} ` +
-          `snapshotLen=${piMeta.cart_snapshot?.length ?? 0} ` +
-          `resolved=${cartItems.length} raw0=${JSON.stringify(body.items?.[0] ?? null)}`
-      );
-
-      if (cartItems.length === 0) {
-        return NextResponse.json(
-          {
-            error: "no_cart_items",
-            message:
-              "Keine Artikel für WooCommerce-Order (weder Request-Body noch PI cart_snapshot).",
-            debug: {
-              paymentIntentId: piId,
-              cart_items_count: piMeta.cart_items_count,
-              has_cart_snapshot: Boolean(piMeta.cart_snapshot?.trim()),
-            },
-          },
-          { status: 400 }
-        );
-      }
-
-      const result = await createWooOrderFromPayment({
-        paymentIntentId: piId,
+    // ---- Stripe PaymentIntent: Abgleich mit serverseitig geladenem PI ----
+    if (ref.startsWith("pi_")) {
+      const cartItems = normalizeCartMetaItems(body.items);
+      const result = await verbucheStripeZahlung({
+        paymentIntentId: ref,
+        quelle: "sync-order (Abgleich Erfolgsseite)",
+        checkoutKey: checkoutKeyAus(body),
+        orderIdHinweis: orderIdHintAus(body),
         syncContext: {
           customer: body.customer,
           items: cartItems,
@@ -201,32 +249,82 @@ export async function POST(request: Request) {
           marketingUtm: body.marketingUtm,
         },
       });
-      await trySendOrderConfirmation(
-        result,
-        body.paymentIntentId ?? ""
+      console.log(
+        `[sync-order] pi=${ref} -> #${result.orderNumber} ${result.status}`
       );
-      return NextResponse.json({
-        success: true,
-        orderId: result.orderId,
-        orderNumber: result.orderNumber,
-        status: result.status,
-      });
+      return antwort(result, "stripe");
     }
 
-    let cartItems: CartMeta[] = [];
-    let billing: Record<string, string> = {};
-    let shipping: Record<string, string> = {};
-    let transactionId = "";
-    let isReverseCharge = false;
+    // ---- PayPal, alter Browser-Pfad (Capture im Browser) ----
+    if (ref.startsWith("paypal_")) {
+      const cartItems = normalizeCartMetaItems(body.items);
+      if (cartItems.length === 0 || !body.customer) {
+        return NextResponse.json({ error: "Fehlende Daten." }, { status: 400 });
+      }
+      const resolvedEmail = resolveSyncBodyEmail(body);
+      if (!validatePayPalSyncEmail(resolvedEmail)) {
+        await reportPayPalSyncFailure(
+          body,
+          "invalid_email_pre_wc",
+          {
+            received_email: body.customer?.email ?? "",
+            customer_email_field: body.customerEmail ?? "",
+            billing_email: body.billing?.email ?? "",
+          },
+          400
+        );
+        return NextResponse.json(
+          { error: "invalid_email", message: "Die E-Mail-Adresse ist ungültig.", orphaned: true },
+          { status: 400 }
+        );
+      }
+      const c = body.customer;
+      const stateVal = asString(c.state);
+      const billing: Record<string, string> = {
+        first_name: c.firstName,
+        last_name: c.lastName,
+        email: resolvedEmail,
+        address_1: c.street,
+        city: c.city,
+        postcode: c.zip,
+        country: c.country,
+        ...(stateVal ? { state: stateVal } : {}),
+      };
+      const eingaben = await bestellEingabenAusBody(
+        body,
+        cartItems,
+        billing,
+        { ...billing },
+        body.isReverseCharge === true
+      );
+      const result = await verbucheAltePayPalZahlung(
+        paypalOrderIdFromPaymentIntent(ref),
+        eingaben
+      );
+      console.log(
+        `[sync-order] ${ref} (alter Client) -> #${result.orderNumber} ${result.status}`
+      );
+      return antwort(result, "paypal");
+    }
 
+    // ---- Legacy Stripe Checkout Session ----
     if (body.sessionId) {
       const session = await stripe.checkout.sessions.retrieve(body.sessionId, {
         expand: ["customer_details", "line_items", "payment_intent"],
       });
-
       if (session.payment_status !== "paid") {
+        return NextResponse.json({ error: "Zahlung nicht abgeschlossen." }, { status: 400 });
+      }
+      const piField = session.payment_intent;
+      const piId =
+        typeof piField === "string"
+          ? piField
+          : piField && typeof piField === "object" && "id" in piField
+            ? String((piField as { id: string }).id)
+            : "";
+      if (!piId.startsWith("pi_")) {
         return NextResponse.json(
-          { error: "Zahlung nicht abgeschlossen." },
+          { error: "legacy_session_no_pi", message: "Checkout Session ohne PaymentIntent." },
           { status: 400 }
         );
       }
@@ -235,7 +333,7 @@ export async function POST(request: Request) {
         body.sessionId,
         { limit: 100 }
       );
-      cartItems = stripeLineItems.data.map((line) => {
+      const cartItems: CartMeta[] = stripeLineItems.data.map((line) => {
         const qty = Math.max(1, line.quantity ?? 1);
         const totalCents = line.amount_total ?? 0;
         const productId =
@@ -255,252 +353,86 @@ export async function POST(request: Request) {
       });
       if (cartItems.length === 0) {
         return NextResponse.json(
-          {
-            error: "legacy_session_empty",
-            message: "Legacy Checkout Session enthält keine Line Items.",
-          },
+          { error: "legacy_session_empty", message: "Legacy Checkout Session enthält keine Line Items." },
           { status: 400 }
         );
       }
-      const piField = session.payment_intent;
-      transactionId =
-        typeof piField === "string"
-          ? piField
-          : piField && typeof piField === "object" && "id" in piField
-            ? String((piField as { id: string }).id)
-            : "";
-
-      isReverseCharge = await reverseChargeFromStripePaymentIntent(
-        session.payment_intent
-      );
 
       const customer = session.customer_details;
-      const ship = (session as unknown as Record<string, unknown>)
-        .shipping_details as {
-        name?: string;
-        address?: {
-          line1?: string;
-          line2?: string;
-          city?: string;
-          postal_code?: string;
-          country?: string;
-        };
-      } | undefined;
-
-      billing = {
-        first_name: customer?.name?.split(" ")[0] || "",
-        last_name: customer?.name?.split(" ").slice(1).join(" ") || "",
-        email: customer?.email || "",
-        phone: customer?.phone || "",
-        address_1: customer?.address?.line1 || "",
-        address_2: customer?.address?.line2 || "",
-        city: customer?.address?.city || "",
-        postcode: customer?.address?.postal_code || "",
-        country: customer?.address?.country || "",
-      };
-
-      shipping = {
-        first_name: ship?.name?.split(" ")[0] || billing.first_name,
-        last_name:
-          ship?.name?.split(" ").slice(1).join(" ") || billing.last_name,
-        address_1: ship?.address?.line1 || billing.address_1,
-        address_2: ship?.address?.line2 || billing.address_2,
-        city: ship?.address?.city || billing.city,
-        postcode: ship?.address?.postal_code || billing.postcode,
-        country: ship?.address?.country || billing.country,
-      };
-    } else if (body.paymentIntentId && body.customer && body.items) {
-      cartItems = body.items;
-      transactionId = body.paymentIntentId;
-      isReverseCharge = body.isReverseCharge === true;
-
-      const c = body.customer;
-      const stateVal = asString(c.state);
-      billing = {
-        first_name: c.firstName,
-        last_name: c.lastName,
-        email: c.email,
-        address_1: c.street,
-        city: c.city,
-        postcode: c.zip,
-        country: c.country,
-        ...(stateVal ? { state: stateVal } : {}),
-      };
-      shipping = { ...billing };
-    } else {
-      return NextResponse.json(
-        { error: "Fehlende Daten." },
-        { status: 400 }
-      );
-    }
-
-    let couponCodeResolved: string | undefined;
-    let stripeDiscountCents: number | undefined;
-    const codeTrimmed = body.couponCode?.trim();
-
-    if (codeTrimmed && !isWholesaleCheckout) {
-      const subtotalCents = cartItems.reduce(
-        (sum, item) =>
-          sum +
-          Math.round(parsePrice(item.price) * 100) * Math.max(1, item.qty),
-        0
-      );
-      const applied = await applyCouponToSubtotalCents(
-        codeTrimmed,
-        subtotalCents,
-        cartMetaToCartItems(cartItems),
-        body.customerEmail?.trim() || body.customer?.email?.trim()
-      );
-      if (!applied.ok) {
-        return NextResponse.json(
-          { error: "invalid_coupon", message: applied.error },
-          { status: 400 }
-        );
-      }
-      couponCodeResolved = applied.metadata.coupon_code;
-      stripeDiscountCents = applied.discountCents;
-    }
-
-    if (transactionId.startsWith("paypal_")) {
-      const resolvedEmail = resolveSyncBodyEmail(body);
-      if (!validatePayPalSyncEmail(resolvedEmail)) {
-        console.error(
-          "[sync-order] PayPal flow with invalid email, persisting orphan",
-          {
-            paymentIntentId: transactionId,
-            customerEmail: body.customer?.email ?? "",
-            customerEmailField: body.customerEmail ?? "",
-          }
-        );
-        await reportPayPalSyncFailure(
-          body,
-          "invalid_email_pre_wc",
-          {
-            received_email: body.customer?.email ?? "",
-            customer_email_field: body.customerEmail ?? "",
-            billing_email: body.billing?.email ?? "",
+      const result = await verbucheStripeZahlung({
+        paymentIntentId: piId,
+        quelle: `sync-order (Legacy Checkout Session ${body.sessionId})`,
+        syncContext: {
+          items: cartItems,
+          customer: {
+            email: customer?.email || "",
+            firstName: customer?.name?.split(" ")[0] || "",
+            lastName: customer?.name?.split(" ").slice(1).join(" ") || "",
+            street: customer?.address?.line1 || "",
+            zip: customer?.address?.postal_code || "",
+            city: customer?.address?.city || "",
+            country: customer?.address?.country || "",
           },
-          400
-        );
-        return NextResponse.json(
-          {
-            error: "invalid_email",
-            message: "Die E-Mail-Adresse ist ungültig.",
-            orphaned: true,
-          },
-          { status: 400 }
-        );
-      }
-      if (body.customer) {
-        body.customer.email = resolvedEmail;
-      }
-      billing.email = resolvedEmail;
-      shipping.email = resolvedEmail;
+        },
+      });
+      return antwort(result, "stripe");
     }
 
-    const result = await createWooOrderFromCheckoutSync({
-      cartItems,
-      billing,
-      shipping,
-      transactionId,
-      isReverseCharge,
-      isWholesaleCheckout,
-      billingOverrides: body.billing,
-      meta_data: body.meta_data,
-      checkoutShipping: body.checkoutShipping,
-      videoUtm: body.videoUtm,
-      marketingUtm: body.marketingUtm,
-      stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
-      couponCode: couponCodeResolved,
-      stripeDiscountCents,
-    });
-
-    if (transactionId.startsWith("paypal_")) {
-      const wooTotal = (result.wooOrder as { total?: string } | undefined)
-        ?.total;
-      const wooTotalCents = wooTotal
-        ? Math.round(parsePrice(String(wooTotal)) * 100)
-        : 0;
-      console.log(
-        `[PayPal] order=${result.orderId}, wcTotal=${wooTotalCents}, discount=-${stripeDiscountCents ?? 0}, coupon=${couponCodeResolved ?? "none"}`
-      );
-    }
-
-    await trySendOrderConfirmation(result, transactionId);
-
-    return NextResponse.json({
-      success: true,
-      orderId: result.orderId,
-      orderNumber: result.orderNumber,
-      status: result.status,
-    });
+    return NextResponse.json({ error: "Fehlende Daten." }, { status: 400 });
   } catch (err) {
-    if (err instanceof PaymentIntentNotSucceededError) {
+    if (err instanceof BestellungOhneArtikelFehler) {
       return NextResponse.json(
         {
-          error: "payment_intent_not_succeeded",
-          message: err.message,
+          error: "no_cart_items",
+          message: "Keine Artikel für WooCommerce-Order (weder Request-Body noch PI cart_snapshot).",
+          debug: { paymentIntentId: body?.paymentIntentId },
         },
         { status: 400 }
+      );
+    }
+    if (err instanceof PayPalFehler) {
+      console.error(`[sync-order] PayPal: ${err.message} (debug ${err.debugId})`);
+      if (body?.paymentIntentId?.startsWith("paypal_")) {
+        await reportPayPalSyncFailure(body, "paypal_not_captured", err.message, 402);
+      }
+      return NextResponse.json(
+        { error: "paypal_not_captured", message: err.message },
+        { status: 402 }
       );
     }
 
     const code =
-      err instanceof Error
-        ? (err as Error & { code?: string }).code
-        : undefined;
-    if (code === "country_blocked") {
+      err instanceof Error ? (err as Error & { code?: string }).code : undefined;
+    if (code === "invalid_coupon") {
       return NextResponse.json(
-        {
-          error: "country_blocked",
-          message:
-            err instanceof Error
-              ? err.message
-              : "Versand in dieses Land ist nicht möglich",
-        },
-        { status: 403 }
+        { error: "invalid_coupon", message: err instanceof Error ? err.message : "Ungültiger Gutschein" },
+        { status: 400 }
       );
     }
-    if (code === "wholesale_eu_only") {
+    if (code === "country_blocked" || code === "wholesale_eu_only") {
       return NextResponse.json(
-        {
-          error: "wholesale_eu_only",
-          message:
-            err instanceof Error
-              ? err.message
-              : "Wholesale ist nur innerhalb der EU verfügbar",
-        },
+        { error: code, message: err instanceof Error ? err.message : code },
         { status: 403 }
       );
     }
 
     const failMsg = err instanceof Error ? err.message : String(err);
-    const resolvedLogEmail = body ? resolveSyncBodyEmail(body) : "";
     console.error(
-      `[sync-order] FAILED pi=${body?.paymentIntentId ?? "?"} msg=${failMsg} itemsInBody=${body?.items?.length ?? 0} email=${resolvedLogEmail}`
+      `[sync-order] FAILED ref=${body?.paymentIntentId ?? body?.sessionId ?? "?"} msg=${failMsg}`
     );
-
     if (body?.paymentIntentId?.startsWith("paypal_")) {
       const reason = failMsg.includes("WooCommerce order creation failed")
         ? "wc_rejected"
         : "sync_order_failed";
       await reportPayPalSyncFailure(body, reason, failMsg, 400);
     }
-
     return NextResponse.json(
       {
         error: "sync-order-failed",
-        message: err instanceof Error ? err.message : String(err),
-        stack:
-          err instanceof Error
-            ? err.stack?.split("\n").slice(0, 5).join("\n")
-            : undefined,
+        message: failMsg,
         debug: {
           paymentIntentId: body?.paymentIntentId,
-          isReverseCharge: body?.isReverseCharge,
-          isWholesale: body?.isWholesale,
           itemsCount: body?.items?.length,
-          customerEmail: body?.customer?.email,
         },
       },
       { status: 400 }

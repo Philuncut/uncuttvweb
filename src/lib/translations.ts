@@ -237,6 +237,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Deine Zahlung ist eingegangen. Die Bestelldetails werden gerade synchronisiert — du erhältst in Kürze eine Bestätigungs-E-Mail.",
     en: "Your payment was received. Order details are syncing — you will receive a confirmation email shortly.",
   },
+  ORDER_SUCCESS_PAYMENT_CONFIRMING: {
+    de: "Deine Zahlung wird gerade bestätigt. Die Bestellbestätigung per E-Mail kommt, sobald der Zahlungsanbieter den Eingang gemeldet hat — meist innerhalb weniger Minuten.",
+    en: "Your payment is being confirmed. The order confirmation email will arrive as soon as the payment provider reports the payment — usually within a few minutes.",
+  },
   ORDER_SUCCESS_RETRY: { de: "ERNEUT VERSUCHEN", en: "TRY AGAIN" },
   ORDER_SUCCESS_BACK_TO_SHOP: { de: "ZURÜCK ZUM SHOP", en: "BACK TO SHOP" },
   ORDER_SUCCESS_BANK_TITLE: { de: "BESTELLUNG EINGEGANGEN", en: "ORDER RECEIVED" },
@@ -328,6 +332,18 @@ const translations: Record<string, Record<string, string>> = {
   CHECKOUT_PAYPAL_SYNC_FAILED: {
     de: "Deine Zahlung wurde erfolgreich durchgeführt, aber wir konnten deine Bestellung nicht automatisch verbuchen. Bitte kontaktiere uns sofort unter office@uncuttv.at mit der PayPal-Order-ID: {{orderId}}. Du wirst nicht doppelt belastet; wir bearbeiten deine Bestellung manuell.",
     en: "Your payment was successful, but we could not create your order automatically. Please contact us immediately at office@uncuttv.at with PayPal order ID: {{orderId}}. You will not be charged twice; we will process your order manually.",
+  },
+  CHECKOUT_PAYPAL_CAPTURE_FAILED: {
+    de: "Die PayPal-Zahlung konnte nicht abgeschlossen werden. Es wurde nichts abgebucht. Bitte versuche es erneut oder wähle eine andere Zahlungsart. (PayPal-Order-ID: {{orderId}})",
+    en: "The PayPal payment could not be completed. Nothing was charged. Please try again or choose another payment method. (PayPal order ID: {{orderId}})",
+  },
+  CHECKOUT_PAYPAL_ADDRESS_INCOMPLETE: {
+    de: "Bitte zuerst alle Adressfelder ausfüllen, dann mit PayPal bezahlen.",
+    en: "Please fill in all address fields first, then pay with PayPal.",
+  },
+  CHECKOUT_ERROR_ORDER_PREPARE_FAILED: {
+    de: "Die Bestellung konnte nicht angelegt werden. Es wurde nichts abgebucht. Bitte versuche es erneut.",
+    en: "The order could not be created. Nothing was charged. Please try again.",
   },
   CHECKOUT_PAYPAL_NETWORK_RECOVERY: {
     de: "Deine Zahlung bei PayPal war erfolgreich (Transaktions-ID: {{captureId}}), aber die Verbindung zum Shop ist unterbrochen. Deine Bestellung wurde lokal gesichert und wird automatisch erneut versucht. Bitte kontaktiere uns unter office@uncuttv.at mit der PayPal-Order-ID {{orderId}}, falls du keine Bestätigung erhältst. Du wirst nicht doppelt belastet.",

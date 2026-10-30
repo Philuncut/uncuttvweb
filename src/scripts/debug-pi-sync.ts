@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import Stripe from "stripe";
 import { getCartItemsForSync, normalizeCartMetaItems } from "@/lib/cart-items-from-context";
-import { createWooOrderFromPayment } from "@/lib/wc-order-from-payment";
+import { verbucheStripeZahlung } from "@/lib/stripe-zahlung";
 
 function loadEnvFile(filename: string): Record<string, string> {
   const path = resolve(process.cwd(), filename);
@@ -64,7 +64,8 @@ async function main() {
   console.log("normalize bad id:", sampleWithBadId);
 
   try {
-    const result = await createWooOrderFromPayment({
+    const result = await verbucheStripeZahlung({
+      quelle: "Skript",
       paymentIntentId: piId,
       syncContext: { items: [] },
     });
