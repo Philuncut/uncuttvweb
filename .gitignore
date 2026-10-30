@@ -56,3 +56,6 @@ händlerzugänge.txt
 !.env.example
 
 tmp-mail-preview/
+
+# Lokale Startkonfiguration der Claude-App
+.claude/launch.json
