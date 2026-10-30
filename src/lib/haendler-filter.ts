@@ -1,10 +1,15 @@
 import type { WooCategory } from "@/lib/types";
 import { parsePrice } from "@/lib/parse-price";
+import { hatMerchKategorie } from "@/lib/varianten";
 
 /**
  * WooCommerce-Kategorie-Slugs für Händler-"Main-Titel".
  * `instock` entspricht `INSTOCK_SLUG` in ShopContent.tsx (Sektion „Jetzt erhältlich“);
  * `jetzt-erhaeltlich` ist der Slug aus der Shop-Filterleiste (gleiche Sparte, falls Woo so taggt).
+ *
+ * Merch (Kategorie `merch`) steht bewusst NICHT hier und wird unten sogar
+ * ausdrücklich ausgeschlossen: Merch gibt es nur für Endkunden über die
+ * Website, auch wenn der Artikel zugleich in "Vorverkauf" steht.
  */
 export const HAENDLER_ALLOWED_CATEGORY_SLUGS = [
   "vorverkauf",
@@ -74,6 +79,11 @@ export function productHasHaendlerCategory(
   );
 }
 
+/** Merch ist nie Händlerware -- weder sichtbar noch bestellbar im Portal. */
+export function productIsMerch(product: HaendlerProductLike): boolean {
+  return hatMerchKategorie(product.categories);
+}
+
 /** Exakte Übereinstimmung auf `category.slug` (case-insensitive). */
 export function productHasExactCategorySlug(
   product: HaendlerProductLike,
@@ -116,11 +126,12 @@ export function isProductInStockForHaendler(product: HaendlerProductLike): boole
   return product.stock_status !== "outofstock";
 }
 
-/** UND: erlaubte Kategorie + haendler_preis > 0 + nicht outofstock */
+/** UND: erlaubte Kategorie + haendler_preis > 0 + nicht outofstock + kein Merch */
 export function isProductVisibleForHaendler(
   product: HaendlerProductLike,
   haendlerPreis?: string
 ): boolean {
+  if (productIsMerch(product)) return false;
   const preis =
     haendlerPreis ?? extractHaendlerPreisFromMeta(product.meta_data);
   return (

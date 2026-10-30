@@ -13,6 +13,8 @@ import {
   buildEuB2cNonAtLineItemWithBakedDiscount,
   buildNonEuB2cLineItem,
   buildNonEuB2cLineItemWithBakedDiscount,
+  buildReverseChargeLineItem,
+  buildImplicitLineItem,
   splitGrossForNonEu,
   addTaxToNet,
   buildEuB2cWooShippingTaxes,
@@ -35,16 +37,29 @@ import {
   allocateDiscountCentsToLines,
   appendAppliedCouponOrderMeta,
   buildWooCouponLines,
+  discountLineKey,
   shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
 import { wooFetch } from "@/lib/woocommerce";
 import { resolveOrderCustomer } from "@/lib/order-customer";
+import { GROESSE_ATTRIBUT_SLUG } from "@/lib/varianten";
 
+/**
+ * Eine Warenkorbzeile auf dem Weg in die WooCommerce-Bestellung. Bei
+ * variablen Produkten (Merch mit Größen) kommen variation_id und die Größe
+ * dazu; daraus werden in woo-vat-split.ts `variation_id` und das
+ * Positions-Meta pa_groesse der Bestellung.
+ */
 export type CartMeta = {
   id: number;
   name: string;
   qty: number;
   price: string;
+  variation_id?: number;
+  /** Anzeigename der Größe, z. B. "L". */
+  size?: string;
+  /** Slug des Begriffs, z. B. "l"; Wert des Positions-Metas pa_groesse. */
+  size_slug?: string;
 };
 
 export type CustomerInfo = {
@@ -308,9 +323,16 @@ export type WooOrderForDetails = WooOrderRow & {
   shipping?: { country?: string };
   line_items?: Array<{
     product_id?: number;
+    variation_id?: number;
     name?: string;
     quantity?: number;
     total?: string;
+    meta_data?: Array<{
+      key?: string;
+      value?: unknown;
+      display_key?: string;
+      display_value?: unknown;
+    }>;
   }>;
   shipping_lines?: Array<{
     method_title?: string;
@@ -319,6 +341,26 @@ export type WooOrderForDetails = WooOrderRow & {
   total?: string;
   currency?: string;
 };
+
+/**
+ * Die Größe einer Bestellposition aus ihrem Meta (pa_groesse, von
+ * WooCommerce mit display_value "L" angezeigt). Leer bei Positionen ohne
+ * Variante.
+ */
+export function lineItemSize(
+  item: NonNullable<WooOrderForDetails["line_items"]>[number]
+): string {
+  for (const m of item.meta_data ?? []) {
+    const key = asString(m.key);
+    if (key === GROESSE_ATTRIBUT_SLUG || key.toLowerCase() === "größe" || key.toLowerCase() === "groesse") {
+      const shown = asString(m.display_value);
+      if (shown) return shown.replace(/<[^>]*>/g, "").trim();
+      const raw = asString(m.value);
+      if (raw) return raw.toUpperCase();
+    }
+  }
+  return "";
+}
 
 export type OrderDetailsApiPayload = {
   woo_order_id: string;
@@ -333,7 +375,11 @@ export type OrderDetailsApiPayload = {
   shippingCountry?: string;
   line_items: Array<{
     product_id: string;
+    /** Varianten-ID als Zeichenkette, "" ohne Variante. Meta: content_ids. */
+    variation_id: string;
     name: string;
+    /** Größe aus dem Positions-Meta, "" ohne Variante. */
+    size: string;
     quantity: number;
     price: number;
   }>;
@@ -348,11 +394,21 @@ export function mapWooOrderToOrderDetailsPayload(
   const customerName = [first, last].filter(Boolean).join(" ");
 
   const wooLineItems = order.line_items ?? [];
+  // Größe sichtbar in der Bestellübersicht: WooCommerce nennt die Variante
+  // meist schon "… - L"; steht die Größe nicht im Namen, kommt sie dazu.
+  const describe = (li: (typeof wooLineItems)[number]): string => {
+    const name = asString(li.name) || "Artikel";
+    const size = lineItemSize(li);
+    if (!size) return name;
+    return new RegExp(`(^|[\\s-–|])${size.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i").test(name)
+      ? name
+      : `${name} – Größe ${size}`;
+  };
   const items = wooLineItems.map((li) => {
     const qty = Math.max(1, Number(li.quantity) || 1);
     const lineTotalEuro = parsePrice(String(li.total ?? "0"));
     return {
-      description: asString(li.name) || "Artikel",
+      description: describe(li),
       quantity: qty,
       amount: Math.round(lineTotalEuro * 100),
     };
@@ -361,9 +417,12 @@ export function mapWooOrderToOrderDetailsPayload(
   const line_items = wooLineItems.map((li) => {
     const qty = Math.max(1, Number(li.quantity) || 1);
     const lineTotalEuro = parsePrice(String(li.total ?? "0"));
+    const variationId = Number(li.variation_id ?? 0);
     return {
       product_id: String(li.product_id ?? 0),
+      variation_id: variationId > 0 ? String(variationId) : "",
       name: asString(li.name),
+      size: lineItemSize(li),
       quantity: qty,
       price: lineTotalEuro / qty,
     };
@@ -510,7 +569,7 @@ export async function createWooOrderFromCheckoutSync(
   const discountByLine =
     normalizedCoupon && discountCents > 0
       ? allocateDiscountCentsToLines(cartItems, discountCents)
-      : new Map<number, number>();
+      : new Map<string, number>();
 
   const orderData: Record<string, unknown> = {
     status: "processing",
@@ -521,53 +580,35 @@ export async function createWooOrderFromCheckoutSync(
     prices_include_tax: true,
     billing: mergedBilling,
     shipping,
+    // Jede Zeile über die Bauer in woo-vat-split: product_id, bei Größen
+    // variation_id plus Meta pa_groesse, dann der Steuerweg.
     line_items: cartItems.map((item) => {
-      const lineDiscountEur = (discountByLine.get(item.id) ?? 0) / 100;
+      const lineDiscountCents = discountByLine.get(discountLineKey(item)) ?? 0;
+      const lineDiscountEur = lineDiscountCents / 100;
 
       if (isReverseCharge) {
-        const lineGross = Math.max(
-          0,
-          parsePrice(item.price) * item.qty - lineDiscountEur
-        );
-        const lineTotal = lineGross.toFixed(2);
-        return {
-          product_id: Number(item.id),
-          quantity: item.qty,
-          subtotal: lineTotal,
-          total: lineTotal,
-          subtotal_tax: "0.00",
-          total_tax: "0.00",
-          taxes: [],
-        };
+        return buildReverseChargeLineItem(item, lineDiscountEur);
       }
       if (isWholesaleCheckout) {
         return buildWholesaleNonRcLineItem(item, taxCountry);
       }
       if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-        const lineDiscountCents = discountByLine.get(item.id) ?? 0;
         if (lineDiscountCents > 0) {
           return buildEuB2cNonAtLineItemWithBakedDiscount(
             item,
             taxCountry,
-            lineDiscountCents / 100
+            lineDiscountEur
           );
         }
         return buildEuB2cNonAtLineItem(item, taxCountry);
       }
       if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-        const lineDiscountCents = discountByLine.get(item.id) ?? 0;
         if (lineDiscountCents > 0) {
-          return buildNonEuB2cLineItemWithBakedDiscount(
-            item,
-            lineDiscountCents / 100
-          );
+          return buildNonEuB2cLineItemWithBakedDiscount(item, lineDiscountEur);
         }
         return buildNonEuB2cLineItem(item);
       }
-      return {
-        product_id: Number(item.id),
-        quantity: item.qty,
-      };
+      return buildImplicitLineItem(item);
     }),
     transaction_id: transactionId,
   };

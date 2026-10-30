@@ -15,7 +15,11 @@ import type { ShopListProduct, WooCategory } from "@/lib/types";
 import SearchInput from "@/components/SearchInput";
 import MobileBanner from "@/components/MobileBanner";
 import { useLanguage } from "@/lib/LanguageContext";
-import { createT, translateCategoryName } from "@/lib/translations";
+import {
+  createT,
+  formatTranslation,
+  translateCategoryName,
+} from "@/lib/translations";
 import { formatPrice } from "@/lib/format-price";
 import { parsePrice } from "@/lib/parse-price";
 import { ProductCardQuickAdd } from "@/components/ProductCardQuickAdd";
@@ -32,6 +36,12 @@ import {
   sortProducts,
   vorverkaufProdukte,
 } from "@/lib/shop-sections";
+import {
+  MERCH_SLUG,
+  istVariabel,
+  preisAnzeige,
+  produktKaufstatus,
+} from "@/lib/varianten";
 
 /* ── FilterPill ── */
 const pillGlow =
@@ -87,10 +97,34 @@ function FilterPill({
 // Kategorie-Slugs, hasCatSlug und sortProducts liegen in
 // src/lib/shop-sections.ts, weil /start dieselbe Auswahl zeigt.
 
-function getBadge(product: ShopListProduct): string | null {
-  if (product.stock_status === "outofstock") return "AUSVERKAUFT";
+type Badge = { label: string; tone: "muted" | "accent" };
+
+/**
+ * Das Abzeichen oben links auf der Karte. Verkaufszeitraum vor Lager:
+ * "AB 31.10." bzw. "NICHT MEHR ERHÄLTLICH", sonst "AUSVERKAUFT" (bei
+ * variablen Produkten erst, wenn keine Größe mehr bestellbar ist), sonst
+ * "VORVERKAUF".
+ */
+function getBadge(
+  product: ShopListProduct,
+  t: (key: string) => string,
+  language: "de" | "en"
+): Badge | null {
+  const status = produktKaufstatus(product);
+  if (!status.bestellbar) {
+    if (status.grund === "kommt") {
+      return {
+        label: formatTranslation("ERHAELTLICH_AB", language, { datum: status.ab }),
+        tone: "accent",
+      };
+    }
+    if (status.grund === "vorbei") {
+      return { label: t("NICHT_MEHR_ERHAELTLICH"), tone: "muted" };
+    }
+    return { label: t("AUSVERKAUFT"), tone: "muted" };
+  }
   if (product.categories.some((c) => c.slug.includes("vorverkauf")))
-    return "VORVERKAUF";
+    return { label: t("VORVERKAUF"), tone: "accent" };
   return null;
 }
 
@@ -115,14 +149,21 @@ function ProductCard({
   eager?: boolean;
 }) {
   const [cardFlash, setCardFlash] = useState(false);
-  const badge = muted ? "AUSVERKAUFT" : getBadge(product);
-  const image = product.images[0]?.src;
-  const showQuickAdd = product.stock_status !== "outofstock";
   const { language } = useLanguage();
+  const t = createT(language);
+  const status = produktKaufstatus(product);
+  const badge: Badge | null = muted
+    ? { label: t("AUSVERKAUFT"), tone: "muted" }
+    : getBadge(product, t, language);
+  const image = product.images[0]?.src;
+  // Variable Produkte (Größen) brauchen die Produktseite zur Größenwahl.
+  const showQuickAdd =
+    !muted && status.bestellbar && !istVariabel(product);
+  const preis = preisAnzeige(product);
 
   const isPreOrder = productHasPreOrderCategory(product.categories);
   const scarcityChip =
-    !muted && product.stock_status !== "outofstock"
+    !muted && status.bestellbar && !istVariabel(product)
       ? getStockDisplay(
           product.stock_quantity,
           product.stock_status,
@@ -163,7 +204,9 @@ function ProductCard({
             sizes={CARD_IMAGE_SIZES}
             loading={eager ? "eager" : "lazy"}
             className={`object-cover transition-transform duration-300 group-hover:scale-105 ${
-              !muted && product.stock_status === "outofstock" ? "opacity-50" : ""
+              !muted && !status.bestellbar && status.grund !== "kommt"
+                ? "opacity-50"
+                : ""
             }`}
           />
         ) : (
@@ -174,12 +217,12 @@ function ProductCard({
         {badge && (
           <span
             className={`absolute top-3 left-3 px-3 py-1 text-[10px] font-bold tracking-wider ${
-              badge === "AUSVERKAUFT"
+              badge.tone === "muted"
                 ? "bg-white/10 text-white/50"
                 : "bg-[#c0392b] text-white"
             }`}
           >
-            {badge}
+            {badge.label}
           </span>
         )}
         {scarcityGridLabel && (
@@ -202,16 +245,17 @@ function ProductCard({
           {product.name}
         </h3>
         <p className="mt-1 text-sm font-bold text-[#c0392b]">
-          {product.sale_price ? (
-            <>
-              <span className="mr-2 text-white/30 line-through">
-                {formatPrice(parsePrice(product.regular_price))}
-              </span>
-              {formatPrice(parsePrice(product.sale_price))}
-            </>
-          ) : (
-            <>{formatPrice(parsePrice(product.price))}</>
+          {preis.ab && (
+            <span className="mr-1 text-xs font-normal text-white/50">
+              {t("AB_PREIS")}
+            </span>
           )}
+          {preis.regular_price && (
+            <span className="mr-2 text-white/30 line-through">
+              {formatPrice(parsePrice(preis.regular_price))}
+            </span>
+          )}
+          {formatPrice(parsePrice(preis.price))}
         </p>
       </div>
     </Link>
@@ -492,9 +536,14 @@ export default function ShopContent({
             {t("ALLE")}
           </FilterPill>
           {(() => {
+            // Die Filterknöpfe: feste Liste bekannter Kategorien in dieser
+            // Reihenfolge. Merch (Kategorie `merch`) steht seit Oktober 2026
+            // dazu; der Knopf erscheint, sobald die Kategorie Produkte hat
+            // (hide_empty im Katalog).
             const order = [
               "vorverkauf",
               "brandneu",
+              MERCH_SLUG,
               "sale",
               "jetzt-erhaeltlich",
               "underground-collection",
@@ -505,6 +554,7 @@ export default function ShopContent({
               const name = cat.name.toLowerCase();
               if (slug === "vorverkauf" || name === "vorverkauf") return "vorverkauf";
               if (slug === "brandneu" || name === "brandneu") return "brandneu";
+              if (slug === MERCH_SLUG || name === "merch") return MERCH_SLUG;
               if (slug === "sale" || name === "im angebot und bundles") return "sale";
               if (slug === "jetzt-erhaeltlich" || slug === "instock" || name.startsWith("jetzt erh")) return "jetzt-erhaeltlich";
               if (slug === "underground-collection" || name === "underground collection") return "underground-collection";

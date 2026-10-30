@@ -274,14 +274,15 @@ export default function CartDrawer() {
                 />
               )}
               <div className="space-y-4">
-              {items.map(({ product, quantity }) => {
+              {items.map(({ product, quantity, variant }) => {
                 const image = product.images[0]?.src;
                 const price = parsePrice(product.price || "0");
                 const subtotal = formatPrice(price * quantity);
+                const variationId = variant?.id;
 
                 return (
                   <div
-                    key={product.id}
+                    key={variationId ? `${product.id}:${variationId}` : product.id}
                     className="flex gap-4 border-b border-[#222] pb-4"
                   >
                     {/* Thumbnail */}
@@ -302,12 +303,19 @@ export default function CartDrawer() {
                     {/* Info */}
                     <div className="flex min-w-0 flex-1 flex-col justify-between">
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="line-clamp-2 text-xs font-bold leading-tight text-white/90">
-                          {product.name}
-                        </h3>
+                        <div className="min-w-0">
+                          <h3 className="line-clamp-2 text-xs font-bold leading-tight text-white/90">
+                            {product.name}
+                          </h3>
+                          {variant?.size && (
+                            <p className="mt-0.5 text-[11px] font-bold tracking-wider text-[#c0392b]">
+                              {t("GROESSE_LABEL")}: {variant.size}
+                            </p>
+                          )}
+                        </div>
                         <button
                           type="button"
-                          onClick={() => removeFromCart(product.id)}
+                          onClick={() => removeFromCart(product.id, variationId)}
                           className="shrink-0 cursor-pointer bg-transparent p-0.5 text-white/30 transition-colors hover:text-[#c0392b]"
                           aria-label="Entfernen"
                         >
@@ -331,7 +339,7 @@ export default function CartDrawer() {
                           <button
                             type="button"
                             onClick={() =>
-                              updateQuantity(product.id, quantity - 1)
+                              updateQuantity(product.id, quantity - 1, variationId)
                             }
                             disabled={quantity <= 1}
                             className="cursor-pointer bg-transparent px-2 py-1 text-xs text-white/60 transition-colors hover:text-white disabled:cursor-default disabled:text-white/20"
@@ -344,7 +352,7 @@ export default function CartDrawer() {
                           <button
                             type="button"
                             onClick={() =>
-                              updateQuantity(product.id, quantity + 1)
+                              updateQuantity(product.id, quantity + 1, variationId)
                             }
                             className="cursor-pointer bg-transparent px-2 py-1 text-xs text-white/60 transition-colors hover:text-white"
                           >

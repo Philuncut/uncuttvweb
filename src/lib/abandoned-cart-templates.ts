@@ -71,10 +71,13 @@ function escapeAttr(s: string): string {
 
 export function buildCartItemsBlockHtml(items: CartItem[]): string {
   const rows = items
-    .map(({ product, quantity }) => {
+    .map(({ product, quantity, variant }) => {
       const image = product.images[0]?.src ?? "";
       const price = parsePrice(product.price || "0");
       const lineTotal = formatPrice(price * quantity);
+      const sizeLine = variant?.size
+        ? `<p style="margin:0 0 4px; font-size:12px; color:${COLORS.textMuted};">Größe: ${escapeHtml(variant.size)}</p>`
+        : "";
       const thumb = image
         ? `<img src="${escapeAttr(image)}" alt="" width="80" height="80" style="display:block; width:80px; height:80px; object-fit:cover; background:#1a1a1a;" />`
         : `<div style="width:80px;height:80px;background:#1a1a1a;"></div>`;
@@ -83,6 +86,7 @@ export function buildCartItemsBlockHtml(items: CartItem[]): string {
         <td width="96" style="padding:12px 12px 12px 0; vertical-align:top; border-bottom:1px solid ${COLORS.border};">${thumb}</td>
         <td style="padding:12px 8px; vertical-align:top; border-bottom:1px solid ${COLORS.border};">
           <p style="margin:0 0 4px; font-size:14px; font-weight:700; color:${COLORS.textPrimary};">${escapeHtml(product.name)}</p>
+          ${sizeLine}
           <p style="margin:0; font-size:12px; color:${COLORS.textMuted};">× ${quantity}</p>
         </td>
         <td align="right" style="padding:12px 0 12px 8px; vertical-align:top; border-bottom:1px solid ${COLORS.border}; white-space:nowrap;">

@@ -5,6 +5,7 @@ import {
 } from "@/lib/eu-vat-rates";
 import { parsePrice } from "@/lib/parse-price";
 import { splitGrossForWooRest } from "@/lib/woo-vat-split";
+import { lineKey } from "@/lib/varianten";
 import type { OrderMetaEntry } from "@/lib/video-utm-server";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
 
@@ -108,12 +109,20 @@ export function buildWooCouponLines(
   return [{ code: normalized }];
 }
 
-/** Spread coupon discount (cents) across cart lines proportional to line gross. */
+/** Schlüssel einer Zeile im Rabatt-Verteiler: Produkt plus Variante (lineKey). */
+export function discountLineKey(item: Pick<CartMeta, "id" | "variation_id">): string {
+  return lineKey(item.id, item.variation_id);
+}
+
+/**
+ * Spread coupon discount (cents) across cart lines proportional to line gross.
+ * Keyed by lineKey (product plus variation) — two sizes of one shirt are two lines.
+ */
 export function allocateDiscountCentsToLines(
   items: CartMeta[],
   discountCents: number
-): Map<number, number> {
-  const byLine = new Map<number, number>();
+): Map<string, number> {
+  const byLine = new Map<string, number>();
   if (discountCents <= 0 || items.length === 0) return byLine;
 
   const lineGrosses = items.map(
@@ -137,7 +146,8 @@ export function allocateDiscountCentsToLines(
   items.forEach((item, idx) => {
     const cents = allocations[idx];
     if (cents > 0) {
-      byLine.set(item.id, cents);
+      const key = discountLineKey(item);
+      byLine.set(key, (byLine.get(key) ?? 0) + cents);
     }
   });
 

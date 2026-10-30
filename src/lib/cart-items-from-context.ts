@@ -17,6 +17,11 @@ export function coerceStripeMetadata(
   return out;
 }
 
+function positiveInt(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+}
+
 function rowToCartMeta(row: LooseCartRow): CartMeta | null {
   const id = Number(row.id ?? row.product_id);
   const qty = Math.max(
@@ -26,7 +31,17 @@ function rowToCartMeta(row: LooseCartRow): CartMeta | null {
   const name = String(row.name ?? row.n ?? "").trim();
   const price = String(row.price ?? row.p ?? "0").trim();
   if (!Number.isFinite(id) || id <= 0 || !name) return null;
-  return { id, name, qty, price };
+  const meta: CartMeta = { id, name, qty, price };
+  // Variante (Merch mit Größen): variation_id / size / size_slug, kompakt v / s / ss.
+  const variationId = positiveInt(row.variation_id ?? row.vid ?? row.v);
+  if (variationId) {
+    meta.variation_id = variationId;
+    const size = String(row.size ?? row.s ?? "").trim();
+    const sizeSlug = String(row.size_slug ?? row.ss ?? "").trim();
+    if (size) meta.size = size;
+    if (sizeSlug) meta.size_slug = sizeSlug;
+  }
+  return meta;
 }
 
 /** Normalize checkout cart lines for Woo sync (client JSON may send strings or alternate keys). */
@@ -43,19 +58,80 @@ export function normalizeCartMetaItems(
   return out;
 }
 
+/** Warenkorbzeile des Browsers (CartItem) → Zeile für die Bestellanlage. */
+export function cartItemToCartMeta(item: CartItem): CartMeta {
+  const meta: CartMeta = {
+    id: Number(item.product.id),
+    name: String(item.product.name ?? ""),
+    qty: Math.max(1, item.quantity),
+    price: String(item.product.price ?? "0"),
+  };
+  if (item.variant && item.variant.id > 0) {
+    meta.variation_id = item.variant.id;
+    meta.size = item.variant.size;
+    meta.size_slug = item.variant.size_slug;
+  }
+  return meta;
+}
+
+export function cartItemsToCartMeta(items: CartItem[]): CartMeta[] {
+  return items.map(cartItemToCartMeta);
+}
+
+/**
+ * Die frischen Preise (und Größen) aus der Serverprüfung auf die Zeilen des
+ * Browsers übertragen; alles andere am Produkt bleibt. Zeilen werden über
+ * Produkt plus Variante zugeordnet.
+ */
+export function applyFreshPricesToCartItems(
+  items: CartItem[],
+  fresh: CartMeta[]
+): CartItem[] {
+  const byKey = new Map(
+    fresh.map((f) => [
+      `${f.id}:${f.variation_id && f.variation_id > 0 ? f.variation_id : 0}`,
+      f,
+    ])
+  );
+  return items.map((item) => {
+    const key = `${item.product.id}:${item.variant?.id ?? 0}`;
+    const f = byKey.get(key);
+    if (!f) return item;
+    const next: CartItem = {
+      ...item,
+      product: { ...item.product, price: f.price },
+    };
+    if (item.variant && (f.size || f.size_slug)) {
+      next.variant = {
+        ...item.variant,
+        size: f.size || item.variant.size,
+        size_slug: f.size_slug || item.variant.size_slug,
+      };
+    }
+    return next;
+  });
+}
+
 /** Compact cart lines for Stripe PI metadata (survives Phase-3 cart_items removal). */
 export function buildCartSnapshotMetadata(
   items: CartItem[]
 ): Record<string, string> {
   if (!items.length) return {};
-  const lines: { id: number; q: number; p: string; n: string }[] = [];
+  type Line = { id: number; q: number; p: string; n: string; v?: number; s?: string; ss?: string };
+  const lines: Line[] = [];
   for (const item of items) {
-    lines.push({
+    const line: Line = {
       id: Number(item.product.id),
       q: Math.max(1, item.quantity),
       p: String(item.product.price ?? "0"),
       n: String(item.product.name ?? "").slice(0, 120),
-    });
+    };
+    if (item.variant && item.variant.id > 0) {
+      line.v = item.variant.id;
+      line.s = item.variant.size.slice(0, 20);
+      line.ss = item.variant.size_slug.slice(0, 20);
+    }
+    lines.push(line);
   }
   let json = JSON.stringify(lines);
   while (json.length > STRIPE_META_VALUE_MAX && lines.length > 1) {
@@ -92,6 +168,12 @@ export function parseCartItemsFromPiMetadata(
               price: r.price,
               n: r.n,
               name: r.name,
+              v: r.v,
+              variation_id: r.variation_id,
+              s: r.s,
+              size: r.size,
+              ss: r.ss,
+              size_slug: r.size_slug,
             });
           })
           .filter((x): x is CartMeta => x != null);
@@ -124,6 +206,9 @@ export function parseCartItemsFromPiMetadata(
           name: String(r.name ?? ""),
           qty: Number(r.qty ?? r.quantity ?? 1),
           price: String(r.price ?? "0"),
+          variation_id: r.variation_id,
+          size: r.size,
+          size_slug: r.size_slug,
         };
       }) as CartMeta[]
     );

@@ -665,11 +665,14 @@ function OrderSummary({
       ) : null}
 
       <div className={embedded ? "space-y-3" : "mt-4 space-y-3"}>
-        {items.map(({ product, quantity }) => {
+        {items.map(({ product, quantity, variant }) => {
           const image = product.images[0]?.src;
           const price = parsePrice(product.price || "0");
           return (
-            <div key={product.id} className="flex items-center gap-3">
+            <div
+              key={variant?.id ? `${product.id}:${variant.id}` : product.id}
+              className="flex items-center gap-3"
+            >
               <div className="h-[48px] w-[48px] shrink-0 overflow-hidden bg-[#1a1a1a]">
                 {image ? (
                   <img
@@ -688,6 +691,14 @@ function OrderSummary({
                   {product.name}
                 </p>
                 <p className="text-[10px] text-white/40">
+                  {variant?.size ? (
+                    <>
+                      <span className="font-bold text-[#c0392b]">
+                        {t("GROESSE_LABEL")}: {variant.size}
+                      </span>
+                      {" · "}
+                    </>
+                  ) : null}
                   {formatTranslation("CHECKOUT_QUANTITY", language, {
                     qty: String(quantity),
                   })}
@@ -1235,7 +1246,7 @@ const StripeClientSecretPayment = forwardRef<
 
 function CheckoutInner() {
   const router = useRouter();
-  const { items, totalPrice, clearCart } = useCart();
+  const { items, totalPrice, clearCart, applyServerPrices } = useCart();
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
@@ -1267,8 +1278,9 @@ function CheckoutInner() {
   useEffect(() => {
     if (initiateCheckoutTracked.current || items.length === 0) return;
 
+    // Meta: content_ids auf die Variante (Größe), wenn die Zeile eine hat.
     const lineItems = items.map((i) => ({
-      product_id: i.product.id.toString(),
+      product_id: (i.variant?.id ?? i.product.id).toString(),
       quantity: i.quantity,
       price: parsePrice(i.product.price || "0"),
     }));
@@ -1521,6 +1533,8 @@ function CheckoutInner() {
 
   const [clientSecret, setClientSecret] = useState("");
   const [paymentIntentError, setPaymentIntentError] = useState("");
+  /** "Preise wurden aktualisiert" -- bleibt stehen, bis der Warenkorb sich wieder ändert. */
+  const [priceNotice, setPriceNotice] = useState("");
   const clientSecretRef = useRef(clientSecret);
   clientSecretRef.current = clientSecret;
   const piUpdateSeqRef = useRef(0);
@@ -1755,8 +1769,9 @@ function CheckoutInner() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            // Der Store-API-Warenkorb braucht bei Größen die Variante.
             items: items.map((i) => ({
-              id: i.product.id,
+              id: i.variant?.id ?? i.product.id,
               quantity: i.quantity,
             })),
             country,
@@ -2024,14 +2039,40 @@ function CheckoutInner() {
       const data = (await res.json()) as {
         clientSecret?: string;
         error?: string;
+        message?: string;
         stale?: boolean;
         couponCodeApplied?: string | null;
         couponRejected?: "already_used" | null;
+        repriced?: Array<{ id: number; variation_id?: number; neu: string }>;
       };
       if (cancelled || seq !== piUpdateSeqRef.current) return;
 
+      // Frische Preise vom Server in den Warenkorb übernehmen; die Kasse
+      // zeigt den Hinweis, der Betrag der Zahlung stimmt schon.
+      const uebernimmPreise = () => {
+        if (Array.isArray(data.repriced) && data.repriced.length > 0) {
+          applyServerPrices(
+            data.repriced.map((r) => ({
+              id: r.id,
+              variation_id: r.variation_id,
+              price: r.neu,
+            }))
+          );
+          setPriceNotice(t("CHECKOUT_PRICES_UPDATED"));
+        }
+      };
+
       if (!res.ok) {
         if (!piId) setClientSecret("");
+        if (res.status === 409 && data.error === "cart_invalid") {
+          uebernimmPreise();
+          setPaymentIntentError(
+            typeof data.message === "string" && data.message
+              ? data.message
+              : t("CHECKOUT_CART_INVALID")
+          );
+          return;
+        }
         if (res.status === 403 && data.error === "country_blocked") {
           setPaymentIntentError(t("CHECKOUT_ERROR_COUNTRY_BLOCKED"));
         } else if (res.status === 403 && data.error === "wholesale_eu_only") {
@@ -2059,6 +2100,7 @@ function CheckoutInner() {
       }
       setPaymentIntentError("");
       if (data.stale) return;
+      uebernimmPreise();
       if (data.couponRejected === "already_used") {
         setCouponRemovePending(false);
         setCouponId(null);
@@ -2102,6 +2144,8 @@ function CheckoutInner() {
     t,
   ]);
 
+  // Eine Zeile je Produkt UND Größe: variation_id und Größe gehen mit an
+  // den Server (Prüfung, Bestellanlage, Positions-Meta "Größe: L").
   const cartMeta = useMemo(
     () =>
       items.map((i) => ({
@@ -2109,9 +2153,74 @@ function CheckoutInner() {
         name: i.product.name,
         qty: Math.max(1, i.quantity),
         price: i.product.price,
+        ...(i.variant && i.variant.id > 0
+          ? {
+              variation_id: i.variant.id,
+              size: i.variant.size,
+              size_slug: i.variant.size_slug,
+            }
+          : {}),
       })),
     [items]
   );
+
+  /**
+   * Vor einer Zahlung, die der Browser selbst anstößt (PayPal-Knopf): den
+   * Warenkorb vom Server prüfen lassen (Produkte, Größen, Lager, Verkaufs-
+   * zeitraum, Preise frisch aus WooCommerce). Probleme oder geänderte
+   * Preise brechen den Klick ab -- die Kasse zeigt die Meldung, übernimmt
+   * neue Preise in den Warenkorb, und der nächste Klick läuft mit dem
+   * richtigen Betrag.
+   */
+  const pruefeWarenkorbVorPayPal = useCallback(async () => {
+    const res = await fetch("/api/checkout/pruefung", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: cartMeta,
+        isWholesale,
+        isReverseCharge: wholesaleReverseCharge,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      problems?: Array<{ message?: { de?: string; en?: string } }>;
+      repriced?: Array<{ id: number; variation_id?: number; neu: string }>;
+      message?: string;
+    };
+    if (!res.ok || !data.ok) {
+      const text =
+        data.problems
+          ?.map((p) => (language === "en" ? p.message?.en : p.message?.de))
+          .filter(Boolean)
+          .join(" ") ||
+        data.message ||
+        t("CHECKOUT_CART_INVALID");
+      if (Array.isArray(data.repriced) && data.repriced.length > 0) {
+        applyServerPrices(
+          data.repriced.map((r) => ({
+            id: r.id,
+            variation_id: r.variation_id,
+            price: r.neu,
+          }))
+        );
+      }
+      setError(text);
+      throw new Error(text);
+    }
+    if (Array.isArray(data.repriced) && data.repriced.length > 0) {
+      applyServerPrices(
+        data.repriced.map((r) => ({
+          id: r.id,
+          variation_id: r.variation_id,
+          price: r.neu,
+        }))
+      );
+      const text = t("CHECKOUT_PRICES_UPDATED");
+      setError(text);
+      throw new Error(text);
+    }
+  }, [cartMeta, isWholesale, wholesaleReverseCharge, language, t, applyServerPrices]);
 
   const customerData = {
     email,
@@ -2146,6 +2255,13 @@ function CheckoutInner() {
 
   useEffect(() => {
     setPreOrderBannerDismissed(false);
+  }, [cartFingerprint]);
+
+  // Der Preis-Hinweis gilt für den Warenkorb, der ihn ausgelöst hat; ändert
+  // der Kunde Menge oder Artikel (Fingerabdruck), verschwindet er wieder.
+  // Eine reine Preisänderung lässt den Fingerabdruck unberührt.
+  useEffect(() => {
+    setPriceNotice("");
   }, [cartFingerprint]);
 
   const paypalCouponDiscount = useMemo(
@@ -2528,6 +2644,22 @@ function CheckoutInner() {
                 data.orderId +
                 (isWholesale ? "&wholesale=1" : "")
             );
+          } else if (res.status === 409 && data.error === "cart_invalid") {
+            // Serverprüfung: Artikel nicht mehr bestellbar oder Preis
+            // geändert. Preise übernehmen, Meldung zeigen, nichts anlegen.
+            if (Array.isArray(data.repriced) && data.repriced.length > 0) {
+              applyServerPrices(
+                (data.repriced as Array<{ id: number; variation_id?: number; neu: string }>).map(
+                  (r) => ({ id: r.id, variation_id: r.variation_id, price: r.neu })
+                )
+              );
+            }
+            setError(
+              typeof data.message === "string" && data.message
+                ? data.message
+                : t("CHECKOUT_CART_INVALID")
+            );
+            setProcessing(false);
           } else {
             setError(
               resolveCheckoutApiError(
@@ -3553,6 +3685,7 @@ function CheckoutInner() {
                         if (wholesaleCheckoutBlocked) {
                           throw new Error(t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED"));
                         }
+                        await pruefeWarenkorbVorPayPal();
                       }}
                     />
                   ) : (
@@ -3676,6 +3809,7 @@ function CheckoutInner() {
                                 t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED")
                               );
                             }
+                            await pruefeWarenkorbVorPayPal();
                           }}
                         />
                       ) : (
@@ -3705,6 +3839,9 @@ function CheckoutInner() {
           </section>
 
           {/* Error */}
+          {priceNotice && !paymentIntentError && (
+            <p className="mt-4 text-sm text-[#e0a800]">{priceNotice}</p>
+          )}
           {paymentIntentError && (
             <p className="mt-4 text-sm text-[#c0392b]">{paymentIntentError}</p>
           )}

@@ -593,6 +593,27 @@ const translations: Record<string, Record<string, string>> = {
   E_MAIL: { de: "E-MAIL", en: "EMAIL" },
   TELEFON: { de: "TELEFON", en: "PHONE" },
   FIRMA: { de: "FIRMA", en: "COMPANY" },
+
+  // Merch mit Größen, Verkaufszeitraum
+  AB_PREIS: { de: "ab", en: "from" },
+  NICHT_MEHR_ERHAELTLICH: { de: "NICHT MEHR ERHÄLTLICH", en: "NO LONGER AVAILABLE" },
+  ERHAELTLICH_AB: { de: "AB {{datum}}", en: "FROM {{datum}}" },
+  GROESSE: { de: "GRÖSSE", en: "SIZE" },
+  GROESSE_LABEL: { de: "Größe", en: "Size" },
+  GROESSE_WAEHLEN: { de: "GRÖSSE WÄHLEN", en: "CHOOSE A SIZE" },
+  GROESSE_AUSVERKAUFT: { de: "Größe {{groesse}} ist ausverkauft", en: "Size {{groesse}} is sold out" },
+  CHECKOUT_PRICES_UPDATED: {
+    de: "Die Preise im Warenkorb wurden aktualisiert. Bitte prüfe die Bestellübersicht und bestätige erneut.",
+    en: "Your cart prices were updated. Please check the order summary and confirm again.",
+  },
+  CHECKOUT_CART_INVALID: {
+    de: "Ein Artikel im Warenkorb ist nicht mehr bestellbar.",
+    en: "An item in your cart is no longer available.",
+  },
+  CHECKOUT_MERCH_NUR_ENDKUNDEN: {
+    de: "Merch-Artikel gibt es nur für Endkunden, nicht über das Händlerkonto.",
+    en: "Merch is available to retail customers only, not via dealer accounts.",
+  },
 };
 
 // WooCommerce category name translations
@@ -604,6 +625,7 @@ const categoryNames: Record<string, string> = {
   "Out of Print": "Out of Print",
   "Underground Collection": "Underground Collection",
   "Filme": "Films",
+  "Merch": "Merch",
 };
 
 // Product detail label translations

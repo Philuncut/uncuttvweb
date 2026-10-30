@@ -8,6 +8,13 @@ import {
 import { applyCouponToSubtotalCents } from "@/lib/coupon-helpers";
 import { parsePrice } from "@/lib/parse-price";
 import { stripe } from "@/lib/stripe";
+import {
+  harteProbleme,
+  istHaendlerSitzung,
+  pruefeBestellpositionen,
+  pruefungAlsFehler,
+  type Pruefergebnis,
+} from "@/lib/bestellpruefung";
 import type { MarketingUtmInput } from "@/lib/marketing-utm-server";
 import type { VideoUtmInput } from "@/lib/video-utm-server";
 import {
@@ -92,6 +99,52 @@ function asString(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
   return String(value).trim();
+}
+
+/**
+ * Prüfung NACH erfolgter Zahlung (Stripe-Karte, PayPal-Capture): Die Preise
+ * wurden beim Anlegen der Zahlung schon frisch geprüft, der Kunde hat genau
+ * diesen Betrag bezahlt -- deshalb bleiben die Preise des Warenkorbs, damit
+ * Bestellsumme und Zahlung übereinstimmen. Harte Probleme (Produkt oder
+ * Größe gibt es nicht, Merch über Händlerkonto) weisen die Bestellung ab;
+ * weiche (in der Zwischenzeit ausverkauft, Zeitraum eben abgelaufen) werden
+ * nur protokolliert, die bezahlte Bestellung wird trotzdem angelegt.
+ */
+async function pruefeNachZahlung(
+  cartItems: CartMeta[],
+  body: SyncBody
+): Promise<{ items: CartMeta[]; abgelehnt?: Pruefergebnis }> {
+  const pruefung = await pruefeBestellpositionen(cartItems, {
+    isWholesale: body.isWholesale === true,
+    isReverseCharge: body.isReverseCharge === true,
+    haendlerKonto: await istHaendlerSitzung(),
+  });
+  const hart = harteProbleme(pruefung.problems);
+  if (hart.length > 0) {
+    console.error(
+      "[sync-order] Bestellung abgewiesen:",
+      hart.map((p) => `${p.code} #${p.id}${p.variation_id ? `/${p.variation_id}` : ""}`).join(", ")
+    );
+    return { items: cartItems, abgelehnt: { ...pruefung, problems: hart } };
+  }
+  if (pruefung.problems.length > 0) {
+    console.warn(
+      "[sync-order] Hinweis nach Zahlung (Bestellung wird trotzdem angelegt):",
+      pruefung.problems.map((p) => p.message.de).join(" ")
+    );
+  }
+  if (pruefung.repriced.length > 0) {
+    console.warn(
+      "[sync-order] Preis weicht vom aktuellen WooCommerce-Preis ab, bezahlter Preis bleibt:",
+      pruefung.repriced.map((r) => `#${r.id}${r.variation_id ? `/${r.variation_id}` : ""} bezahlt ${r.alt}, jetzt ${r.neu}`).join(", ")
+    );
+  }
+  // Größe/Slug aus WooCommerce übernehmen, Preis des Warenkorbs behalten.
+  const items = pruefung.items.map((it, i) => ({
+    ...it,
+    price: cartItems[i]?.price ?? it.price,
+  }));
+  return { items };
 }
 
 function paymentTypeFromTransaction(transactionId: string): "paypal" | "stripe" {
@@ -186,6 +239,14 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+
+      const geprueft = await pruefeNachZahlung(cartItems, body);
+      if (geprueft.abgelehnt) {
+        return NextResponse.json(pruefungAlsFehler(geprueft.abgelehnt), {
+          status: 409,
+        });
+      }
+      cartItems = geprueft.items;
 
       const result = await createWooOrderFromPayment({
         paymentIntentId: piId,
@@ -310,7 +371,28 @@ export async function POST(request: Request) {
         country: ship?.address?.country || billing.country,
       };
     } else if (body.paymentIntentId && body.customer && body.items) {
-      cartItems = body.items;
+      cartItems = normalizeCartMetaItems(body.items);
+      if (cartItems.length === 0) {
+        return NextResponse.json(
+          { error: "no_cart_items", message: "Keine Artikel für die Bestellung." },
+          { status: 400 }
+        );
+      }
+      const geprueft = await pruefeNachZahlung(cartItems, body);
+      if (geprueft.abgelehnt) {
+        if (body.paymentIntentId.startsWith("paypal_")) {
+          await reportPayPalSyncFailure(
+            body,
+            "cart_invalid",
+            geprueft.abgelehnt.problems,
+            409
+          );
+        }
+        return NextResponse.json(pruefungAlsFehler(geprueft.abgelehnt), {
+          status: 409,
+        });
+      }
+      cartItems = geprueft.items;
       transactionId = body.paymentIntentId;
       isReverseCharge = body.isReverseCharge === true;
 

@@ -29,6 +29,9 @@ export function isFillerExcluded(
   excludeIds: ReadonlySet<number>
 ): boolean {
   if (excludeIds.has(p.id)) return true;
+  // Variable Produkte (Merch mit Größen) brauchen eine Größenwahl und
+  // passen nicht in den Ein-Klick-Vorschlag im Warenkorb.
+  if (p.type && p.type !== "simple") return true;
   if (p.stock_status === "outofstock") return true;
   if (productHasPreOrderCategory(p.categories)) return true;
   if (productHasOutOfPrintCategory(p)) return true;

@@ -22,9 +22,19 @@ import { sendGAEvent } from "@next/third-parties/google";
 
 interface OrderLineItem {
   product_id: string;
+  /** Varianten-ID (Größe), "" ohne Variante. Meta/GA zählen auf die Variante. */
+  variation_id?: string;
   name: string;
+  size?: string;
   quantity: number;
   price: number;
+}
+
+/** Für Meta und GA: die Variante, wenn die Position eine hat, sonst das Produkt. */
+function trackingId(li: OrderLineItem): string {
+  return li.variation_id && li.variation_id !== "0"
+    ? li.variation_id
+    : li.product_id;
 }
 
 interface OrderDetails {
@@ -124,7 +134,7 @@ export default function OrderSuccess() {
       wooId,
       parsePrice(data.total),
       lineItems.map((i) => ({
-        product_id: i.product_id,
+        product_id: trackingId(i),
         quantity: i.quantity,
         price: i.price,
       }))
@@ -163,8 +173,8 @@ export default function OrderSuccess() {
       value: parsePrice(data.total),
       currency: (data.currency || "eur").toUpperCase(),
       items: lineItems.map((li) => ({
-        item_id: String(li.product_id),
-        item_name: li.name,
+        item_id: trackingId(li),
+        item_name: li.size ? `${li.name} – Größe ${li.size}` : li.name,
         quantity: li.quantity,
         price: parsePrice(String(li.price)),
       })),

@@ -3,7 +3,16 @@ import { isCountryBlocked } from "@/lib/blocked-countries";
 import { isWholesaleCountryAllowed } from "@/lib/wholesale-allowed-countries";
 import { stripe } from "@/lib/stripe";
 import type { CartItem } from "@/lib/CartContext";
-import { buildCartSnapshotMetadata } from "@/lib/cart-items-from-context";
+import {
+  applyFreshPricesToCartItems,
+  buildCartSnapshotMetadata,
+  cartItemsToCartMeta,
+} from "@/lib/cart-items-from-context";
+import {
+  istHaendlerSitzung,
+  pruefeBestellpositionen,
+  pruefungAlsFehler,
+} from "@/lib/bestellpruefung";
 import {
   computePaymentIntentAmount,
   formatPiAmountLog,
@@ -45,7 +54,7 @@ interface Body {
 export async function POST(request: Request) {
   try {
     const {
-      items,
+      items: rawItems,
       couponCode,
       customerEmail,
       shippingCents,
@@ -86,12 +95,25 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!items || items.length === 0) {
+    if (!rawItems || rawItems.length === 0) {
       return NextResponse.json(
         { error: "Warenkorb ist leer." },
         { status: 400 }
       );
     }
+
+    // Vor der Zahlung: Produkte, Größen, Lager, Verkaufszeitraum und Preise
+    // frisch aus WooCommerce. Der Betrag der Zahlung entsteht aus den
+    // Server-Preisen; geänderte Preise gehen als `repriced` an die Kasse.
+    const pruefung = await pruefeBestellpositionen(cartItemsToCartMeta(rawItems), {
+      isWholesale: isWholesale === true,
+      isReverseCharge: isReverseCharge === true,
+      haendlerKonto: await istHaendlerSitzung(),
+    });
+    if (!pruefung.ok) {
+      return NextResponse.json(pruefungAlsFehler(pruefung), { status: 409 });
+    }
+    const items = applyFreshPricesToCartItems(rawItems, pruefung.items);
 
     let breakdown;
     try {
@@ -208,6 +230,7 @@ export async function POST(request: Request) {
       couponCodeApplied: breakdown.couponCodeApplied,
       discountCents: breakdown.discountCents,
       couponRejected: breakdown.couponRejected ?? null,
+      repriced: pruefung.repriced,
     });
   } catch (error) {
     const message =

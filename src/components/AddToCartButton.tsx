@@ -4,14 +4,28 @@ import { useState, useCallback } from "react";
 import { useCart } from "@/lib/CartContext";
 import { useLanguage } from "@/lib/LanguageContext";
 import { createT } from "@/lib/translations";
-import type { WooProduct } from "@/lib/types";
+import type { ProductVariant, WooProduct } from "@/lib/types";
 
+/**
+ * Der Kaufknopf der Produktseite.
+ *
+ * `disabled` mit `disabledLabel`: Ausverkauft, "Ab 31.10.", "Nicht mehr
+ * erhältlich". `needsSize`: variables Produkt ohne gewählte Größe -- der
+ * Knopf sagt "Größe wählen" und legt nichts ein. `variant`: die gewählte
+ * Größe, geht mit ins Einlegen (eigene Position je Größe).
+ */
 export default function AddToCartButton({
   disabled,
+  disabledLabel,
+  needsSize = false,
   product,
+  variant,
 }: {
   disabled: boolean;
+  disabledLabel?: string;
+  needsSize?: boolean;
   product: WooProduct;
+  variant?: ProductVariant | null;
 }) {
   const { addToCart, openDrawer } = useCart();
   const { language } = useLanguage();
@@ -19,11 +33,12 @@ export default function AddToCartButton({
   const [added, setAdded] = useState(false);
 
   const handleClick = useCallback(() => {
-    addToCart(product);
+    if (needsSize) return;
+    addToCart(product, variant ?? undefined);
     openDrawer();
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
-  }, [addToCart, openDrawer, product]);
+  }, [addToCart, openDrawer, product, variant, needsSize]);
 
   if (disabled) {
     return (
@@ -32,7 +47,20 @@ export default function AddToCartButton({
         disabled
         className="w-full bg-white/10 py-4 text-sm font-bold tracking-[0.2em] text-white/30"
       >
-        {t("AUSVERKAUFT")}
+        {disabledLabel ?? t("AUSVERKAUFT")}
+      </button>
+    );
+  }
+
+  if (needsSize) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-disabled="true"
+        className="w-full border border-[#c0392b]/50 bg-transparent py-4 text-sm font-bold tracking-[0.2em] text-[#c0392b]/70"
+      >
+        {t("GROESSE_WAEHLEN")}
       </button>
     );
   }

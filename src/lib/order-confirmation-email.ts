@@ -77,8 +77,42 @@ type WooLineItem = {
   quantity?: number;
   total?: string;
   product_id?: number;
+  variation_id?: number;
   image?: { src?: string };
+  meta_data?: Array<{
+    key?: string;
+    value?: unknown;
+    display_key?: string;
+    display_value?: unknown;
+  }>;
 };
+
+/**
+ * Positionsname mit Größe für die Mails: WooCommerce nennt die Variante
+ * meist schon "… - L"; sonst kommt "– Größe L" aus dem Positions-Meta dazu.
+ */
+function lineItemLabel(item: WooLineItem): string {
+  const name = asString(item.name) || "Artikel";
+  const meta = (item.meta_data ?? []).find((m) => {
+    const key = asString(m.key).toLowerCase();
+    return key === "pa_groesse" || key === "größe" || key === "groesse";
+  });
+  if (!meta) return name;
+  const size =
+    asString(meta.display_value).replace(/<[^>]*>/g, "").trim() ||
+    asString(meta.value).toUpperCase();
+  if (!size) return name;
+  const escaped = size.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[\\s-–|])${escaped}$`, "i").test(name)
+    ? name
+    : `${name} – Größe ${size}`;
+}
+
+/** Name einer Warenkorbzeile (Vorkasse-Mail) mit Größe, wenn die Zeile eine hat. */
+function cartLineLabel(item: CartMeta): string {
+  const size = (item.size ?? "").trim();
+  return size ? `${item.name} – Größe ${size}` : item.name;
+}
 
 type WooShippingLine = {
   method_title?: string;
@@ -432,7 +466,7 @@ export function buildCustomerEmailHtml(
         <tr>
           ${imgCell}
           <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;vertical-align:middle;">
-            ${qty}× ${escapeHtml(asString(item.name) || "Artikel")}
+            ${qty}× ${escapeHtml(lineItemLabel(item))}
           </td>
           <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;vertical-align:middle;white-space:nowrap;">
             ${formatPrice(lineTotal, currency)}
@@ -544,7 +578,7 @@ export function buildOfficeEmailHtml(
         parsePrice(String(item.total ?? "0")),
         currency
       );
-      return `<li style="margin:4px 0;color:#ccc;">${qty}× ${escapeHtml(asString(item.name))} — ${lineTotal}</li>`;
+      return `<li style="margin:4px 0;color:#ccc;">${qty}× ${escapeHtml(lineItemLabel(item))} — ${lineTotal}</li>`;
     })
     .join("");
 
@@ -650,7 +684,7 @@ export function buildBankTransferEmailHtml(
       const lineTotal = formatPrice(parsePrice(item.price) * item.qty);
       return `
         <tr>
-          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;">${item.qty}× ${escapeHtml(item.name)}</td>
+          <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;">${item.qty}× ${escapeHtml(cartLineLabel(item))}</td>
           <td style="padding:8px 0;color:#ccc;border-bottom:1px solid #222;text-align:right;">${lineTotal}</td>
         </tr>`;
     })

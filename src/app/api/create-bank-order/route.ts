@@ -11,11 +11,19 @@ import {
   buildEuB2cNonAtLineItemWithBakedDiscount,
   buildNonEuB2cLineItem,
   buildNonEuB2cLineItemWithBakedDiscount,
+  buildReverseChargeLineItem,
+  buildImplicitLineItem,
   splitGrossForNonEu,
   addTaxToNet,
   standardVatFraction,
   buildEuB2cWooShippingTaxes,
 } from "@/lib/woo-vat-split";
+import { normalizeCartMetaItems } from "@/lib/cart-items-from-context";
+import {
+  istHaendlerSitzung,
+  pruefeBestellpositionen,
+  pruefungAlsFehler,
+} from "@/lib/bestellpruefung";
 import { parsePrice } from "@/lib/parse-price";
 import {
   billingVatFromOrderMeta,
@@ -37,6 +45,7 @@ import {
   allocateDiscountCentsToLines,
   appendAppliedCouponOrderMeta,
   buildWooCouponLines,
+  discountLineKey,
   shouldBakeCouponIntoLineItems,
 } from "@/lib/woo-coupon-line-discount";
 import { resolveOrderCustomer } from "@/lib/order-customer";
@@ -100,7 +109,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Body;
     const {
       customer,
-      items,
+      items: rawItems,
       billing: bodyBilling,
       meta_data: bodyMeta,
       checkoutShipping,
@@ -144,12 +153,40 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!items || items.length === 0) {
+    if (!rawItems || rawItems.length === 0) {
       return NextResponse.json(
         { error: "Keine Artikel." },
         { status: 400 }
       );
     }
+
+    // Vor dem Anlegen: Produkte, Größen, Lager, Verkaufszeitraum und Preise
+    // frisch aus WooCommerce. Vorkasse ist noch unbezahlt, also streng:
+    // jedes Problem weist die Bestellung ab, die Preise kommen vom Server.
+    const pruefung = await pruefeBestellpositionen(
+      normalizeCartMetaItems(rawItems),
+      {
+        isWholesale: isWholesaleCheckout,
+        isReverseCharge,
+        haendlerKonto: await istHaendlerSitzung(),
+      }
+    );
+    if (!pruefung.ok) {
+      console.warn(
+        "[BankTransfer] Warenkorb abgewiesen:",
+        pruefung.problems.map((p) => `${p.code} #${p.id}${p.variation_id ? `/${p.variation_id}` : ""}`).join(", ")
+      );
+      return NextResponse.json(pruefungAlsFehler(pruefung, locale), {
+        status: 409,
+      });
+    }
+    if (pruefung.repriced.length > 0) {
+      console.log(
+        "[BankTransfer] Preise aktualisiert:",
+        pruefung.repriced.map((r) => `#${r.id}${r.variation_id ? `/${r.variation_id}` : ""} ${r.alt}->${r.neu}`).join(", ")
+      );
+    }
+    const items: CartMeta[] = pruefung.items;
 
     const WOOCOMMERCE_URL = process.env.WOOCOMMERCE_URL!;
     const WOOCOMMERCE_KEY = process.env.WOOCOMMERCE_KEY!;
@@ -220,7 +257,7 @@ export async function POST(request: Request) {
     const discountByLine =
       normalizedCoupon && discountCents > 0
         ? allocateDiscountCentsToLines(items, discountCents)
-        : new Map<number, number>();
+        : new Map<string, number>();
 
     const videoUtmMeta = await buildVideoUtmOrderMeta(body.videoUtm);
     let meta_data = mergeVideoUtmIntoMeta(
@@ -254,53 +291,35 @@ export async function POST(request: Request) {
         country: customer.country,
         ...(stateVal ? { state: stateVal } : {}),
       },
+      // Jede Zeile über die Bauer in woo-vat-split: product_id, bei Größen
+      // variation_id plus Meta pa_groesse, dann der Steuerweg.
       line_items: items.map((item) => {
-        const lineDiscountEur = (discountByLine.get(item.id) ?? 0) / 100;
+        const lineDiscountCents = discountByLine.get(discountLineKey(item)) ?? 0;
+        const lineDiscountEur = lineDiscountCents / 100;
 
         if (isReverseCharge) {
-          const lineGross = Math.max(
-            0,
-            parsePrice(item.price) * item.qty - lineDiscountEur
-          );
-          const lineTotal = lineGross.toFixed(2);
-          return {
-            product_id: Number(item.id),
-            quantity: item.qty,
-            subtotal: lineTotal,
-            total: lineTotal,
-            subtotal_tax: "0.00",
-            total_tax: "0.00",
-            taxes: [],
-          };
+          return buildReverseChargeLineItem(item, lineDiscountEur);
         }
         if (isWholesaleCheckout) {
           return buildWholesaleNonRcLineItem(item, taxCountry);
         }
         if (shouldSendExplicitEuB2cLineAmounts(taxCountry)) {
-          const lineDiscountCents = discountByLine.get(item.id) ?? 0;
           if (lineDiscountCents > 0) {
             return buildEuB2cNonAtLineItemWithBakedDiscount(
               item,
               taxCountry,
-              lineDiscountCents / 100
+              lineDiscountEur
             );
           }
           return buildEuB2cNonAtLineItem(item, taxCountry);
         }
         if (shouldSendExplicitNonEuLineAmounts(taxCountry)) {
-          const lineDiscountCents = discountByLine.get(item.id) ?? 0;
           if (lineDiscountCents > 0) {
-            return buildNonEuB2cLineItemWithBakedDiscount(
-              item,
-              lineDiscountCents / 100
-            );
+            return buildNonEuB2cLineItemWithBakedDiscount(item, lineDiscountEur);
           }
           return buildNonEuB2cLineItem(item);
         }
-        return {
-          product_id: Number(item.id),
-          quantity: item.qty,
-        };
+        return buildImplicitLineItem(item);
       }),
     };
 

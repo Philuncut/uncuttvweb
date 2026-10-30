@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLanguage } from "@/lib/LanguageContext";
 import {
   createT,
+  formatTranslation,
   translateDetailHeading,
   translateDetailLabel,
 } from "@/lib/translations";
@@ -13,7 +14,7 @@ import {
   stripInfoGrids,
   type DetailGroup,
 } from "@/lib/parse-product-details";
-import type { WooProduct } from "@/lib/types";
+import type { ProductVariant, WooProduct } from "@/lib/types";
 import ProductGallery from "@/components/ProductGallery";
 import AddToCartButton from "@/components/AddToCartButton";
 import { formatPrice } from "@/lib/format-price";
@@ -23,6 +24,12 @@ import {
   getStockDisplay,
   productHasPreOrderCategory,
 } from "@/lib/stock-display";
+import {
+  istVariabel,
+  istVarianteBestellbar,
+  preisAnzeige,
+  produktKaufstatus,
+} from "@/lib/varianten";
 
 interface ProductDetailProps {
   product: WooProduct;
@@ -32,6 +39,11 @@ interface ProductDetailProps {
   badge: { label: string; className: string };
   /** Full raw description including info-grids (for re-parsing after translation) */
   rawDescription: string;
+  /** Variables Produkt (Merch): die Größen in Attribut-Reihenfolge. */
+  variants?: ProductVariant[];
+  /** Verkaufszeitraum (UTC ISO) aus uncuttv_verkauf_von / _bis. */
+  verkaufVon?: string | null;
+  verkaufBis?: string | null;
 }
 
 /* ── Translate helper ── */
@@ -57,6 +69,57 @@ async function translateText(text: string, label?: string): Promise<string> {
   return text;
 }
 
+/* ── Größenwahl ── */
+
+function SizePicker({
+  variants,
+  selectedId,
+  onSelect,
+  label,
+  soldOutTitle,
+}: {
+  variants: ProductVariant[];
+  selectedId: number | null;
+  onSelect: (v: ProductVariant) => void;
+  label: string;
+  soldOutTitle: (size: string) => string;
+}) {
+  return (
+    <div className="mt-6">
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#888]">
+        {label}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+        {variants.map((v) => {
+          const bestellbar = istVarianteBestellbar(v);
+          const active = v.id === selectedId;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-disabled={!bestellbar}
+              disabled={!bestellbar}
+              title={bestellbar ? v.size : soldOutTitle(v.size)}
+              onClick={() => bestellbar && onSelect(v)}
+              className={`min-w-[52px] cursor-pointer px-4 py-2.5 text-xs font-bold tracking-[0.15em] transition-all duration-200 ${
+                active
+                  ? "border border-[#c0392b] bg-[#c0392b] text-white shadow-[0_0_12px_rgba(192,57,43,0.5)]"
+                  : bestellbar
+                    ? "border border-[#333] bg-transparent text-white/80 hover:border-[#c0392b] hover:text-white"
+                    : "cursor-not-allowed border border-[#222] bg-transparent text-white/25 line-through"
+              }`}
+            >
+              {v.size}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ProductDetail({
   product,
   details: originalDetails,
@@ -64,11 +127,38 @@ export default function ProductDetail({
   related,
   badge,
   rawDescription,
+  variants,
+  verkaufVon,
+  verkaufBis,
 }: ProductDetailProps) {
   const { language } = useLanguage();
   const t = createT(language);
-  const isOutOfStock = product.stock_status === "outofstock";
   const [wholeAuth, setWholeAuth] = useState<boolean | null>(null);
+
+  const variabel = istVariabel(product);
+  const sizes = useMemo(() => variants ?? [], [variants]);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
+    null
+  );
+  const selectedVariant = useMemo(
+    () => sizes.find((v) => v.id === selectedVariantId) ?? null,
+    [sizes, selectedVariantId]
+  );
+
+  // Verkaufszeitraum und Lager: dieselbe Regel wie die Karte im Shop.
+  const kaufstatus = useMemo(
+    () =>
+      produktKaufstatus({
+        type: product.type,
+        stock_status: product.stock_status,
+        purchasable: product.purchasable,
+        variants: sizes,
+        verkauf_von: verkaufVon,
+        verkauf_bis: verkaufBis,
+      }),
+    [product.type, product.stock_status, product.purchasable, sizes, verkaufVon, verkaufBis]
+  );
+  const isOutOfStock = !kaufstatus.bestellbar;
 
   const [translatedName, setTranslatedName] = useState(product.name);
   const [translatedRawDesc, setTranslatedRawDesc] = useState(rawDescription);
@@ -93,7 +183,9 @@ export default function ProductDetail({
         ? "VORVERKAUF"
         : badge.label === "AUF LAGER"
           ? "AUF_LAGER"
-          : "";
+          : badge.label === "NICHT MEHR ERHÄLTLICH"
+            ? "NICHT_MEHR_ERHAELTLICH"
+            : "";
   const translatedBadge = badgeLabelKey ? t(badgeLabelKey) : badge.label;
 
   const isPreOrder = useMemo(
@@ -101,29 +193,35 @@ export default function ProductDetail({
     [product.categories]
   );
 
+  // Für den Lagerhinweis zählt bei Größen die gewählte Variante.
+  const stockSource = variabel
+    ? selectedVariant
+      ? {
+          quantity: selectedVariant.manage_stock
+            ? selectedVariant.stock_quantity
+            : null,
+          status: selectedVariant.stock_status,
+        }
+      : { quantity: null, status: product.stock_status }
+    : { quantity: product.stock_quantity, status: product.stock_status };
+
   const mightBeRetailLowStock =
     !isPreOrder &&
-    product.stock_status !== "outofstock" &&
-    typeof product.stock_quantity === "number" &&
-    product.stock_quantity >= 1 &&
-    product.stock_quantity <= 9;
+    stockSource.status !== "outofstock" &&
+    typeof stockSource.quantity === "number" &&
+    stockSource.quantity >= 1 &&
+    stockSource.quantity <= 9;
 
   const stockDisplay = useMemo(
     () =>
       getStockDisplay(
-        product.stock_quantity,
-        product.stock_status,
+        stockSource.quantity,
+        stockSource.status,
         wholeAuth,
         language,
         { suppressB2CScarcity: isPreOrder }
       ),
-    [
-      wholeAuth,
-      product.stock_quantity,
-      product.stock_status,
-      language,
-      isPreOrder,
-    ]
+    [wholeAuth, stockSource.quantity, stockSource.status, language, isPreOrder]
   );
 
   useEffect(() => {
@@ -192,6 +290,38 @@ export default function ProductDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Preis: gewählte Größe, sonst (bei Größen) "ab"-Preis, sonst wie bisher.
+  const preis = useMemo(() => {
+    if (variabel && selectedVariant) {
+      const aktion =
+        selectedVariant.on_sale &&
+        parsePrice(selectedVariant.sale_price) > 0 &&
+        parsePrice(selectedVariant.regular_price) >
+          parsePrice(selectedVariant.sale_price);
+      return {
+        ab: false,
+        price: selectedVariant.price,
+        regular_price: aktion ? selectedVariant.regular_price : null,
+      };
+    }
+    return preisAnzeige({
+      type: product.type,
+      price: product.price,
+      regular_price: product.regular_price,
+      sale_price: product.sale_price,
+      on_sale: product.on_sale,
+      variants: sizes,
+    });
+  }, [variabel, selectedVariant, product, sizes]);
+
+  const disabledLabel = !kaufstatus.bestellbar
+    ? kaufstatus.grund === "kommt"
+      ? formatTranslation("ERHAELTLICH_AB", language, { datum: kaufstatus.ab })
+      : kaufstatus.grund === "vorbei"
+        ? t("NICHT_MEHR_ERHAELTLICH")
+        : t("AUSVERKAUFT")
+    : undefined;
+
   return (
     <>
       <div className="grid min-w-0 gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
@@ -206,29 +336,36 @@ export default function ProductDetail({
 
           {/* Price */}
           <div className="mt-4">
-            {product.on_sale && product.sale_price ? (
-              <div className="flex items-baseline gap-3">
+            <div className="flex items-baseline gap-3">
+              {preis.ab && (
+                <span className="text-sm font-bold uppercase tracking-wider text-white/50">
+                  {t("AB_PREIS")}
+                </span>
+              )}
+              {preis.regular_price && (
                 <span className="text-2xl font-bold text-white/30 line-through">
-                  {formatPrice(parsePrice(product.regular_price))}
+                  {formatPrice(parsePrice(preis.regular_price))}
                 </span>
-                <span className="text-3xl font-black text-[#c0392b]">
-                  {formatPrice(parsePrice(product.sale_price))}
-                </span>
-              </div>
-            ) : (
+              )}
               <span className="text-3xl font-black text-[#c0392b]">
-                {formatPrice(parsePrice(product.price))}
+                {formatPrice(parsePrice(preis.price))}
               </span>
-            )}
+            </div>
           </div>
 
           {/* Stock badges */}
           <div className="mt-4 flex flex-wrap gap-2">
-            {product.stock_status === "outofstock" ? (
+            {isOutOfStock ? (
               <span
                 className={`inline-block px-4 py-1.5 text-[11px] font-bold tracking-[0.2em] ${badge.className}`}
               >
-                {translatedBadge}
+                {kaufstatus.grund === "kommt"
+                  ? formatTranslation("ERHAELTLICH_AB", language, {
+                      datum: kaufstatus.ab,
+                    })
+                  : kaufstatus.grund === "vorbei"
+                    ? t("NICHT_MEHR_ERHAELTLICH")
+                    : translatedBadge}
               </span>
             ) : (
               <>
@@ -262,6 +399,19 @@ export default function ProductDetail({
             )}
           </div>
 
+          {/* Größen (variables Produkt) */}
+          {variabel && sizes.length > 0 && (
+            <SizePicker
+              variants={sizes}
+              selectedId={selectedVariantId}
+              onSelect={(v) => setSelectedVariantId(v.id)}
+              label={t("GROESSE")}
+              soldOutTitle={(size) =>
+                formatTranslation("GROESSE_AUSVERKAUFT", language, { groesse: size })
+              }
+            />
+          )}
+
           {/* Short description */}
           {translatedShort && (
             <div
@@ -272,7 +422,13 @@ export default function ProductDetail({
 
           {/* Add to cart */}
           <div className="mt-8">
-            <AddToCartButton disabled={isOutOfStock} product={product} />
+            <AddToCartButton
+              disabled={isOutOfStock}
+              disabledLabel={disabledLabel}
+              needsSize={variabel && !selectedVariant}
+              product={product}
+              variant={selectedVariant}
+            />
           </div>
 
           {/* Film details — re-parsed from translated HTML */}
@@ -368,6 +524,7 @@ export default function ProductDetail({
             {related.map((rp) => {
               const rpImage = rp.images[0]?.src;
               const rpOutOfStock = rp.stock_status === "outofstock";
+              const rpVariabel = istVariabel(rp);
               return (
                 <Link
                   key={rp.id}
@@ -399,6 +556,11 @@ export default function ProductDetail({
                       {rp.name}
                     </h3>
                     <p className="mt-1 text-sm font-bold text-[#c0392b]">
+                      {rpVariabel && (
+                        <span className="mr-1 text-xs font-normal text-white/50">
+                          {t("AB_PREIS")}
+                        </span>
+                      )}
                       {rp.on_sale && rp.sale_price ? (
                         <>
                           <span className="mr-2 text-white/30 line-through">

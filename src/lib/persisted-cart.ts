@@ -1,5 +1,6 @@
-import type { CartItem } from "@/lib/CartContext";
+import type { CartItem, CartVariant } from "@/lib/CartContext";
 import type { WooProduct } from "@/lib/types";
+import { lineKey } from "@/lib/varianten";
 
 export const PERSISTED_CART_META_KEY = "_uncuttv_persisted_cart";
 export const PERSISTED_CART_UPDATED_META_KEY = "_uncuttv_persisted_cart_updated_at";
@@ -18,22 +19,32 @@ export const MAX_PERSISTED_CART_ITEMS = 100;
 
 export type PersistedCartItem = CartItem;
 
+/** Schlüssel einer Zeile: Produkt plus Variante -- zwei Größen sind zwei Zeilen. */
+export function cartItemKey(item: Pick<CartItem, "product" | "variant">): string {
+  return lineKey(item.product.id, item.variant?.id);
+}
+
 export function mergeCartItems(
   local: CartItem[],
   server: CartItem[]
 ): CartItem[] {
-  const byId = new Map<number, CartItem>();
+  const byKey = new Map<string, CartItem>();
 
   const upsert = (item: CartItem) => {
     const id = item.product?.id;
     if (typeof id !== "number" || !Number.isFinite(id)) return;
-    const existing = byId.get(id);
+    const key = cartItemKey(item);
+    const existing = byKey.get(key);
     if (!existing) {
-      byId.set(id, { product: item.product, quantity: item.quantity });
+      byKey.set(key, {
+        product: item.product,
+        quantity: item.quantity,
+        ...(item.variant ? { variant: item.variant } : {}),
+      });
       return;
     }
-    byId.set(id, {
-      product: existing.product,
+    byKey.set(key, {
+      ...existing,
       quantity: Math.max(existing.quantity, item.quantity),
     });
   };
@@ -41,7 +52,7 @@ export function mergeCartItems(
   for (const item of local) upsert(item);
   for (const item of server) upsert(item);
 
-  return Array.from(byId.values());
+  return Array.from(byKey.values());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -89,11 +100,15 @@ function parseWooProduct(value: unknown): WooProduct | null {
     name,
     slug: typeof value.slug === "string" ? value.slug : "",
     status: typeof value.status === "string" ? value.status : "publish",
+    ...(typeof value.type === "string" ? { type: value.type } : {}),
     price,
     regular_price,
     sale_price,
     on_sale: Boolean(value.on_sale),
     stock_status,
+    ...(typeof value.stock_quantity === "number"
+      ? { stock_quantity: value.stock_quantity }
+      : {}),
     sku: typeof value.sku === "string" ? value.sku : "",
     images,
     categories,
@@ -108,6 +123,17 @@ function parseWooProduct(value: unknown): WooProduct | null {
   };
 }
 
+function parseVariant(value: unknown): CartVariant | null {
+  if (!isRecord(value)) return null;
+  const id = value.id;
+  if (typeof id !== "number" || !Number.isFinite(id) || id <= 0) return null;
+  return {
+    id,
+    size: typeof value.size === "string" ? value.size : "",
+    size_slug: typeof value.size_slug === "string" ? value.size_slug : "",
+  };
+}
+
 export function parsePersistedCartPayload(raw: unknown): CartItem[] {
   if (!Array.isArray(raw)) return [];
 
@@ -119,7 +145,8 @@ export function parsePersistedCartPayload(raw: unknown): CartItem[] {
     if (!product) continue;
     if (typeof quantity !== "number" || !Number.isFinite(quantity)) continue;
     const qty = Math.max(1, Math.floor(quantity));
-    items.push({ product, quantity: qty });
+    const variant = parseVariant(entry.variant);
+    items.push({ product, quantity: qty, ...(variant ? { variant } : {}) });
     if (items.length >= MAX_PERSISTED_CART_ITEMS) break;
   }
   return items;

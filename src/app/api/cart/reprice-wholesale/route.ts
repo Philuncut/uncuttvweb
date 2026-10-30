@@ -3,6 +3,7 @@ import { requirePortalSession } from "@/lib/auth-session";
 import {
   enrichHaendlerProductFromWoo,
   hasPositiveHaendlerPreis,
+  productIsMerch,
 } from "@/lib/haendler-filter";
 import type { WooProduct } from "@/lib/types";
 import { wooFetch } from "@/lib/woocommerce";
@@ -34,6 +35,9 @@ async function enrichEligibleProducts(
 
   function tryPushFromRaw(raw: WooProductRaw | null | undefined) {
     if (!raw || typeof raw.id !== "number") return;
+    // Merch gibt es nur für Endkunden: fällt beim Wechsel ins Händlerkonto
+    // aus dem Warenkorb, auch wenn das Elternprodukt einen haendler_preis trägt.
+    if (productIsMerch(raw)) return;
     const enriched = enrichHaendlerProductFromWoo(raw);
     if (!hasPositiveHaendlerPreis(enriched.haendler_preis)) return;
     eligible[String(raw.id)] = enriched;

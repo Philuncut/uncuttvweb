@@ -37,6 +37,7 @@ export type WooOrderForCapiPurchase = {
   };
   line_items?: Array<{
     product_id?: number;
+    variation_id?: number;
     quantity?: number;
     total?: string;
   }>;
@@ -74,8 +75,10 @@ export function mapWooLineItemsForMeta(
   return (order.line_items ?? []).map((li) => {
     const qty = Math.max(1, Number(li.quantity) || 1);
     const lineTotal = parsePrice(String(li.total ?? "0"));
+    // Meta: content_ids auf die Variante (Größe), wenn die Position eine hat.
+    const variationId = Number(li.variation_id ?? 0);
     return {
-      product_id: String(li.product_id ?? 0),
+      product_id: String(variationId > 0 ? variationId : (li.product_id ?? 0)),
       quantity: qty,
       price: lineTotal / qty,
     };

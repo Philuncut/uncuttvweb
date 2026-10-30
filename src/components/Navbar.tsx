@@ -885,6 +885,23 @@ export default function Navbar() {
                 BRANDNEU
               </a>
               <a
+                href="/shop?kategorie=merch"
+                className="menu-link menu-sub-link"
+                style={{
+                  color: "#666",
+                  fontSize: "1rem",
+                  fontWeight: "bold",
+                  textDecoration: "none",
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  padding: "4px 48px",
+                  animationDelay: "0.22s",
+                }}
+              >
+                <span style={{ color: "#c0392b", marginRight: 8 }}>·</span>
+                MERCH
+              </a>
+              <a
                 href="/shop?kategorie=jetzt-erhaeltlich"
                 className="menu-link menu-sub-link"
                 style={{

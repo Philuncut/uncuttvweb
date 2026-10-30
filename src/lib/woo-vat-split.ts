@@ -4,12 +4,57 @@
  * amounts must be split into net `total` + `total_tax`.
  *
  * EU-Sätze: `src/lib/eu-vat-rates.ts` (getVatRateForCountry). Unbekanntes Land → 20 %.
+ *
+ * Varianten (Merch mit Größen): jede Position trägt neben product_id auch
+ * variation_id und das Positions-Meta pa_groesse. Damit zeigt WooCommerce
+ * "Größe: L" in der Position, in den Mails und auf der PDF-Rechnung und
+ * bucht den Bestand genau dieser Größe ab. Alle Zeilenbauer hier gehen
+ * über `wooLineItemBase`, damit kein Steuerweg die Variante verliert.
  */
 import {
   getVatRateForCountry,
   getWooStandardTaxRateId,
 } from "./eu-vat-rates";
 import { parsePrice } from "./parse-price";
+import { GROESSE_ATTRIBUT_SLUG } from "./varianten";
+
+/** Eine Warenkorbzeile, wie sie die Bestellanlage bekommt (CartMeta passt). */
+export type WooLineInput = {
+  id: number;
+  price: string;
+  qty: number;
+  variation_id?: number;
+  size?: string;
+  size_slug?: string;
+};
+
+export type WooLineItemBase = {
+  product_id: number;
+  quantity: number;
+  variation_id?: number;
+  meta_data?: Array<{ key: string; value: string }>;
+};
+
+/**
+ * product_id, quantity und -- bei einer Variante -- variation_id plus das
+ * Attribut-Meta. WooCommerce löst den Begriff über den Slug auf und zeigt
+ * den Namen ("Größe: L"); fehlt der Slug, steht der Name selbst drin.
+ */
+export function wooLineItemBase(item: WooLineInput): WooLineItemBase {
+  const base: WooLineItemBase = {
+    product_id: Number(item.id),
+    quantity: item.qty,
+  };
+  const variationId = Number(item.variation_id);
+  if (Number.isFinite(variationId) && variationId > 0) {
+    base.variation_id = variationId;
+    const wert = (item.size_slug ?? "").trim() || (item.size ?? "").trim();
+    if (wert) {
+      base.meta_data = [{ key: GROESSE_ATTRIBUT_SLUG, value: wert }];
+    }
+  }
+  return base;
+}
 
 export function standardVatFraction(countryIso2: string): number {
   const p = getVatRateForCountry(countryIso2);
@@ -62,7 +107,7 @@ export function addTaxToNet(
 
 /** Woo REST line item: haendler_preis × qty is NET; add VAT for wholesale non-RC. */
 export function buildWholesaleNonRcLineItem(
-  item: { id: number; price: string; qty: number },
+  item: WooLineInput,
   countryIso2: string
 ) {
   const qty = Math.max(1, Number(item.qty) || 1);
@@ -70,8 +115,7 @@ export function buildWholesaleNonRcLineItem(
   const lineNet = unitNet * qty;
   const { net, tax } = addTaxToNet(lineNet, countryIso2);
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
+    ...wooLineItemBase(item),
     subtotal: net,
     subtotal_tax: tax,
     total: net,
@@ -84,7 +128,7 @@ export function buildWholesaleNonRcLineItem(
  * tax = brutto * v / (100 + v), netto = brutto − tax (wie splitGrossForWooRest).
  */
 export function buildEuB2cNonAtLineItem(
-  item: { id: number; price: string; qty: number },
+  item: WooLineInput,
   countryIso2: string
 ) {
   const qty = Math.max(1, Number(item.qty) || 1);
@@ -92,8 +136,7 @@ export function buildEuB2cNonAtLineItem(
   const lineGross = unitGross * qty;
   const { net, tax } = splitGrossForWooRest(lineGross, countryIso2);
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
+    ...wooLineItemBase(item),
     subtotal: net,
     subtotal_tax: tax,
     total: net,
@@ -106,21 +149,23 @@ export function buildEuB2cNonAtLineItem(
  * WC auto-applies percent coupons when coupon_lines is set → double deduction.
  */
 export function buildEuB2cNonAtLineItemWithBakedDiscount(
-  item: { id: number; price: string; qty: number },
+  item: WooLineInput,
   countryIso2: string,
   itemDiscountGrossEur: number
 ) {
   const qty = Math.max(1, Number(item.qty) || 1);
   const unitGross = Math.max(0, parseFloat(item.price) || 0);
   const lineGross = unitGross * qty;
-  const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
+  const lineGrossAfterDiscount = Math.max(
+    0,
+    lineGross - Math.max(0, itemDiscountGrossEur)
+  );
 
   // subtotal must equal total — WC treats subtotal − total as discount_total (double deduction).
   const { net, tax } = splitGrossForWooRest(lineGrossAfterDiscount, countryIso2);
 
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
+    ...wooLineItemBase(item),
     subtotal: net,
     subtotal_tax: tax,
     total: net,
@@ -130,19 +175,21 @@ export function buildEuB2cNonAtLineItemWithBakedDiscount(
 
 /** Non-EU B2C with coupon baked into line totals (same WC double-deduction issue). */
 export function buildNonEuB2cLineItemWithBakedDiscount(
-  item: { id: number; price: string; qty: number },
+  item: WooLineInput,
   itemDiscountGrossEur: number
 ) {
   const qty = Math.max(1, Number(item.qty) || 1);
   const unitGross = Math.max(0, parsePrice(item.price));
   const lineGross = unitGross * qty;
-  const lineGrossAfterDiscount = Math.max(0, lineGross - Math.max(0, itemDiscountGrossEur));
+  const lineGrossAfterDiscount = Math.max(
+    0,
+    lineGross - Math.max(0, itemDiscountGrossEur)
+  );
 
   const { net, tax } = splitGrossForNonEu(lineGrossAfterDiscount);
 
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
+    ...wooLineItemBase(item),
     subtotal: net,
     subtotal_tax: tax,
     total: net,
@@ -157,22 +204,42 @@ export function splitGrossForNonEu(grossEur: number): { net: string; tax: string
   return { net: g.toFixed(2), tax: "0.00" };
 }
 
-export function buildNonEuB2cLineItem(item: {
-  id: number;
-  price: string;
-  qty: number;
-}) {
+export function buildNonEuB2cLineItem(item: WooLineInput) {
   const qty = Math.max(1, Number(item.qty) || 1);
   const unitGross = Math.max(0, parsePrice(item.price));
   const lineGross = unitGross * qty;
   const { net, tax } = splitGrossForNonEu(lineGross);
   return {
-    product_id: Number(item.id),
-    quantity: item.qty,
+    ...wooLineItemBase(item),
     subtotal: net,
     subtotal_tax: tax,
     total: net,
     total_tax: tax,
     taxes: [] as unknown[],
   };
+}
+
+/** Reverse Charge (EU-B2B): Brutto = Netto, 0 % USt, Rabatt schon abgezogen. */
+export function buildReverseChargeLineItem(
+  item: WooLineInput,
+  lineDiscountEur = 0
+) {
+  const lineGross = Math.max(
+    0,
+    parsePrice(item.price) * item.qty - Math.max(0, lineDiscountEur)
+  );
+  const lineTotal = lineGross.toFixed(2);
+  return {
+    ...wooLineItemBase(item),
+    subtotal: lineTotal,
+    total: lineTotal,
+    subtotal_tax: "0.00",
+    total_tax: "0.00",
+    taxes: [] as unknown[],
+  };
+}
+
+/** AT-B2C: WooCommerce rechnet selbst; nur Produkt, Variante und Menge. */
+export function buildImplicitLineItem(item: WooLineInput) {
+  return wooLineItemBase(item);
 }
