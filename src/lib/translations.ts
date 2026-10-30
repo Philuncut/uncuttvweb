@@ -610,6 +610,10 @@ const translations: Record<string, Record<string, string>> = {
     de: "Ein Artikel im Warenkorb ist nicht mehr bestellbar.",
     en: "An item in your cart is no longer available.",
   },
+  CHECKOUT_LINE_REMOVED: {
+    de: "Aus dem Warenkorb entfernt:",
+    en: "Removed from your cart:",
+  },
   CHECKOUT_MERCH_NUR_ENDKUNDEN: {
     de: "Merch-Artikel gibt es nur für Endkunden, nicht über das Händlerkonto.",
     en: "Merch is available to retail customers only, not via dealer accounts.",

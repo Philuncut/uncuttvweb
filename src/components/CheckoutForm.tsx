@@ -163,6 +163,13 @@ const cardElementStyle = {
 type PaymentMethod = "card" | "bank" | "paypal" | "klarna" | "eps";
 
 /** Map machine-readable API error codes; leave German message strings as-is. */
+/**
+ * Länder ohne Pflicht-Bundesland in der Kasse. WooCommerce liefert für AT
+ * und DE zwar Bundesländer (/data/countries), verlangt sie aber selbst
+ * nicht; Versandzonen und Steuer hängen hier nur am Land.
+ */
+const STATE_NICHT_NOETIG = new Set(["AT", "DE"]);
+
 function resolveCheckoutApiError(
   error: string | undefined,
   t: (key: string) => string,
@@ -1246,7 +1253,8 @@ const StripeClientSecretPayment = forwardRef<
 
 function CheckoutInner() {
   const router = useRouter();
-  const { items, totalPrice, clearCart, applyServerPrices } = useCart();
+  const { items, totalPrice, clearCart, applyServerPrices, removeFromCart } =
+    useCart();
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
@@ -1492,6 +1500,15 @@ function CheckoutInner() {
 
   useEffect(() => {
     let cancelled = false;
+    // Österreich und Deutschland brauchen kein Bundesland: WooCommerce
+    // führt die Länder zwar mit Bundesländern (seit einer WC-Version auch
+    // DE), blendet das Feld in seiner eigenen Kasse aber aus. Ohne Liste
+    // wird hier weder gefragt noch verlangt.
+    if (STATE_NICHT_NOETIG.has(country.trim().toUpperCase())) {
+      setProvinceOptions([]);
+      setProvinceListLoading(false);
+      return;
+    }
     setProvinceListLoading(true);
     setProvinceOptions([]);
     void (async () => {
@@ -2263,6 +2280,90 @@ function CheckoutInner() {
   useEffect(() => {
     setPriceNotice("");
   }, [cartFingerprint]);
+
+  /**
+   * Warenkorb-Abgleich beim Betreten der Kasse und nach jeder Änderung:
+   * Zeilen, die es so nicht mehr gibt, fliegen raus, bevor Versand und
+   * Zahlung daran scheitern. Anlass: Ein Warenkorb aus der Zeit, als die
+   * Merch-Artikel noch einfache Produkte waren, trug die Eltern-ID ohne
+   * Größe -- die Store-API lehnt so eine Zeile ab ("Fehlende Attribute"),
+   * und die Kasse zeigte keine Versandart mehr. Preise werden dabei gleich
+   * auf den Stand des Servers gebracht.
+   */
+  const cartCheckedFingerprintRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionReady || items.length === 0) return;
+    if (cartCheckedFingerprintRef.current === cartFingerprint) return;
+    cartCheckedFingerprintRef.current = cartFingerprint;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/checkout/pruefung", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: cartMeta,
+            isWholesale,
+            isReverseCharge: wholesaleReverseCharge,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          problems?: Array<{
+            id: number;
+            variation_id?: number;
+            code?: string;
+            message?: { de?: string; en?: string };
+          }>;
+          repriced?: Array<{ id: number; variation_id?: number; neu: string }>;
+        };
+        if (cancelled || (!res.ok && !Array.isArray(data.problems))) return;
+        if (Array.isArray(data.repriced) && data.repriced.length > 0) {
+          applyServerPrices(
+            data.repriced.map((r) => ({
+              id: r.id,
+              variation_id: r.variation_id,
+              price: r.neu,
+            }))
+          );
+          setPriceNotice(t("CHECKOUT_PRICES_UPDATED"));
+        }
+        // Nur Zeilen, die nie bestellbar werden: ohne Größe, unbekannte
+        // Größe, Produkt weg oder nicht veröffentlicht. "Ausverkauft" oder
+        // Verkaufszeitraum bleiben stehen und werden beim Bezahlen gemeldet.
+        const weg = (data.problems ?? []).filter((p) =>
+          ["groesse_fehlt", "variante_unbekannt", "nicht_gefunden", "nicht_veroeffentlicht"].includes(
+            p.code ?? ""
+          )
+        );
+        if (weg.length > 0) {
+          for (const p of weg) removeFromCart(p.id, p.variation_id);
+          setError(
+            `${t("CHECKOUT_LINE_REMOVED")} ${weg
+              .map((p) => (language === "en" ? p.message?.en : p.message?.de))
+              .filter(Boolean)
+              .join(" ")}`
+          );
+        }
+      } catch {
+        // Netzfehler: die Prüfung läuft beim Bezahlen ohnehin noch einmal.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sessionReady,
+    items.length,
+    cartFingerprint,
+    cartMeta,
+    isWholesale,
+    wholesaleReverseCharge,
+    applyServerPrices,
+    removeFromCart,
+    language,
+    t,
+  ]);
 
   const paypalCouponDiscount = useMemo(
     () => (isWholesale ? null : couponDiscount),

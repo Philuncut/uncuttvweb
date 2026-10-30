@@ -133,7 +133,17 @@ async function fetchStoreShipping(
       body: JSON.stringify({ id: it.id, quantity: it.quantity }),
     });
     readHeaders(res);
-    if (!res.ok) return { ok: false, reason: "upstream" };
+    if (!res.ok) {
+      // Ein variables Produkt (Merch) braucht die Varianten-ID, nicht die
+      // Eltern-ID: "woocommerce_rest_missing_attributes". Das steht im Log,
+      // damit so ein Warenkorb nicht wieder als "Versand nicht verfügbar"
+      // untergeht.
+      const text = await res.text().catch(() => "");
+      console.warn(
+        `[shipping-rate] Store API add-item ${it.id}x${it.quantity} -> ${res.status}: ${text.slice(0, 200)}`
+      );
+      return { ok: false, reason: "upstream" };
+    }
   }
 
   res = await fetch(`${base}/cart/update-customer`, {
