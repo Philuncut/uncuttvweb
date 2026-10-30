@@ -553,6 +553,47 @@ export default function OrderSuccess() {
           <p>IBAN: AT52 3600 0000 0083 4978</p>
           <p>BIC: RZTIAT22</p>
         </div>
+        {/* Bestellübersicht aus WooCommerce, mit Größe bei Merch ("… - M"). */}
+        {order && order.items.length > 0 && (
+          <div className="mx-auto mt-6 max-w-sm border border-[#222] bg-[#111] p-6 text-left">
+            <h3 className="text-xs font-bold tracking-[0.2em] text-white/60">
+              {t("ORDER_SUCCESS_SUMMARY")}
+            </h3>
+            <div className="mt-4 space-y-3">
+              {order.items.map((item, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-4 text-sm"
+                >
+                  <span className="text-white/70">
+                    {item.quantity}× {item.description}
+                  </span>
+                  <span className="shrink-0 text-white">
+                    {formatPrice(item.amount / 100)}
+                  </span>
+                </div>
+              ))}
+              {typeof order.shippingCents === "number" &&
+                order.shippingCents > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white/70">
+                      {order.shippingMethodTitle?.trim() ||
+                        t("ORDER_SUCCESS_SHIPPING_DEFAULT")}
+                    </span>
+                    <span className="text-white">
+                      {formatPrice(order.shippingCents / 100)}
+                    </span>
+                  </div>
+                )}
+              <div className="flex items-center justify-between border-t border-[#222] pt-3 text-sm font-bold">
+                <span className="text-white">{t("GESAMT")}</span>
+                <span className="text-[#c0392b]">
+                  {formatPrice(parsePrice(order.total))}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         {isWholesaleBank && (
           <p
             style={{
