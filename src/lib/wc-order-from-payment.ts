@@ -326,7 +326,9 @@ export type WooOrderForDetails = WooOrderRow & {
     variation_id?: number;
     name?: string;
     quantity?: number;
+    /** Netto (WooCommerce rechnet die Steuer getrennt in total_tax). */
     total?: string;
+    total_tax?: string;
     meta_data?: Array<{
       key?: string;
       value?: unknown;
@@ -337,10 +339,19 @@ export type WooOrderForDetails = WooOrderRow & {
   shipping_lines?: Array<{
     method_title?: string;
     total?: string;
+    total_tax?: string;
   }>;
   total?: string;
   currency?: string;
 };
+
+/** Brutto einer Zeile: WooCommerce liefert total netto und die Steuer getrennt. */
+function lineGrossEuro(line: { total?: string; total_tax?: string }): number {
+  return (
+    parsePrice(String(line.total ?? "0")) +
+    parsePrice(String(line.total_tax ?? "0"))
+  );
+}
 
 /**
  * Die Größe einer Bestellposition aus ihrem Meta (pa_groesse, von
@@ -404,9 +415,11 @@ export function mapWooOrderToOrderDetailsPayload(
       ? name
       : `${name} – Größe ${size}`;
   };
+  // Beträge brutto, wie sie der Kunde gesehen und bezahlt hat (total ist
+  // bei WooCommerce netto, die Steuer steht in total_tax).
   const items = wooLineItems.map((li) => {
     const qty = Math.max(1, Number(li.quantity) || 1);
-    const lineTotalEuro = parsePrice(String(li.total ?? "0"));
+    const lineTotalEuro = lineGrossEuro(li);
     return {
       description: describe(li),
       quantity: qty,
@@ -416,7 +429,7 @@ export function mapWooOrderToOrderDetailsPayload(
 
   const line_items = wooLineItems.map((li) => {
     const qty = Math.max(1, Number(li.quantity) || 1);
-    const lineTotalEuro = parsePrice(String(li.total ?? "0"));
+    const lineTotalEuro = lineGrossEuro(li);
     const variationId = Number(li.variation_id ?? 0);
     return {
       product_id: String(li.product_id ?? 0),
@@ -431,7 +444,7 @@ export function mapWooOrderToOrderDetailsPayload(
   let shippingCents = 0;
   let shippingMethodTitle = "";
   for (const line of order.shipping_lines ?? []) {
-    shippingCents += Math.round(parsePrice(String(line.total ?? "0")) * 100);
+    shippingCents += Math.round(lineGrossEuro(line) * 100);
     if (!shippingMethodTitle && line.method_title) {
       shippingMethodTitle = asString(line.method_title);
     }
