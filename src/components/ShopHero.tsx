@@ -20,9 +20,9 @@ interface PromoConfig {
 }
 
 /**
- * Handy-Fassung des Header-Videos (public/videos/hero-mobile.*): mittiger
- * Ausschnitt 500x270 aus hero.mp4 (1920x270), 9,5 s, Loop ueberblendet,
- * ohne Ton. Das Standbild ist das erste Bild davon.
+ * Handy-Fassung des Header-Videos (public/videos/hero-mobile.*): Ausschnitt
+ * 500x270 aus hero.mp4 (1920x270) um das UNCUT.TV-Logo (x 1170..1670),
+ * 9,5 s, Loop ueberblendet, ohne Ton. Das Standbild ist das erste Bild davon.
  */
 const MOBILE_POSTER = "/videos/hero-mobile.webp";
 const MOBILE_WEBM = "/videos/hero-mobile.webm";
