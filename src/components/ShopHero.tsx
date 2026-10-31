@@ -19,9 +19,72 @@ interface PromoConfig {
   items?: PromoItem[];
 }
 
+/**
+ * Handy-Fassung des Header-Videos (public/videos/hero-mobile.*): mittiger
+ * Ausschnitt 500x270 aus hero.mp4 (1920x270), 9,5 s, Loop ueberblendet,
+ * ohne Ton. Das Standbild ist das erste Bild davon.
+ */
+const MOBILE_POSTER = "/videos/hero-mobile.webp";
+const MOBILE_WEBM = "/videos/hero-mobile.webm";
+const MOBILE_MP4 = "/videos/hero-mobile.mp4";
+
+/** 1x1 durchsichtiges GIF: am Desktop laedt <picture> kein Standbild. */
+const LEERES_BILD =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+
+const MOBILE_QUERY = "(max-width: 767px)";
+
+/**
+ * Soll am Handy das Video nachgeladen werden? Nein bei Datensparmodus
+ * (navigator.connection.saveData) und bei "Bewegung reduzieren".
+ */
+function darfHandyVideoLaden(): boolean {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+  const nav = navigator as Navigator & {
+    connection?: { saveData?: boolean };
+  };
+  if (nav.connection?.saveData === true) return false;
+  return true;
+}
+
+/** Nach dem Laden der Seite, dann in einer Leerlaufzeit. */
+function nachSeitenladen(cb: () => void): () => void {
+  let idle: number | null = null;
+  let abgebrochen = false;
+  const w = window as Window & {
+    requestIdleCallback?: (fn: () => void, opts?: { timeout: number }) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+  const imLeerlauf = () => {
+    if (abgebrochen) return;
+    if (typeof w.requestIdleCallback === "function") {
+      idle = w.requestIdleCallback(() => !abgebrochen && cb(), { timeout: 2500 });
+    } else {
+      idle = window.setTimeout(() => !abgebrochen && cb(), 1200);
+    }
+  };
+  if (document.readyState === "complete") {
+    imLeerlauf();
+  } else {
+    window.addEventListener("load", imLeerlauf, { once: true });
+  }
+  return () => {
+    abgebrochen = true;
+    window.removeEventListener("load", imLeerlauf);
+    if (idle !== null) {
+      if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(idle);
+      window.clearTimeout(idle);
+    }
+  };
+}
+
 export default function ShopHero() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mobileVideoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
+  /** Handy: das Video-Element erst nach dem Seitenladen einhaengen. */
+  const [mobileVideo, setMobileVideo] = useState(false);
+  const [mobileVideoReady, setMobileVideoReady] = useState(false);
   const [promo, setPromo] = useState<PromoConfig | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
@@ -29,10 +92,10 @@ export default function ShopHero() {
     const video = videoRef.current;
     if (!video) return;
 
-    // Am Handy wird das Video (2,9 MB) gar nicht erst geladen: Das
-    // Element steht mit preload="none" und ohne autoplay im HTML, der
-    // Verlauf darunter bleibt stehen. Erst ab Tablet-Breite wird
-    // nachgeladen und abgespielt.
+    // Am Handy wird das Desktop-Video (2,9 MB) gar nicht erst geladen: Das
+    // Element steht mit preload="none" und ohne autoplay im HTML. Erst ab
+    // Tablet-Breite wird nachgeladen und abgespielt. Das Handy bekommt
+    // unten seine eigene, kleine Fassung.
     const desktop = window.matchMedia("(min-width: 768px)").matches;
     if (!desktop) return;
 
@@ -59,6 +122,38 @@ export default function ShopHero() {
     };
   }, []);
 
+  // Handy: Zuerst steht nur das Standbild (im HTML, mit hoher Prioritaet).
+  // Das Video (0,4 MB MP4 / 0,25 MB WebM) kommt erst nach dem Laden der
+  // Seite in einer Leerlaufzeit dazu und blendet ueber das Standbild, sobald
+  // es laeuft. Bei Datensparmodus oder "Bewegung reduzieren" bleibt es beim
+  // Standbild.
+  useEffect(() => {
+    if (!window.matchMedia(MOBILE_QUERY).matches) return;
+    if (!darfHandyVideoLaden()) return;
+    return nachSeitenladen(() => setMobileVideo(true));
+  }, []);
+
+  useEffect(() => {
+    if (!mobileVideo) return;
+    const video = mobileVideoRef.current;
+    if (!video) return;
+    function onPlaying() {
+      setMobileVideoReady(true);
+    }
+    video.addEventListener("playing", onPlaying);
+    video.muted = true;
+    video.preload = "auto";
+    video
+      .play()
+      .then(() => setMobileVideoReady(true))
+      .catch(() => {
+        /* Autoplay verweigert: das Standbild bleibt */
+      });
+    return () => {
+      video.removeEventListener("playing", onPlaying);
+    };
+  }, [mobileVideo]);
+
   // Fetch promo config
   useEffect(() => {
     console.log("[Banner] Fetching promo config...");
@@ -79,7 +174,48 @@ export default function ShopHero() {
 
   return (
     <section className="relative flex h-[25vh] w-full items-center justify-center overflow-visible">
-      {/* Video */}
+      {/* Handy: Standbild sofort aus dem HTML; am Desktop (<source> mit
+          leerem GIF, dazu md:hidden) wird nichts geladen. */}
+      <picture className="absolute inset-0 z-10 block md:hidden">
+        <source media="(min-width: 768px)" srcSet={LEERES_BILD} />
+        {/* Bewusst kein next/image: dessen Vorab-Laden wuerde das Standbild
+            auch am Desktop holen; die WebP ist 3,7 KB und fertig skaliert. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={MOBILE_POSTER}
+          alt=""
+          width={500}
+          height={270}
+          fetchPriority="high"
+          decoding="async"
+          className="h-full w-full object-cover object-center"
+          style={{ pointerEvents: "none" }}
+        />
+      </picture>
+
+      {/* Handy-Video, erst nach dem Seitenladen eingehaengt. */}
+      {mobileVideo && (
+        <video
+          ref={mobileVideoRef}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="none"
+          poster={MOBILE_POSTER}
+          disablePictureInPicture
+          controlsList="nofullscreen nodownload noremoteplayback"
+          className={`absolute inset-0 z-[11] h-full w-full object-cover object-center transition-opacity duration-500 md:hidden ${
+            mobileVideoReady ? "opacity-100" : "opacity-0"
+          }`}
+          style={{ pointerEvents: "none" }}
+        >
+          <source src={MOBILE_WEBM} type="video/webm" />
+          <source src={MOBILE_MP4} type="video/mp4" />
+        </video>
+      )}
+
+      {/* Video (Desktop) */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video
         ref={videoRef}
