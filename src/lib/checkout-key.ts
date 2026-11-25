@@ -52,6 +52,22 @@ export function loescheCheckoutKey(): void {
 }
 
 /**
+ * Wie loescheCheckoutKey, aber nur, wenn die gespeicherte Kennung noch die
+ * übergebene ist (PayPal-Wiederanlauf: Der Auftrag kann aus einem älteren
+ * Kassenvorgang stammen).
+ */
+export function loescheCheckoutKeyWenn(kennung: unknown): void {
+  if (typeof window === "undefined" || typeof kennung !== "string") return;
+  try {
+    if (kennung && sessionStorage.getItem(SPEICHER) === kennung) {
+      loescheCheckoutKey();
+    }
+  } catch {
+    /* ignorieren */
+  }
+}
+
+/**
  * Merkt, dass dieser Tab Einzelstücke reserviert hat (PaymentIntent-ID bei
  * Stripe, "paypal" bei PayPal). Kommt der Kunde nach einer abgebrochenen
  * Zahlung wieder in die Kasse, gibt sie die Reservierung zurück; sonst

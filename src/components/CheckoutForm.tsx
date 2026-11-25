@@ -67,6 +67,7 @@ import {
 } from "@/lib/paypal-orphan-alert-client";
 import {
   holeOderErzeugeCheckoutKey,
+  loescheCheckoutKey,
   leseGemerkteReservierung,
   merkeReservierung,
   vergissReservierung,
@@ -2835,6 +2836,8 @@ function CheckoutInner() {
           }
 
           markCheckoutPiSynced(paidPiId);
+          // Bestellung angelegt: Der nächste Einkauf ist ein neuer Kassenvorgang.
+          loescheCheckoutKey();
         } catch (syncErr) {
           console.error("[checkout/card] sync-order error", paidPiId, syncErr);
           setError(
@@ -3174,6 +3177,8 @@ function CheckoutInner() {
         }
 
         clearPayPalRecoveryRecord(paypalOrderId);
+        // Bestellung angelegt: Der nächste Einkauf ist ein neuer Kassenvorgang.
+        loescheCheckoutKey();
         clearCart();
         clearVideoUtmStorage();
         clearMarketingUtmStorage();

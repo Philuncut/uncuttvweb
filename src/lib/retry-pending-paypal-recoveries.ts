@@ -5,6 +5,7 @@ import {
   type PayPalRecoveryRecord,
 } from "@/lib/paypal-recovery-storage";
 import { reportPayPalOrphanAlert } from "@/lib/paypal-orphan-alert-client";
+import { loescheCheckoutKeyWenn } from "@/lib/checkout-key";
 import type { CartMeta } from "@/lib/wc-order-from-payment";
 
 let retryInFlight = false;
@@ -49,6 +50,11 @@ export async function retryPendingPayPalRecoveries(): Promise<void> {
 
         if (syncRes.ok) {
           clearPayPalRecoveryRecord(record.paypalOrderId);
+          // Bestellung angelegt: Ein neuer Kauf im selben Tab ist ein neuer
+          // Kassenvorgang und bekommt eine eigene Bestellung.
+          loescheCheckoutKeyWenn(
+            (record.syncBody as { checkoutKey?: unknown } | null)?.checkoutKey
+          );
           console.info(
             "[PayPal recovery] sync succeeded on retry:",
             record.paypalOrderId
