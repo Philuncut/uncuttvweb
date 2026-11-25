@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { wertePayPalOrderAus } from "@/lib/paypal-pruefung";
+import { betragsabweichungText } from "@/lib/betragsabweichung-melden";
 import {
+  betragStimmt,
+  ermittleBetragsabweichung,
   erwarteterBetragCent,
-  pruefeZahlungGegenBestellung,
-  zahlungReicht,
-  ZahlungPasstNichtFehler,
+  FalscheWaehrungFehler,
+  pruefeWaehrung,
 } from "@/lib/zahlungsbetrag";
 
 /**
  * Eine bezahlte Bestellung entsteht nur, wenn der Server die Zahlung selbst
- * gesehen hat und der Betrag für den Warenkorb reicht.
+ * gesehen hat. Passt der Betrag nicht zum Warenkorb, entsteht sie trotzdem,
+ * aber auf "on-hold" mit Notiz und Mail ans Büro. Abgewiesen wird nur, was
+ * nicht eingezogen ist oder in fremder Währung bezahlt wurde.
  *
  * Vorher genügte bei PayPal die Zeichenkette "paypal_<irgendwas>" im Aufruf
  * von /api/sync-order, und bei Stripe wurde der Betrag nicht mit dem
@@ -80,38 +84,60 @@ describe("Erwarteter Betrag", () => {
   });
 });
 
-describe("Reicht die Zahlung?", () => {
-  it("genau bezahlt und Rundungsdifferenz gehen durch", () => {
-    assert.equal(zahlungReicht(6180, 6180), true);
-    assert.equal(zahlungReicht(12312, 12311), true);
-    assert.equal(zahlungReicht(6180, 6175), true);
+describe("Betrag der Zahlung gegen den Warenkorb", () => {
+  it("genau bezahlt und Rundungsdifferenz: keine Abweichung", () => {
+    assert.equal(betragStimmt(6180, 6180), true);
+    assert.equal(betragStimmt(12311, 12312), true);
+    assert.equal(ermittleBetragsabweichung(6180, 6175), null);
+    assert.equal(ermittleBetragsabweichung(6180, 6185), null);
   });
 
-  it("zu wenig bezahlt geht nicht durch", () => {
-    assert.equal(zahlungReicht(6180, 6174), false);
-    assert.equal(zahlungReicht(6180, 100), false);
-    assert.equal(zahlungReicht(6180, Number.NaN), false);
+  it("zu wenig bezahlt: Abweichung mit beiden Beträgen, keine Abweisung", () => {
+    assert.deepEqual(ermittleBetragsabweichung(24900, 100), {
+      erwartetCent: 24900,
+      bezahltCent: 100,
+    });
+    assert.deepEqual(ermittleBetragsabweichung(6180, 6174), {
+      erwartetCent: 6180,
+      bezahltCent: 6174,
+    });
   });
 
-  it("zu viel bezahlt geht durch", () => {
-    assert.equal(zahlungReicht(6180, 9000), true);
+  it("zu viel bezahlt gilt ebenfalls als Abweichung", () => {
+    assert.deepEqual(ermittleBetragsabweichung(6180, 9000), {
+      erwartetCent: 6180,
+      bezahltCent: 9000,
+    });
   });
 
-  it("falsche Währung wird abgewiesen, auch bei passender Zahl", () => {
-    assert.throws(
-      () => pruefeZahlungGegenBestellung(6180, 6180, "usd"),
-      (err: unknown) =>
-        err instanceof ZahlungPasstNichtFehler && err.grund === "waehrung"
-    );
+  it("unlesbarer Betrag gilt als Abweichung", () => {
+    assert.equal(betragStimmt(6180, Number.NaN), false);
   });
 
-  it("kleine Zahlung für großen Warenkorb wird abgewiesen", () => {
-    assert.throws(
-      () => pruefeZahlungGegenBestellung(24900, 100, "eur"),
-      (err: unknown) =>
-        err instanceof ZahlungPasstNichtFehler && err.grund === "betrag"
-    );
-    assert.doesNotThrow(() => pruefeZahlungGegenBestellung(24900, 24900, "EUR"));
+  it("Notiztext nennt erwarteten und bezahlten Betrag und die Zahlung", () => {
+    const text = betragsabweichungText({
+      orderId: 7001,
+      orderNumber: "7001",
+      zahlungsreferenz: "paypal_5O190127TN364715T",
+      erwartetCent: 8160,
+      bezahltCent: 6180,
+    });
+    assert.match(text, /erwartet 81,60 €/);
+    assert.match(text, /bezahlt 61,80 €/);
+    assert.match(text, /paypal_5O190127TN364715T/);
+  });
+});
+
+describe("Währung der Zahlung", () => {
+  it("Euro geht durch, in jeder Schreibweise", () => {
+    assert.doesNotThrow(() => pruefeWaehrung("eur"));
+    assert.doesNotThrow(() => pruefeWaehrung("EUR"));
+  });
+
+  it("fremde oder fehlende Währung wird abgewiesen", () => {
+    assert.throws(() => pruefeWaehrung("usd"), FalscheWaehrungFehler);
+    assert.throws(() => pruefeWaehrung(""), FalscheWaehrungFehler);
+    assert.throws(() => pruefeWaehrung(undefined), FalscheWaehrungFehler);
   });
 });
 

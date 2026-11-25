@@ -44,9 +44,12 @@ import { wooFetch } from "@/lib/woocommerce";
 import { resolveOrderCustomer } from "@/lib/order-customer";
 import { GROESSE_ATTRIBUT_SLUG } from "@/lib/varianten";
 import {
+  ermittleBetragsabweichung,
   erwarteterBetragCent,
-  pruefeZahlungGegenBestellung,
+  pruefeWaehrung,
+  type Betragsabweichung,
 } from "@/lib/zahlungsbetrag";
+import { meldeBetragsabweichung } from "@/lib/betragsabweichung-melden";
 
 /**
  * Eine Warenkorbzeile auf dem Weg in die WooCommerce-Bestellung. Bei
@@ -491,6 +494,11 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   stripeAmountCents?: number;
   /** Subtotal discount in cents (from PI metadata) — applied to explicit WC line totals. */
   stripeDiscountCents?: number;
+  /**
+   * Die Zahlung ist da, ihr Betrag passt aber nicht zum Warenkorb: Bestellung
+   * auf "on-hold" statt "processing", dazu Bestellnotiz und Mail ans Büro.
+   */
+  betragsabweichung?: Betragsabweichung;
 };
 
 export async function createWooOrderFromCheckoutSync(
@@ -513,6 +521,7 @@ export async function createWooOrderFromCheckoutSync(
     couponCode,
     stripeAmountCents,
     stripeDiscountCents,
+    betragsabweichung,
   } = input;
 
   if (cartItems.length === 0) {
@@ -589,10 +598,12 @@ export async function createWooOrderFromCheckoutSync(
       : new Map<string, number>();
 
   const orderData: Record<string, unknown> = {
-    status: "processing",
+    // set_paid würde WooCommerce sofort auf "processing" stellen; bei einer
+    // Betragsabweichung bleibt die Bestellung deshalb ohne set_paid auf on-hold.
+    status: betragsabweichung ? "on-hold" : "processing",
     payment_method: "stripe",
     payment_method_title: "Stripe",
-    set_paid: true,
+    set_paid: !betragsabweichung,
     send_email: false,
     prices_include_tax: true,
     billing: mergedBilling,
@@ -793,6 +804,16 @@ export async function createWooOrderFromCheckoutSync(
     }
   }
 
+  if (betragsabweichung) {
+    await meldeBetragsabweichung({
+      orderId: Number(created.id),
+      orderNumber: String(created.number ?? created.id),
+      zahlungsreferenz: transactionId,
+      kundenEmail: asString(mergedBilling.email),
+      ...betragsabweichung,
+    });
+  }
+
   const mergedVatForNotify =
     asString(vatFromFrontendMeta) || asString(profileVat);
   const pmTitleRaw = asString(created.payment_method_title);
@@ -977,12 +998,14 @@ export async function createWooOrderFromPayment(
       billing.country ||
       shipping.country,
   });
-  pruefeZahlungGegenBestellung(
+  // Fremde Währung: abgewiesen. Betrag weicht ab: Bestellung trotzdem, aber
+  // auf on-hold mit Notiz und Mail ans Büro.
+  pruefeWaehrung(pi.currency);
+  const abweichung = ermittleBetragsabweichung(
     erwartetCent,
     typeof pi.amount_received === "number" && pi.amount_received > 0
       ? pi.amount_received
-      : pi.amount,
-    pi.currency ?? ""
+      : pi.amount
   );
 
   return createWooOrderFromCheckoutSync({
@@ -1006,5 +1029,6 @@ export async function createWooOrderFromPayment(
     stripeAmountCents:
       typeof pi.amount === "number" ? pi.amount : undefined,
     stripeDiscountCents: discountCentsFromPi,
+    betragsabweichung: abweichung ?? undefined,
   });
 }

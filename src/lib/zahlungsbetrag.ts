@@ -7,6 +7,12 @@
  * Stripe nur der Status. Hier steht die Rechnung, gegen die beide Wege
  * jetzt prüfen.
  *
+ * Was daraus folgt:
+ *   - Fremde Währung: abgewiesen (FalscheWaehrungFehler).
+ *   - Betrag weicht ab: Die Bestellung entsteht trotzdem, denn der Kunde hat
+ *     bezahlt, aber auf "on-hold" mit Notiz und Mail ans Büro
+ *     (betragsabweichung-melden.ts).
+ *
  * Die Formel ist dieselbe wie in compute-payment-intent-amount.ts (Betrag
  * des PaymentIntents) und wie im Browser für PayPal: Rabatt auf die
  * Zwischensumme, dann Versand. Händler ohne Reverse Charge zahlen Netto
@@ -65,12 +71,8 @@ export function erwarteterBetragCent(e: ErwarteterBetragEingabe): number {
   return summe;
 }
 
-/**
- * Reicht die Zahlung für die Bestellung? Zu viel bezahlt geht durch (kein
- * Schaden für den Shop, wird protokolliert); zu wenig nur innerhalb der
- * Rundungstoleranz.
- */
-export function zahlungReicht(
+/** Zahlung und Rechnung passen, wenn sie höchstens um die Toleranz abweichen. */
+export function betragStimmt(
   erwartetCent: number,
   bezahltCent: number,
   toleranzCent = BETRAG_TOLERANZ_CENT
@@ -78,39 +80,38 @@ export function zahlungReicht(
   if (!Number.isFinite(erwartetCent) || !Number.isFinite(bezahltCent)) {
     return false;
   }
-  return bezahltCent >= erwartetCent - toleranzCent;
+  return Math.abs(erwartetCent - bezahltCent) <= toleranzCent;
 }
 
-/** Zahlung passt nicht zur Bestellung (zu wenig bezahlt oder falsche Währung). */
-export class ZahlungPasstNichtFehler extends Error {
-  readonly code = "payment_mismatch";
+/** Bezahlt, aber mit anderem Betrag, als der Warenkorb ergibt. */
+export type Betragsabweichung = { erwartetCent: number; bezahltCent: number };
 
-  constructor(
-    public readonly grund: "betrag" | "waehrung",
-    public readonly erwartetCent: number,
-    public readonly bezahltCent: number,
-    public readonly waehrung: string
-  ) {
-    super(
-      grund === "waehrung"
-        ? `Zahlung in ${waehrung.toUpperCase()} statt EUR`
-        : `Zahlung ${(bezahltCent / 100).toFixed(2)} EUR, Bestellung ${(erwartetCent / 100).toFixed(2)} EUR`
-    );
-    this.name = "ZahlungPasstNichtFehler";
-  }
-}
-
-/** Wirft ZahlungPasstNichtFehler, wenn Währung oder Betrag nicht passen. */
-export function pruefeZahlungGegenBestellung(
+/** null, wenn der Betrag passt; sonst die beiden Beträge für Notiz und Mail. */
+export function ermittleBetragsabweichung(
   erwartetCent: number,
-  bezahltCent: number,
-  waehrung: string
-): void {
+  bezahltCent: number
+): Betragsabweichung | null {
+  return betragStimmt(erwartetCent, bezahltCent)
+    ? null
+    : { erwartetCent, bezahltCent };
+}
+
+/**
+ * Zahlung in fremder Währung. Der Shop rechnet nur in Euro; ein Betrag in
+ * anderer Währung lässt sich nicht mit dem Warenkorb vergleichen.
+ */
+export class FalscheWaehrungFehler extends Error {
+  readonly code = "payment_currency";
+
+  constructor(public readonly waehrung: string) {
+    super(
+      `Zahlung in ${waehrung ? waehrung.toUpperCase() : "unbekannter Währung"} statt EUR`
+    );
+    this.name = "FalscheWaehrungFehler";
+  }
+}
+
+export function pruefeWaehrung(waehrung: string | null | undefined): void {
   const w = (waehrung || "").trim().toLowerCase();
-  if (w !== "eur") {
-    throw new ZahlungPasstNichtFehler("waehrung", erwartetCent, bezahltCent, w);
-  }
-  if (!zahlungReicht(erwartetCent, bezahltCent)) {
-    throw new ZahlungPasstNichtFehler("betrag", erwartetCent, bezahltCent, w);
-  }
+  if (w !== "eur") throw new FalscheWaehrungFehler(w);
 }

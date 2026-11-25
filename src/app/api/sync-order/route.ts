@@ -37,9 +37,11 @@ import {
 } from "@/lib/paypal-orphan-order";
 import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
 import {
+  ermittleBetragsabweichung,
   erwarteterBetragCent,
-  pruefeZahlungGegenBestellung,
-  ZahlungPasstNichtFehler,
+  FalscheWaehrungFehler,
+  pruefeWaehrung,
+  type Betragsabweichung,
 } from "@/lib/zahlungsbetrag";
 
 interface SyncBody {
@@ -436,6 +438,7 @@ export async function POST(request: Request) {
 
     let couponCodeResolved: string | undefined;
     let stripeDiscountCents: number | undefined;
+    let paypalAbweichung: Betragsabweichung | null = null;
     const codeTrimmed = body.couponCode?.trim();
 
     if (codeTrimmed && !isWholesaleCheckout) {
@@ -538,32 +541,27 @@ export async function POST(request: Request) {
         taxCountry: billing.country,
       });
       try {
-        pruefeZahlungGegenBestellung(
-          erwartetCent,
-          zahlung.bezahltCent,
-          zahlung.waehrung
-        );
-      } catch (mismatch) {
-        if (!(mismatch instanceof ZahlungPasstNichtFehler)) throw mismatch;
-        console.error(
-          `[sync-order] PayPal ${paypalOrderId}: ${mismatch.message}`
-        );
+        pruefeWaehrung(zahlung.waehrung);
+      } catch (falsch) {
+        if (!(falsch instanceof FalscheWaehrungFehler)) throw falsch;
+        console.error(`[sync-order] PayPal ${paypalOrderId}: ${falsch.message}`);
         await reportPayPalSyncFailure(
           body,
-          "paypal_amount_mismatch",
-          mismatch.message,
+          "paypal_currency",
+          falsch.message,
           402
         );
         return NextResponse.json(
-          { error: "payment_mismatch", message: mismatch.message },
+          { error: "payment_currency", message: falsch.message },
           { status: 402 }
         );
       }
-      if (zahlung.bezahltCent > erwartetCent + 5) {
-        console.warn(
-          `[sync-order] PayPal ${paypalOrderId}: mehr bezahlt als erwartet (${zahlung.bezahltCent} statt ${erwartetCent} Cent)`
-        );
-      }
+      // Betrag weicht ab: trotzdem anlegen (bezahlt ist bezahlt), aber auf
+      // on-hold mit Bestellnotiz und Mail ans Büro.
+      paypalAbweichung = ermittleBetragsabweichung(
+        erwartetCent,
+        zahlung.bezahltCent
+      );
     }
 
     const result = await createWooOrderFromCheckoutSync({
@@ -581,6 +579,7 @@ export async function POST(request: Request) {
       stripePiId: transactionId.startsWith("pi_") ? transactionId : undefined,
       couponCode: couponCodeResolved,
       stripeDiscountCents,
+      betragsabweichung: paypalAbweichung ?? undefined,
     });
 
     if (transactionId.startsWith("paypal_")) {
@@ -613,12 +612,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (err instanceof ZahlungPasstNichtFehler) {
+    if (err instanceof FalscheWaehrungFehler) {
       console.error(
-        `[sync-order] Zahlung passt nicht pi=${body?.paymentIntentId ?? "?"}: ${err.message}`
+        `[sync-order] Abgewiesen pi=${body?.paymentIntentId ?? "?"}: ${err.message}`
       );
       return NextResponse.json(
-        { error: "payment_mismatch", message: err.message },
+        { error: "payment_currency", message: err.message },
         { status: 402 }
       );
     }
