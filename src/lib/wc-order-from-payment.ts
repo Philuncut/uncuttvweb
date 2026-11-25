@@ -43,6 +43,10 @@ import {
 import { wooFetch } from "@/lib/woocommerce";
 import { resolveOrderCustomer } from "@/lib/order-customer";
 import { GROESSE_ATTRIBUT_SLUG } from "@/lib/varianten";
+import {
+  erwarteterBetragCent,
+  pruefeZahlungGegenBestellung,
+} from "@/lib/zahlungsbetrag";
 
 /**
  * Eine Warenkorbzeile auf dem Weg in die WooCommerce-Bestellung. Bei
@@ -953,6 +957,33 @@ export async function createWooOrderFromPayment(
     const n = parseInt(typeof raw === "string" ? raw : "", 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
   })();
+
+  // Der Warenkorb kommt aus dem Browser, der Betrag der Zahlung von Stripe.
+  // Ohne diesen Vergleich ließe sich mit einer kleinen Zahlung eine große
+  // Bestellung als bezahlt anlegen. Rabatt und Versand stehen in den
+  // Metadaten, die nur der Server schreibt (create-/update-payment-intent).
+  const versandCentAusPi = parseInt(pi.metadata?.shipping_cents ?? "", 10);
+  const erwartetCent = erwarteterBetragCent({
+    items: cartItems,
+    discountCents: discountCentsFromPi,
+    shippingCents:
+      Number.isFinite(versandCentAusPi) && versandCentAusPi > 0
+        ? versandCentAusPi
+        : 0,
+    isWholesale: isWholesaleCheckout,
+    isReverseCharge,
+    taxCountry:
+      (isWholesaleCheckout && pi.metadata?.shipping_country?.trim()) ||
+      billing.country ||
+      shipping.country,
+  });
+  pruefeZahlungGegenBestellung(
+    erwartetCent,
+    typeof pi.amount_received === "number" && pi.amount_received > 0
+      ? pi.amount_received
+      : pi.amount,
+    pi.currency ?? ""
+  );
 
   return createWooOrderFromCheckoutSync({
     cartItems,

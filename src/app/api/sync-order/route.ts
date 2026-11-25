@@ -35,6 +35,12 @@ import {
   resolveSyncBodyEmail,
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
+import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
+import {
+  erwarteterBetragCent,
+  pruefeZahlungGegenBestellung,
+  ZahlungPasstNichtFehler,
+} from "@/lib/zahlungsbetrag";
 
 interface SyncBody {
   sessionId?: string;
@@ -371,6 +377,18 @@ export async function POST(request: Request) {
         country: ship?.address?.country || billing.country,
       };
     } else if (body.paymentIntentId && body.customer && body.items) {
+      // Hierher kommt nur noch PayPal ("paypal_<Order-ID>"); Stripe ist oben
+      // erledigt. Jede andere Referenz wäre eine bezahlte Bestellung ohne
+      // prüfbare Zahlung.
+      if (!body.paymentIntentId.startsWith("paypal_")) {
+        return NextResponse.json(
+          {
+            error: "invalid_payment_reference",
+            message: "Unbekannte Zahlungsreferenz.",
+          },
+          { status: 400 }
+        );
+      }
       cartItems = normalizeCartMetaItems(body.items);
       if (cartItems.length === 0) {
         return NextResponse.json(
@@ -478,6 +496,74 @@ export async function POST(request: Request) {
       }
       billing.email = resolvedEmail;
       shipping.email = resolvedEmail;
+
+      // Die Zahlung selbst bei PayPal nachladen: eingezogen, in Euro, und
+      // der Betrag reicht für diesen Warenkorb. Vorher genügte die bloße
+      // Behauptung des Browsers.
+      const paypalOrderId = paypalOrderIdFromPaymentIntent(transactionId);
+      const zahlung = await pruefePayPalZahlung(paypalOrderId);
+      if (!zahlung.ok) {
+        const vorlaeufig = zahlung.grund === "nicht_pruefbar";
+        console.error(
+          `[sync-order] PayPal ${paypalOrderId}: ${zahlung.grund} (${zahlung.detail})`
+        );
+        if (zahlung.grund !== "ungueltige_id") {
+          await reportPayPalSyncFailure(
+            body,
+            vorlaeufig ? "paypal_not_verifiable" : "paypal_not_paid",
+            zahlung.detail,
+            vorlaeufig ? 503 : 402
+          );
+        }
+        return NextResponse.json(
+          {
+            error: vorlaeufig ? "paypal_not_verifiable" : "paypal_not_paid",
+            message: vorlaeufig
+              ? "Die PayPal-Zahlung konnte gerade nicht geprüft werden."
+              : "Zu dieser PayPal-Zahlung gibt es keinen Zahlungseingang.",
+          },
+          { status: vorlaeufig ? 503 : 402 }
+        );
+      }
+      const shipRate = body.checkoutShipping?.rate;
+      const erwartetCent = erwarteterBetragCent({
+        items: cartItems,
+        discountCents: stripeDiscountCents,
+        shippingCents:
+          typeof shipRate === "number" && Number.isFinite(shipRate)
+            ? Math.round(shipRate * 100)
+            : 0,
+        isWholesale: isWholesaleCheckout,
+        isReverseCharge,
+        taxCountry: billing.country,
+      });
+      try {
+        pruefeZahlungGegenBestellung(
+          erwartetCent,
+          zahlung.bezahltCent,
+          zahlung.waehrung
+        );
+      } catch (mismatch) {
+        if (!(mismatch instanceof ZahlungPasstNichtFehler)) throw mismatch;
+        console.error(
+          `[sync-order] PayPal ${paypalOrderId}: ${mismatch.message}`
+        );
+        await reportPayPalSyncFailure(
+          body,
+          "paypal_amount_mismatch",
+          mismatch.message,
+          402
+        );
+        return NextResponse.json(
+          { error: "payment_mismatch", message: mismatch.message },
+          { status: 402 }
+        );
+      }
+      if (zahlung.bezahltCent > erwartetCent + 5) {
+        console.warn(
+          `[sync-order] PayPal ${paypalOrderId}: mehr bezahlt als erwartet (${zahlung.bezahltCent} statt ${erwartetCent} Cent)`
+        );
+      }
     }
 
     const result = await createWooOrderFromCheckoutSync({
@@ -524,6 +610,16 @@ export async function POST(request: Request) {
           message: err.message,
         },
         { status: 400 }
+      );
+    }
+
+    if (err instanceof ZahlungPasstNichtFehler) {
+      console.error(
+        `[sync-order] Zahlung passt nicht pi=${body?.paymentIntentId ?? "?"}: ${err.message}`
+      );
+      return NextResponse.json(
+        { error: "payment_mismatch", message: err.message },
+        { status: 402 }
       );
     }
 
