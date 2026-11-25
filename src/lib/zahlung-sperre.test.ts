@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { sperreAusfallMail, stripeZahlungZaehlt } from "@/lib/sperre-ausfall-melden";
 import {
   AnlageAbgelehntFehler,
   BestellungInArbeitFehler,
   kassenSchluessel,
   leseSperrAntwort,
+  mitWiederholung,
   mitZahlungSperre,
   SperreNichtVerfuegbarFehler,
   sperrSchluessel,
@@ -53,14 +55,23 @@ class NachbauSperre implements Sperre {
     return null;
   }
 
-  async belegen(schluessel: string[], nurSuchen: boolean): Promise<SperrAntwort> {
+  async belegen(
+    schluessel: string[],
+    nurSuchen: boolean,
+    eigenerToken?: string
+  ): Promise<SperrAntwort> {
     this.aufrufe++;
     if (this.gestoert) throw new SperreNichtVerfuegbarFehler("WordPress antwortet mit 500");
     const vorhanden = this.finde(schluessel);
     if (vorhanden) return vorhanden;
     if (nurSuchen) return { zustand: "frei" };
-    if (schluessel.some((k) => this.zeilen.has(k))) return { zustand: "in_arbeit" };
-    const token = `t${this.naechsterToken++}`;
+    // Wie im Snippet: Eine Sperre mit dem eigenen Token zählt nicht als belegt.
+    const fremd = schluessel.some((k) => {
+      const z = this.zeilen.get(k);
+      return z !== undefined && !(eigenerToken && z.token === eigenerToken);
+    });
+    if (fremd) return { zustand: "in_arbeit" };
+    const token = eigenerToken || `t${this.naechsterToken++}`;
     for (const k of schluessel) this.zeilen.set(k, { token, orderId: 0 });
     return { zustand: "frei", token };
   }
@@ -380,5 +391,114 @@ describe("Antwort von WordPress lesen", () => {
       () => leseSperrAntwort({ code: "rest_no_route" }),
       SperreNichtVerfuegbarFehler
     );
+  });
+});
+
+describe("WordPress antwortet nicht: bis zu drei Versuche", () => {
+  const stoerung = () => new SperreNichtVerfuegbarFehler("Zeitlimit");
+
+  it("zwei Störungen, dritter Versuch gelingt", async () => {
+    const nummern: number[] = [];
+    const ergebnis = await mitWiederholung(async (nummer) => {
+      nummern.push(nummer);
+      if (nummer < 3) throw stoerung();
+      return "ok";
+    }, [0, 0]);
+    assert.equal(ergebnis, "ok");
+    assert.deepEqual(nummern, [1, 2, 3]);
+  });
+
+  it("drei Störungen: Schluss nach dem dritten Versuch, Fehler geht weiter", async () => {
+    let versuche = 0;
+    await assert.rejects(
+      mitWiederholung(async () => {
+        versuche++;
+        throw stoerung();
+      }, [0, 0]),
+      SperreNichtVerfuegbarFehler
+    );
+    assert.equal(versuche, 3);
+  });
+
+  it("endgültiger Fehler (401, 404) wird nicht wiederholt", async () => {
+    let versuche = 0;
+    await assert.rejects(
+      mitWiederholung(async () => {
+        versuche++;
+        throw new SperreNichtVerfuegbarFehler("WordPress antwortet mit 404", true);
+      }, [0, 0]),
+      SperreNichtVerfuegbarFehler
+    );
+    assert.equal(versuche, 1);
+  });
+
+  it("andere Fehler werden nicht wiederholt", async () => {
+    let versuche = 0;
+    await assert.rejects(
+      mitWiederholung(async () => {
+        versuche++;
+        throw new Error("Programmfehler");
+      }, [0, 0]),
+      /Programmfehler/
+    );
+    assert.equal(versuche, 1);
+  });
+
+  it("wiederholtes Belegen mit demselben Token hängt nicht an der eigenen Sperre", async () => {
+    const wp = new NachbauSperre();
+    const token = "a".repeat(32);
+    // Erster Aufruf kam in WordPress an, die Antwort ging verloren.
+    await wp.belegen(["paypal_VERLOREN1"], false, token);
+    const zweiter = await wp.belegen(["paypal_VERLOREN1"], false, token);
+    assert.deepEqual(zweiter, { zustand: "frei", token });
+    // Ein fremder Aufruf bleibt ausgesperrt.
+    assert.deepEqual(await wp.belegen(["paypal_VERLOREN1"], false, "b".repeat(32)), {
+      zustand: "in_arbeit",
+    });
+  });
+});
+
+describe("Mail ans Büro, wenn WordPress endgültig nicht antwortet", () => {
+  it("nennt Zahlungsreferenz, Betrag, Kunden-E-Mail und Warenkorb (PayPal)", () => {
+    const mail = sperreAusfallMail({
+      zahlungsreferenz: "paypal_8WF61480AB",
+      betragCent: 4990,
+      betragHerkunft: "bei PayPal geprüft, eingezogen (EUR)",
+      kundenEmail: "kunde@example.com",
+      kundenName: "Erika Muster",
+      positionen: [
+        { id: 6001, name: "Poster <A2>", qty: 1, price: "39.90" },
+        { id: 6002, name: "Shirt", qty: 2, price: "5.00", variation_id: 77 },
+      ],
+      fehler: "WordPress antwortet mit 503 auf /zahlung/belegen",
+    });
+    assert.match(mail.subject, /paypal_8WF61480AB/);
+    assert.match(mail.subject, /49,90 €/);
+    assert.match(mail.html, /PayPal/);
+    assert.match(mail.html, /kunde@example\.com/);
+    assert.match(mail.html, /1 × Poster &lt;A2&gt; \(Produkt 6001\)/);
+    assert.match(mail.html, /2 × Shirt \(Produkt 6002 \/ Variante 77\)/);
+    assert.match(mail.html, /keine Bestellung angelegt/);
+  });
+
+  it("Stripe ohne Betrag und ohne Warenkorb bleibt lesbar", () => {
+    const mail = sperreAusfallMail({
+      zahlungsreferenz: "pi_3Qabcdef",
+      betragCent: null,
+      betragHerkunft: "aus dem Warenkorb geschätzt, Stripe war nicht erreichbar",
+      positionen: [],
+      fehler: "Zeitlimit",
+    });
+    assert.match(mail.subject, /pi_3Qabcdef \(unbekannt\)/);
+    assert.match(mail.html, /Stripe/);
+    assert.match(mail.html, /nicht übermittelt/);
+  });
+
+  it("gemeldet wird nur, wenn das Geld da oder unterwegs ist", () => {
+    assert.equal(stripeZahlungZaehlt("succeeded"), true);
+    assert.equal(stripeZahlungZaehlt("processing"), true);
+    assert.equal(stripeZahlungZaehlt("requires_capture"), true);
+    assert.equal(stripeZahlungZaehlt("requires_payment_method"), false);
+    assert.equal(stripeZahlungZaehlt("canceled"), false);
   });
 });

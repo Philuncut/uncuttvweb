@@ -331,7 +331,13 @@ if (!function_exists('uncuttv_kasse_tabelle')) {
              AND erstellt < (UTC_TIMESTAMP() - INTERVAL {$std} HOUR)"
         );
 
-        $token = bin2hex(random_bytes(16));
+        // Der Shop schickt seinen Token mit. Wiederholt er den Aufruf, weil
+        // die erste Antwort verloren ging, erkennt er so seine eigene Sperre
+        // wieder und wartet nicht fünf Minuten auf sich selbst.
+        $token = uncuttv_kasse_token($request);
+        if ($token === '') {
+            $token = bin2hex(random_bytes(16));
+        }
         foreach ($schluessel as $k) {
             // INSERT IGNORE auf den Primärschlüssel: Genau ein Aufruf bekommt 1.
             $neu = $wpdb->query($wpdb->prepare(
@@ -348,6 +354,15 @@ if (!function_exists('uncuttv_kasse_tabelle')) {
                 return uncuttv_kasse_fehler('uncuttv_db', 'Sperre konnte nicht geschrieben werden.', 500);
             }
             if ((int) $neu === 1) {
+                continue;
+            }
+            // Belegt, aber von diesem Aufrufer selbst (wiederholter Aufruf).
+            $eigen = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$tabelle} WHERE schluessel = %s AND token = %s AND order_id = 0",
+                $k,
+                $token
+            ));
+            if ($eigen === 1) {
                 continue;
             }
             // Belegt. Liegt die Sperre seit Minuten ohne Bestellung, übernehmen

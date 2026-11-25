@@ -15,17 +15,22 @@
  *   2. Die Sperre nehmen. Von zwei gleichzeitigen Aufrufen bekommt genau
  *      einer sie; der andere wartet kurz und bekommt dann die fertige
  *      Bestellung des ersten.
- *   3. Schlägt Suche oder Sperre fehl, wird NICHT angelegt
- *      (SperreNichtVerfuegbarFehler), der Aufrufer meldet einen Fehler.
+ *   3. Antwortet WordPress nicht, wird der Aufruf bis zu dreimal versucht
+ *      (kurze Pause dazwischen). Scheitert auch der dritte Versuch, wird
+ *      NICHT angelegt (SperreNichtVerfuegbarFehler); /api/sync-order schickt
+ *      dann sofort eine Mail ans Büro (sperre-ausfall-melden.ts).
  *
  * Notschalter: ZAHLUNG_SPERRE=aus in den Umgebungsvariablen schaltet Suche
  * und Sperre ab (dann wie vor November 2026, ohne Schutz vor Doppelten).
  * Nur für den Fall gedacht, dass das Snippet in WordPress ausfällt.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
-const ZEITLIMIT_MS = 8_000;
+/** Zeitlimit je Versuch. Drei Versuche mit Pausen: höchstens rund 20 s. */
+const ZEITLIMIT_MS = 6_000;
+/** Pausen vor dem zweiten und dritten Versuch. */
+export const WIEDERHOLUNG_PAUSEN_MS = [500, 1_500];
 /** So lange wartet ein zweiter Aufruf auf die Bestellung des ersten. */
 const WARTEN_GESAMT_MS = 12_000;
 const WARTEN_SCHRITT_MS = 1_500;
@@ -46,7 +51,16 @@ export type SperrAntwort =
 
 /** Die vier Aufrufe an WordPress; in Tests durch einen Nachbau ersetzt. */
 export interface Sperre {
-  belegen(schluessel: string[], nurSuchen: boolean): Promise<SperrAntwort>;
+  /**
+   * `token` kommt vom Aufrufer, damit ein wiederholter Aufruf (Antwort des
+   * ersten ging verloren) seine eigene Sperre wiedererkennt und nicht an
+   * sich selbst hängen bleibt.
+   */
+  belegen(
+    schluessel: string[],
+    nurSuchen: boolean,
+    token?: string
+  ): Promise<SperrAntwort>;
   bestaetigen(token: string, orderId: number): Promise<void>;
   freigeben(token: string): Promise<void>;
 }
@@ -54,10 +68,43 @@ export interface Sperre {
 /** Suche oder Sperre nicht erreichbar: Es darf nicht angelegt werden. */
 export class SperreNichtVerfuegbarFehler extends Error {
   readonly code = "lock_unavailable";
+  /** true: Ein weiterer Versuch ändert nichts (z. B. 401, 404, 400). */
+  readonly endgueltig: boolean;
 
-  constructor(detail: string) {
+  constructor(detail: string, endgueltig = false) {
     super(`Suche nach vorhandener Bestellung nicht möglich: ${detail}`);
     this.name = "SperreNichtVerfuegbarFehler";
+    this.endgueltig = endgueltig;
+  }
+}
+
+/**
+ * Führt `versuch` aus und wiederholt ihn nach den angegebenen Pausen, solange
+ * er mit einem vorläufigen SperreNichtVerfuegbarFehler scheitert. Der letzte
+ * Fehler geht an den Aufrufer. Andere Fehler und endgültige werden nicht
+ * wiederholt.
+ */
+export async function mitWiederholung<T>(
+  versuch: (nummer: number) => Promise<T>,
+  pausenMs: number[] = WIEDERHOLUNG_PAUSEN_MS
+): Promise<T> {
+  for (let nummer = 1; ; nummer++) {
+    try {
+      return await versuch(nummer);
+    } catch (err) {
+      const pauseMs = pausenMs[nummer - 1];
+      if (
+        !(err instanceof SperreNichtVerfuegbarFehler) ||
+        err.endgueltig ||
+        pauseMs === undefined
+      ) {
+        throw err;
+      }
+      console.warn(
+        `[zahlung-sperre] Versuch ${nummer} gescheitert (${err.message}), neuer Versuch in ${pauseMs} ms`
+      );
+      await pause(pauseMs);
+    }
   }
 }
 
@@ -167,9 +214,10 @@ export async function mitZahlungSperre<T>(eingabe: {
   const schritt = eingabe.wartenSchrittMs ?? WARTEN_SCHRITT_MS;
 
   let token = "";
+  const eigenerToken = randomBytes(16).toString("hex");
   const ende = Date.now() + gesamt;
   for (;;) {
-    const antwort = await sperre.belegen(eingabe.schluessel, false);
+    const antwort = await sperre.belegen(eingabe.schluessel, false, eigenerToken);
     if (antwort.zustand === "vorhanden") {
       return { art: "vorhanden", bestellung: antwort };
     }
@@ -223,7 +271,11 @@ function wooAuth(): string {
   );
 }
 
-async function aufruf(pfad: string, body: unknown): Promise<unknown> {
+function aufruf(pfad: string, body: unknown): Promise<unknown> {
+  return mitWiederholung(() => einAufruf(pfad, body));
+}
+
+async function einAufruf(pfad: string, body: unknown): Promise<unknown> {
   let res: Response;
   try {
     res = await fetch(`${wooBasis()}/wp-json/wc-uncuttv/v1${pfad}`, {
@@ -239,8 +291,16 @@ async function aufruf(pfad: string, body: unknown): Promise<unknown> {
     );
   }
   if (!res.ok) {
+    // 4xx (außer 408/429) heißt: falsche Zugangsdaten, Snippet fehlt oder
+    // Eingabe abgelehnt. Das wird durch Wiederholen nicht besser.
+    const endgueltig =
+      res.status >= 400 &&
+      res.status < 500 &&
+      res.status !== 408 &&
+      res.status !== 429;
     throw new SperreNichtVerfuegbarFehler(
-      `WordPress antwortet mit ${res.status} auf ${pfad}`
+      `WordPress antwortet mit ${res.status} auf ${pfad}`,
+      endgueltig
     );
   }
   try {
@@ -278,9 +338,13 @@ export function leseSperrAntwort(roh: unknown): SperrAntwort {
 }
 
 export const wooSperre: Sperre = {
-  async belegen(schluessel, nurSuchen) {
+  async belegen(schluessel, nurSuchen, token) {
     return leseSperrAntwort(
-      await aufruf("/zahlung/belegen", { schluessel, nur_suchen: nurSuchen })
+      await aufruf("/zahlung/belegen", {
+        schluessel,
+        nur_suchen: nurSuchen,
+        ...(token ? { token } : {}),
+      })
     );
   },
   async bestaetigen(token, orderId) {

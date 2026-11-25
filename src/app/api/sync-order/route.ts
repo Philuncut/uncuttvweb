@@ -32,12 +32,20 @@ import { sendOrderConfirmationWithPdf } from "@/lib/send-order-confirmation-with
 import {
   estimateOrphanAmountEur,
   paypalOrderIdFromPaymentIntent,
+  persistPayPalOrphan,
   recordPayPalOrphanFailure,
   resolveSyncBodyEmail,
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
 import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
 import { reservierungsSchluessel } from "@/lib/reservierung";
+import {
+  meldeSperreAusfall,
+  PAYPAL_AUSFALL_GRUND,
+  SPERRE_GEMELDET_META,
+  stripeZahlungZaehlt,
+} from "@/lib/sperre-ausfall-melden";
+import { getSupabaseAdmin } from "@/lib/supabase-server";
 import {
   BestellungInArbeitFehler,
   kassenSchluessel,
@@ -221,6 +229,116 @@ async function reportPayPalSyncFailure(
       rawBody: body,
     }
   );
+}
+
+/**
+ * WordPress hat auf Suche und Sperre auch beim dritten Versuch nicht
+ * geantwortet, es wurde keine Bestellung angelegt: sofort Mail ans Büro.
+ * Nur für Zahlungen, die es gibt (bei Stripe/PayPal nachgesehen) oder die
+ * sich gerade nicht prüfen lassen; jede Zahlung nur einmal. Wirft nie.
+ */
+async function meldeAusfallZurZahlung(
+  body: SyncBody,
+  fehler: string
+): Promise<void> {
+  try {
+    const ref = body.paymentIntentId?.trim() ?? "";
+    const kundenEmail = resolveSyncBodyEmail(body);
+    const kundenName =
+      `${body.customer?.firstName ?? ""} ${body.customer?.lastName ?? ""}`.trim();
+    let positionen = normalizeCartMetaItems(body.items);
+    const geschaetzt = estimateOrphanAmountEur(body);
+    const geschaetztCent =
+      geschaetzt === null ? null : Math.round(geschaetzt * 100);
+
+    if (ref.startsWith("pi_")) {
+      let betragCent = geschaetztCent;
+      let betragHerkunft =
+        "aus dem Warenkorb geschätzt, Stripe war nicht erreichbar";
+      let piGeladen = false;
+      try {
+        const pi = await stripe.paymentIntents.retrieve(ref);
+        piGeladen = true;
+        if (!stripeZahlungZaehlt(pi.status)) return;
+        if (pi.metadata?.[SPERRE_GEMELDET_META]) return;
+        betragCent = pi.amount_received || pi.amount;
+        betragHerkunft = `bei Stripe geprüft (${pi.status})`;
+        if (positionen.length === 0) {
+          positionen = parseCartItemsFromPiMetadata(
+            coerceStripeMetadata(pi.metadata ?? undefined)
+          );
+        }
+      } catch (err) {
+        if (piGeladen) throw err;
+      }
+      const gesendet = await meldeSperreAusfall({
+        zahlungsreferenz: ref,
+        betragCent,
+        betragHerkunft,
+        kundenEmail,
+        kundenName,
+        positionen,
+        fehler,
+      });
+      if (gesendet && piGeladen) {
+        await stripe.paymentIntents.update(ref, {
+          metadata: { [SPERRE_GEMELDET_META]: new Date().toISOString() },
+        });
+      }
+      return;
+    }
+
+    if (ref.startsWith("paypal_")) {
+      const paypalOrderId = paypalOrderIdFromPaymentIntent(ref);
+      const zahlung = await pruefePayPalZahlung(paypalOrderId);
+      if (!zahlung.ok && zahlung.grund !== "nicht_pruefbar") return;
+
+      let schonGemeldet = false;
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data } = await supabase
+            .from("paypal_orphan_orders")
+            .select("error_reason")
+            .eq("paypal_order_id", paypalOrderId)
+            .maybeSingle();
+          schonGemeldet = data?.error_reason === PAYPAL_AUSFALL_GRUND;
+        }
+      } catch {
+        // Nicht prüfbar: melden.
+      }
+      if (schonGemeldet) return;
+
+      const gesendet = await meldeSperreAusfall({
+        zahlungsreferenz: ref,
+        betragCent: zahlung.ok ? zahlung.bezahltCent : geschaetztCent,
+        betragHerkunft: zahlung.ok
+          ? `bei PayPal geprüft, eingezogen (${zahlung.waehrung})`
+          : "aus dem Warenkorb geschätzt, PayPal war nicht erreichbar",
+        kundenEmail,
+        kundenName,
+        positionen,
+        fehler,
+      });
+      await persistPayPalOrphan({
+        paypal_order_id: paypalOrderId,
+        capture_id: zahlung.ok ? zahlung.captureId : null,
+        amount_eur: zahlung.ok ? zahlung.bezahltCent / 100 : geschaetzt,
+        customer_email: kundenEmail || null,
+        raw_body: body,
+        // Nur nach gelungener Mail als gemeldet vermerken.
+        error_reason: gesendet
+          ? PAYPAL_AUSFALL_GRUND
+          : `${PAYPAL_AUSFALL_GRUND}_mail_failed`,
+        error_details: fehler,
+      });
+    }
+  } catch (err) {
+    console.error(
+      "[sync-order] Meldung des Sperre-Ausfalls fehlgeschlagen:",
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -667,11 +785,10 @@ export async function POST(request: Request) {
       console.error(
         `[sync-order] Nicht angelegt pi=${body?.paymentIntentId ?? "?"}: ${err.message}`
       );
-      if (
-        err instanceof SperreNichtVerfuegbarFehler &&
-        body?.paymentIntentId?.startsWith("paypal_")
-      ) {
-        await reportPayPalSyncFailure(body, "lock_unavailable", err.message, 503);
+      // WordPress auch beim dritten Versuch nicht erreichbar: sofort Mail
+      // ans Büro, für Stripe und PayPal.
+      if (err instanceof SperreNichtVerfuegbarFehler && body) {
+        await meldeAusfallZurZahlung(body, err.message);
       }
       return NextResponse.json(
         { error: err.code, message: err.message, retry: true },
