@@ -27,9 +27,29 @@ export type KassenProblem = {
   message?: { de?: string; en?: string };
 };
 
-export type KorbZeile = { id: number; variation_id?: number; name: string };
+export type KorbZeile = {
+  id: number;
+  variation_id?: number;
+  name: string;
+  /** Menge im Warenkorb; nur für offeneKnappe nötig. */
+  qty?: number;
+};
+
+/** Mehr im Warenkorb als noch da ist: Die Kasse bietet an, die Menge zu senken. */
+export type KnapperArtikel = {
+  id: number;
+  variation_id?: number;
+  name: string;
+  verfuegbar: number;
+};
 
 export type Kassenbereinigung = {
+  /**
+   * "Nur noch N Stück": Zeile bleibt, Hinweis mit Knopf "Menge anpassen".
+   * Leer, solange dieser Tab selbst eine Reservierung hält (dann zählt der
+   * Server den eigenen Artikel als weg und die Zahl stimmt nicht).
+   */
+  knapp: KnapperArtikel[];
   /** Ausverkaufte Zeilen: raus aus dem Warenkorb. */
   entfernen: Array<{ id: number; variation_id?: number }>;
   /** Namen der ausverkauften Artikel, für die Meldung. Ohne Doppelte. */
@@ -81,10 +101,30 @@ export function bereinigeKasse(
   const nichtVerfuegbar: string[] = [];
   const nieBestellbar: KassenProblem[] = [];
   const bleibt: KassenProblem[] = [];
+  const knapp: KnapperArtikel[] = [];
   const raus = new Set<string>();
 
   for (const p of liste) {
     const schluessel = zeilenSchluessel(p.id, p.variation_id);
+    const rest = Math.floor(Number(p.verfuegbar));
+    if (
+      darfEntfernen &&
+      p.code === "ausverkauft" &&
+      rest > 0 &&
+      !knapp.some((k) => zeilenSchluessel(k.id, k.variation_id) === schluessel)
+    ) {
+      knapp.push({
+        id: Number(p.id),
+        ...(Number(p.variation_id) > 0
+          ? { variation_id: Number(p.variation_id) }
+          : {}),
+        name:
+          nachSchluessel.get(schluessel)?.name?.trim() ||
+          (p.name ?? "").trim() ||
+          `Artikel ${Number(p.id)}`,
+        verfuegbar: rest,
+      });
+    }
     if (darfEntfernen && istNichtMehrVerfuegbar(p)) {
       if (!raus.has(schluessel)) {
         raus.add(schluessel);
@@ -110,7 +150,65 @@ export function bereinigeKasse(
     korb.filter((z) => !raus.has(zeilenSchluessel(z.id, z.variation_id)))
       .length === 0;
 
-  return { entfernen, nichtVerfuegbar, nieBestellbar, bleibt, korbDanachLeer };
+  return {
+    entfernen,
+    nichtVerfuegbar,
+    nieBestellbar,
+    bleibt,
+    knapp,
+    korbDanachLeer,
+  };
+}
+
+/** "Von „Name“ ist nur noch 1 Stück verfügbar." (DE und EN). */
+export function knappMeldung(
+  artikel: Pick<KnapperArtikel, "name" | "verfuegbar">,
+  sprache: "de" | "en"
+): string {
+  return formatTranslation(
+    artikel.verfuegbar === 1 ? "CHECKOUT_ITEM_LIMITED_ONE" : "CHECKOUT_ITEM_LIMITED",
+    sprache,
+    {
+      name: sprache === "en" ? `"${artikel.name}"` : `„${artikel.name}“`,
+      menge: String(artikel.verfuegbar),
+    }
+  );
+}
+
+/** Neue Funde übernehmen; je Zeile gilt die zuletzt gemeldete Zahl. */
+export function ergaenzeKnappe(
+  bisher: KnapperArtikel[],
+  neu: KnapperArtikel[]
+): KnapperArtikel[] {
+  if (neu.length === 0) return bisher;
+  const neuSchluessel = new Set(
+    neu.map((k) => zeilenSchluessel(k.id, k.variation_id))
+  );
+  return [
+    ...bisher.filter(
+      (k) => !neuSchluessel.has(zeilenSchluessel(k.id, k.variation_id))
+    ),
+    ...neu,
+  ];
+}
+
+/**
+ * Welche Hinweise gelten für den jetzigen Warenkorb noch? Ein Hinweis
+ * erledigt sich, sobald die Zeile weg ist oder die Menge passt (Knopf
+ * "Menge anpassen" oder von Hand im Warenkorb).
+ */
+export function offeneKnappe(
+  knapp: KnapperArtikel[],
+  korb: KorbZeile[]
+): KnapperArtikel[] {
+  const mengen = new Map(
+    korb.map(
+      (z) => [zeilenSchluessel(z.id, z.variation_id), Number(z.qty) || 0] as const
+    )
+  );
+  return knapp.filter(
+    (k) => (mengen.get(zeilenSchluessel(k.id, k.variation_id)) ?? 0) > k.verfuegbar
+  );
 }
 
 /** "Dieser Artikel ist leider nicht mehr verfügbar: „Name“" (DE und EN). */

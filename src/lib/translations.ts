@@ -622,6 +622,22 @@ const translations: Record<string, Record<string, string>> = {
     de: "Diese Artikel sind leider nicht mehr verfügbar: {{name}}",
     en: "These items are unfortunately no longer available: {{name}}",
   },
+  CHECKOUT_ITEM_LIMITED_ONE: {
+    de: "Von {{name}} ist nur noch {{menge}} Stück verfügbar.",
+    en: "Only {{menge}} of {{name}} is left in stock.",
+  },
+  CHECKOUT_ITEM_LIMITED: {
+    de: "Von {{name}} sind nur noch {{menge}} Stück verfügbar.",
+    en: "Only {{menge}} of {{name}} are left in stock.",
+  },
+  CHECKOUT_ITEM_LIMITED_HINT: {
+    de: "In deinem Warenkorb liegen {{imKorb}}. Passe die Menge an, dann geht es normal weiter.",
+    en: "Your cart contains {{imKorb}}. Adjust the quantity to continue as usual.",
+  },
+  CHECKOUT_ADJUST_QTY: {
+    de: "Menge auf {{menge}} anpassen",
+    en: "Reduce quantity to {{menge}}",
+  },
   CHECKOUT_UNAVAILABLE_REMOVED: {
     de: "Aus deinem Warenkorb entfernt. Die übrigen Artikel kannst du wie gewohnt bestellen.",
     en: "Removed from your cart. You can order your remaining items as usual.",

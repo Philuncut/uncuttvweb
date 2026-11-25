@@ -89,11 +89,15 @@ import {
 } from "@/lib/compute-payment-intent-amount";
 import {
   bereinigeKasse,
+  ergaenzeKnappe,
   ergaenzeNamen,
+  knappMeldung,
   nichtVerfuegbarMeldung,
+  offeneKnappe,
   problemMeldungen,
   type Kassenbereinigung,
   type KassenProblem,
+  type KnapperArtikel,
 } from "@/lib/kasse-nicht-verfuegbar";
 
 const stripePromise = loadStripe(
@@ -929,6 +933,51 @@ function NichtVerfuegbarHinweis({
   );
 }
 
+/* ── Hinweis: mehr im Warenkorb als noch da ist, mit Knopf "Menge anpassen" ── */
+
+function KnappHinweis({
+  artikel,
+  mengeImKorb,
+  onAnpassen,
+  className = "",
+}: {
+  artikel: KnapperArtikel[];
+  mengeImKorb: (a: KnapperArtikel) => number;
+  onAnpassen: (a: KnapperArtikel) => void;
+  className?: string;
+}) {
+  const { language } = useLanguage();
+  if (artikel.length === 0) return null;
+  return (
+    <div
+      role="alert"
+      className={`space-y-4 border border-[#c0392b] bg-[#c0392b]/10 px-4 py-3 text-left ${className}`}
+    >
+      {artikel.map((a) => (
+        <div key={`${a.id}:${a.variation_id ?? 0}`}>
+          <p className="text-sm font-bold text-white">
+            {knappMeldung(a, language)}
+          </p>
+          <p className="mt-1 text-xs text-white/60">
+            {formatTranslation("CHECKOUT_ITEM_LIMITED_HINT", language, {
+              imKorb: String(mengeImKorb(a)),
+            })}
+          </p>
+          <button
+            type="button"
+            onClick={() => onAnpassen(a)}
+            className="mt-3 cursor-pointer bg-[#c0392b] px-4 py-2 text-xs font-bold tracking-[0.1em] text-white transition-colors hover:bg-[#e74c3c]"
+          >
+            {formatTranslation("CHECKOUT_ADJUST_QTY", language, {
+              menge: String(a.verfuegbar),
+            })}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Inner form (needs Stripe hooks) ── */
 
 /* ── Stable PayPal Button wrapper — prevents re-mount on parent re-renders ── */
@@ -1306,8 +1355,14 @@ const StripeClientSecretPayment = forwardRef<
 
 function CheckoutInner() {
   const router = useRouter();
-  const { items, totalPrice, clearCart, applyServerPrices, removeFromCart } =
-    useCart();
+  const {
+    items,
+    totalPrice,
+    clearCart,
+    applyServerPrices,
+    removeFromCart,
+    updateQuantity,
+  } = useCart();
   const { language } = useLanguage();
   const t = useMemo(() => createT(language), [language]);
 
@@ -1645,6 +1700,8 @@ function CheckoutInner() {
    * daran; eine Prüfung, die davor losging, entfernt dann nichts.
    */
   const [nichtVerfuegbar, setNichtVerfuegbar] = useState<string[]>([]);
+  /** "Nur noch N Stück": Hinweis oben mit Knopf "Menge anpassen". */
+  const [knappGemeldet, setKnappGemeldet] = useState<KnapperArtikel[]>([]);
   /** Stößt den Warenkorb-Abgleich neu an, z. B. wenn die Versandabfrage scheitert. */
   const [korbPruefAnstoss, setKorbPruefAnstoss] = useState(0);
   const reservierungsStandRef = useRef(0);
@@ -1676,9 +1733,50 @@ function CheckoutInner() {
           ergaenzeNamen(bisher, ergebnis.nichtVerfuegbar)
         );
       }
+      if (ergebnis.knapp.length > 0) {
+        setKnappGemeldet((bisher) => ergaenzeKnappe(bisher, ergebnis.knapp));
+      }
       return ergebnis;
     },
     [removeFromCart]
+  );
+
+  // Der Hinweis gilt nur, solange die Menge im Warenkorb wirklich zu hoch ist.
+  const knappOffen = useMemo(
+    () =>
+      offeneKnappe(
+        knappGemeldet,
+        items.map((i) => ({
+          id: Number(i.product.id),
+          variation_id: i.variant?.id,
+          name: i.product.name,
+          qty: i.quantity,
+        }))
+      ),
+    [knappGemeldet, items]
+  );
+
+  const mengeImKorb = useCallback(
+    (a: KnapperArtikel) =>
+      items.find(
+        (i) =>
+          Number(i.product.id) === a.id &&
+          (i.variant?.id ?? 0) === (a.variation_id ?? 0)
+      )?.quantity ?? 0,
+    [items]
+  );
+
+  /**
+   * Knopf "Menge auf X anpassen": nur die Menge im Warenkorb. Der geänderte
+   * Warenkorb stößt Abgleich, Versandabfrage und Zahlung von selbst neu an.
+   */
+  const passeMengeAn = useCallback(
+    (a: KnapperArtikel) => {
+      updateQuantity(a.id, a.verfuegbar, a.variation_id);
+      setError("");
+      setPaymentIntentError("");
+    },
+    [updateQuantity]
   );
 
   useEffect(() => {
@@ -3500,6 +3598,12 @@ function CheckoutInner() {
           <NichtVerfuegbarHinweis
             namen={nichtVerfuegbar}
             korbLeer={false}
+            className="mb-6"
+          />
+          <KnappHinweis
+            artikel={knappOffen}
+            mengeImKorb={mengeImKorb}
+            onAnpassen={passeMengeAn}
             className="mb-6"
           />
           {showPreOrderMixedBanner && !preOrderBannerDismissed && (

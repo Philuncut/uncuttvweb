@@ -122,6 +122,21 @@ describe("Serverprüfung: Artikel inzwischen ausverkauft", () => {
     const b = bereinigeKasse(ergebnis.problems, korb(drei));
     assert.deepEqual(b.entfernen, []);
     assert.equal(b.bleibt.length, 1);
+    assert.deepEqual(b.knapp, [{ id: 77, name: BLURAY.name, verfuegbar: 2 }]);
+  });
+
+  it("Menge 2, Bestand 1: nach \"Menge auf 1 anpassen\" ist der Warenkorb bestellbar", async () => {
+    nachbauWoo([einfach(77, BLURAY.name, { manage_stock: true, stock_quantity: 1 })]);
+    const zwei = { ...BLURAY, qty: 2 };
+    const ergebnis = await pruefeBestellpositionen([zwei], ENDKUNDE);
+    const [knapp] = bereinigeKasse(ergebnis.problems, korb(zwei)).knapp;
+    assert.equal(knapp.verfuegbar, 1);
+
+    // Der Knopf setzt die Menge auf die gemeldete Zahl.
+    const angepasst = { ...zwei, qty: knapp.verfuegbar };
+    const danach = await pruefeBestellpositionen([angepasst], ENDKUNDE);
+    assert.equal(danach.ok, true);
+    assert.deepEqual(danach.problems, []);
   });
 
   it("Größe ausverkauft: nur diese Variante fliegt raus", async () => {
