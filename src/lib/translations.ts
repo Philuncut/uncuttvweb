@@ -614,6 +614,22 @@ const translations: Record<string, Record<string, string>> = {
     de: "Aus dem Warenkorb entfernt:",
     en: "Removed from your cart:",
   },
+  CHECKOUT_ITEM_UNAVAILABLE: {
+    de: "Dieser Artikel ist leider nicht mehr verfügbar: {{name}}",
+    en: "This item is unfortunately no longer available: {{name}}",
+  },
+  CHECKOUT_ITEMS_UNAVAILABLE: {
+    de: "Diese Artikel sind leider nicht mehr verfügbar: {{name}}",
+    en: "These items are unfortunately no longer available: {{name}}",
+  },
+  CHECKOUT_UNAVAILABLE_REMOVED: {
+    de: "Aus deinem Warenkorb entfernt. Die übrigen Artikel kannst du wie gewohnt bestellen.",
+    en: "Removed from your cart. You can order your remaining items as usual.",
+  },
+  CHECKOUT_UNAVAILABLE_CART_EMPTY: {
+    de: "Aus deinem Warenkorb entfernt. Dein Warenkorb ist jetzt leer.",
+    en: "Removed from your cart. Your cart is now empty.",
+  },
   CHECKOUT_MERCH_NUR_ENDKUNDEN: {
     de: "Merch-Artikel gibt es nur für Endkunden, nicht über das Händlerkonto.",
     en: "Merch is available to retail customers only, not via dealer accounts.",

@@ -57,6 +57,11 @@ export type Pruefproblem = {
   name: string;
   code: PruefCode;
   message: { de: string; en: string };
+  /**
+   * Nur bei "ausverkauft", wenn noch Bestand da ist, aber weniger als die
+   * gewünschte Menge. Die Kasse wirft so eine Zeile nicht aus dem Warenkorb.
+   */
+  verfuegbar?: number;
 };
 
 export type Preiskorrektur = {
@@ -355,8 +360,16 @@ export async function pruefeBestellpositionen(
       }
       if (!istVarianteBestellbar(v, item.qty)) {
         const groesse = v.size || item.size || "";
-        problems.push(
-          problem(
+        // Noch Bestand, nur weniger als gewünscht: nicht "weg", die Kasse
+        // lässt die Zeile im Warenkorb.
+        const rest =
+          istVarianteBestellbar(v, 1) &&
+          v.manage_stock &&
+          typeof v.stock_quantity === "number"
+            ? v.stock_quantity
+            : 0;
+        problems.push({
+          ...problem(
             item,
             "ausverkauft",
             groesse
@@ -365,8 +378,9 @@ export async function pruefeBestellpositionen(
             groesse
               ? `"${anzeigeName}" is sold out in size ${groesse}.`
               : `"${anzeigeName}" is sold out.`
-          )
-        );
+          ),
+          ...(rest > 0 ? { verfuegbar: rest } : {}),
+        });
         geprueft.push(kopie);
         continue;
       }
@@ -423,8 +437,8 @@ export async function pruefeBestellpositionen(
           ? p.stock_quantity
           : null;
       if (bestand !== null && bestand < item.qty) {
-        problems.push(
-          problem(
+        problems.push({
+          ...problem(
             item,
             "ausverkauft",
             bestand > 0
@@ -433,8 +447,9 @@ export async function pruefeBestellpositionen(
             bestand > 0
               ? `Only ${bestand} of "${anzeigeName}" left in stock.`
               : `"${anzeigeName}" is sold out.`
-          )
-        );
+          ),
+          ...(bestand > 0 ? { verfuegbar: bestand } : {}),
+        });
         geprueft.push(kopie);
         continue;
       }

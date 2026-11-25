@@ -87,6 +87,14 @@ import {
   COUPON_REMOVE_SENTINEL,
   piCouponMatchesUi,
 } from "@/lib/compute-payment-intent-amount";
+import {
+  bereinigeKasse,
+  ergaenzeNamen,
+  nichtVerfuegbarMeldung,
+  problemMeldungen,
+  type Kassenbereinigung,
+  type KassenProblem,
+} from "@/lib/kasse-nicht-verfuegbar";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
@@ -889,6 +897,38 @@ function OrderSummary({
   );
 }
 
+/* ── Hinweis: Artikel inzwischen ausverkauft und aus dem Warenkorb entfernt ── */
+
+function NichtVerfuegbarHinweis({
+  namen,
+  korbLeer,
+  className = "",
+}: {
+  namen: string[];
+  korbLeer: boolean;
+  className?: string;
+}) {
+  const { language } = useLanguage();
+  if (namen.length === 0) return null;
+  return (
+    <div
+      role="alert"
+      className={`border border-[#c0392b] bg-[#c0392b]/10 px-4 py-3 text-left ${className}`}
+    >
+      <p className="text-sm font-bold text-white">
+        {nichtVerfuegbarMeldung(namen, language)}
+      </p>
+      <p className="mt-1 text-xs text-white/60">
+        {createT(language)(
+          korbLeer
+            ? "CHECKOUT_UNAVAILABLE_CART_EMPTY"
+            : "CHECKOUT_UNAVAILABLE_REMOVED"
+        )}
+      </p>
+    </div>
+  );
+}
+
 /* ── Inner form (needs Stripe hooks) ── */
 
 /* ── Stable PayPal Button wrapper — prevents re-mount on parent re-renders ── */
@@ -1594,6 +1634,53 @@ function CheckoutInner() {
   const [shipNoZone, setShipNoZone] = useState(false);
   const [stripeShipCents, setStripeShipCents] = useState<number | null>(null);
 
+  /**
+   * Ausverkaufte Artikel: Meldung mit Namen, Zeile raus aus dem Warenkorb.
+   * Gilt an allen Stellen, an denen der Server den Bestand prüft (siehe
+   * lib/kasse-nicht-verfuegbar.ts).
+   *
+   * Vorsicht mit der eigenen Reservierung: Hält dieser Tab gerade ein
+   * Einzelstück fest oder gibt es eben zurück, meldet der Server den eigenen
+   * Artikel als ausverkauft. `reservierungsStandRef` zählt jede Änderung
+   * daran; eine Prüfung, die davor losging, entfernt dann nichts.
+   */
+  const [nichtVerfuegbar, setNichtVerfuegbar] = useState<string[]>([]);
+  /** Stößt den Warenkorb-Abgleich neu an, z. B. wenn die Versandabfrage scheitert. */
+  const [korbPruefAnstoss, setKorbPruefAnstoss] = useState(0);
+  const reservierungsStandRef = useRef(0);
+  const freigabeLaeuftRef = useRef<Promise<void> | null>(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  const raeumeNichtVerfuegbareAus = useCallback(
+    (
+      problems: KassenProblem[] | undefined,
+      standVorher: number | "sicher"
+    ): Kassenbereinigung => {
+      const sicher =
+        standVorher === "sicher" ||
+        (reservierungsStandRef.current === standVorher &&
+          leseGemerkteReservierung() === undefined);
+      const ergebnis = bereinigeKasse(
+        problems,
+        itemsRef.current.map((i) => ({
+          id: Number(i.product.id),
+          variation_id: i.variant?.id,
+          name: i.product.name,
+        })),
+        { ausverkaufteEntfernen: sicher }
+      );
+      for (const z of ergebnis.entfernen) removeFromCart(z.id, z.variation_id);
+      if (ergebnis.nichtVerfuegbar.length > 0) {
+        setNichtVerfuegbar((bisher) =>
+          ergaenzeNamen(bisher, ergebnis.nichtVerfuegbar)
+        );
+      }
+      return ergebnis;
+    },
+    [removeFromCart]
+  );
+
   useEffect(() => {
     if (!isWholesale) return;
     setCouponId(null);
@@ -1836,6 +1923,11 @@ function CheckoutInner() {
           } else {
             setShipError(t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE"));
           }
+          // Häufigster Grund: Ein Artikel ist inzwischen ausverkauft, die
+          // Store-API nimmt ihn nicht mehr an. Der Warenkorb-Abgleich findet
+          // das, wirft die Zeile raus und sagt es dem Kunden; danach läuft
+          // die Versandabfrage mit dem Rest neu.
+          setKorbPruefAnstoss((n) => n + 1);
           setShipResolved(true);
           setStripeShipCents(null);
           setShipRate(null);
@@ -1922,6 +2014,7 @@ function CheckoutInner() {
       } catch {
         if (!cancelled) {
           setShipError(t("CHECKOUT_ERROR_SHIPPING_UNAVAILABLE"));
+          setKorbPruefAnstoss((n) => n + 1);
           setShipResolved(true);
           setStripeShipCents(null);
           setShipRate(null);
@@ -2050,6 +2143,13 @@ function CheckoutInner() {
 
     async function ensurePI() {
       setPaymentIntentError("");
+      // Erst die eigene Reservierung zurück, sonst meldet die Prüfung den
+      // eigenen Artikel als ausverkauft.
+      if (freigabeLaeuftRef.current) {
+        await freigabeLaeuftRef.current;
+        if (cancelled) return;
+      }
+      const reservierungsStand = reservierungsStandRef.current;
       const secret = clientSecretRef.current.trim();
       const piId = secret ? parsePiIdFromClientSecret(secret) : null;
       const useUpdate = Boolean(piId && secret);
@@ -2074,6 +2174,7 @@ function CheckoutInner() {
         couponCodeApplied?: string | null;
         couponRejected?: "already_used" | null;
         repriced?: Array<{ id: number; variation_id?: number; neu: string }>;
+        problems?: KassenProblem[];
       };
       if (cancelled || seq !== piUpdateSeqRef.current) return;
 
@@ -2096,10 +2197,22 @@ function CheckoutInner() {
         if (!piId) setClientSecret("");
         if (res.status === 409 && data.error === "cart_invalid") {
           uebernimmPreise();
+          // Ausverkaufte Zeilen fliegen raus (Hinweis oben in der Kasse);
+          // der geänderte Warenkorb stößt diese Abfrage von selbst neu an.
+          const bereinigt = raeumeNichtVerfuegbareAus(
+            data.problems,
+            reservierungsStand
+          );
+          if (bereinigt.entfernen.length > 0 && bereinigt.bleibt.length === 0) {
+            return;
+          }
           setPaymentIntentError(
-            typeof data.message === "string" && data.message
-              ? data.message
-              : t("CHECKOUT_CART_INVALID")
+            problemMeldungen(bereinigt.bleibt, language) ||
+              (bereinigt.entfernen.length === 0 &&
+              typeof data.message === "string" &&
+              data.message
+                ? data.message
+                : t("CHECKOUT_CART_INVALID"))
           );
           return;
         }
@@ -2171,6 +2284,8 @@ function CheckoutInner() {
     couponCode,
     couponRemovePending,
     setClientSecret,
+    raeumeNichtVerfuegbareAus,
+    language,
     t,
   ]);
 
@@ -2203,6 +2318,7 @@ function CheckoutInner() {
    * richtigen Betrag.
    */
   const pruefeWarenkorbVorPayPal = useCallback(async () => {
+    const reservierungsStand = reservierungsStandRef.current;
     const res = await fetch("/api/checkout/pruefung", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2214,14 +2330,22 @@ function CheckoutInner() {
     });
     const data = (await res.json().catch(() => ({}))) as {
       ok?: boolean;
-      problems?: Array<{ message?: { de?: string; en?: string } }>;
+      problems?: KassenProblem[];
       repriced?: Array<{ id: number; variation_id?: number; neu: string }>;
       message?: string;
     };
     if (!res.ok || !data.ok) {
+      // Ausverkaufte Zeilen raus und mit Namen melden; der Klick bricht ab,
+      // der nächste läuft mit dem bereinigten Warenkorb.
+      const bereinigt = raeumeNichtVerfuegbareAus(
+        data.problems,
+        reservierungsStand
+      );
       const text =
-        data.problems
-          ?.map((p) => (language === "en" ? p.message?.en : p.message?.de))
+        [
+          nichtVerfuegbarMeldung(bereinigt.nichtVerfuegbar, language),
+          problemMeldungen(bereinigt.bleibt, language),
+        ]
           .filter(Boolean)
           .join(" ") ||
         data.message ||
@@ -2250,7 +2374,15 @@ function CheckoutInner() {
       setError(text);
       throw new Error(text);
     }
-  }, [cartMeta, isWholesale, wholesaleReverseCharge, language, t, applyServerPrices]);
+  }, [
+    cartMeta,
+    isWholesale,
+    wholesaleReverseCharge,
+    language,
+    t,
+    applyServerPrices,
+    raeumeNichtVerfuegbareAus,
+  ]);
 
   const customerData = {
     email,
@@ -2306,11 +2438,20 @@ function CheckoutInner() {
   const cartCheckedFingerprintRef = useRef<string | null>(null);
   useEffect(() => {
     if (!sessionReady || items.length === 0) return;
-    if (cartCheckedFingerprintRef.current === cartFingerprint) return;
-    cartCheckedFingerprintRef.current = cartFingerprint;
+    // Der Anstoß (gescheiterte Versandabfrage) prüft denselben Warenkorb neu.
+    const pruefSchluessel = `${cartFingerprint}#${korbPruefAnstoss}`;
+    if (cartCheckedFingerprintRef.current === pruefSchluessel) return;
+    cartCheckedFingerprintRef.current = pruefSchluessel;
     let cancelled = false;
     void (async () => {
       try {
+        // Erst die eigene Reservierung zurück (Rückkehr von Klarna/PayPal),
+        // sonst gilt der eigene Artikel hier als ausverkauft.
+        if (freigabeLaeuftRef.current) {
+          await freigabeLaeuftRef.current;
+          if (cancelled) return;
+        }
+        const reservierungsStand = reservierungsStandRef.current;
         const res = await fetch("/api/checkout/pruefung", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2341,14 +2482,25 @@ function CheckoutInner() {
           );
           setPriceNotice(t("CHECKOUT_PRICES_UPDATED"));
         }
-        // Nur Zeilen, die nie bestellbar werden: ohne Größe, unbekannte
-        // Größe, Produkt weg oder nicht veröffentlicht. "Ausverkauft" oder
-        // Verkaufszeitraum bleiben stehen und werden beim Bezahlen gemeldet.
-        const weg = (data.problems ?? []).filter((p) =>
-          ["groesse_fehlt", "variante_unbekannt", "nicht_gefunden", "nicht_veroeffentlicht"].includes(
-            p.code ?? ""
-          )
+        // Ausverkauft: raus aus dem Warenkorb, Hinweis mit Namen oben in
+        // der Kasse. Bliebe die Zeile stehen, scheiterte die Versandabfrage
+        // an ihr und die Kasse hinge ohne Erklärung.
+        const bereinigt = raeumeNichtVerfuegbareAus(
+          data.problems,
+          reservierungsStand
         );
+        // Dazu Zeilen, die nie bestellbar werden: ohne Größe, unbekannte
+        // Größe, Produkt weg oder nicht veröffentlicht. Verkaufszeitraum
+        // bleibt stehen und wird beim Bezahlen gemeldet.
+        const weg = bereinigt.nieBestellbar;
+        // "Nur noch 2 Stück": Zeile bleibt, aber der Kunde muss es lesen,
+        // denn auch daran scheitert die Versandabfrage.
+        const knapp = bereinigt.bleibt.filter(
+          (p) => p.code === "ausverkauft" && Number(p.verfuegbar) > 0
+        );
+        if (knapp.length > 0 && weg.length === 0) {
+          setError(problemMeldungen(knapp, language));
+        }
         if (weg.length > 0) {
           for (const p of weg) removeFromCart(p.id, p.variation_id);
           setError(
@@ -2369,11 +2521,13 @@ function CheckoutInner() {
     sessionReady,
     items.length,
     cartFingerprint,
+    korbPruefAnstoss,
     cartMeta,
     isWholesale,
     wholesaleReverseCharge,
     applyServerPrices,
     removeFromCart,
+    raeumeNichtVerfuegbareAus,
     language,
     t,
   ]);
@@ -2508,25 +2662,36 @@ function CheckoutInner() {
 
   const gibReservierungFrei = useCallback(async (piId: string | null) => {
     vergissReservierung();
-    try {
-      await fetch("/api/checkout/reservierung-freigeben", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        keepalive: true,
-        body: JSON.stringify(
-          piId
-            ? { paymentIntentId: piId }
-            : { checkoutKey: holeOderErzeugeCheckoutKey() }
-        ),
-      });
-    } catch {
-      // Die Reservierung läuft sonst nach 15 Minuten von selbst ab.
-    }
+    // Solange die Freigabe läuft, steht der eigene Artikel beim Server noch
+    // als ausverkauft da: Prüfungen warten darauf bzw. entfernen nichts.
+    reservierungsStandRef.current++;
+    const lauf = (async () => {
+      try {
+        await fetch("/api/checkout/reservierung-freigeben", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          keepalive: true,
+          body: JSON.stringify(
+            piId
+              ? { paymentIntentId: piId }
+              : { checkoutKey: holeOderErzeugeCheckoutKey() }
+          ),
+        });
+      } catch {
+        // Die Reservierung läuft sonst nach 15 Minuten von selbst ab.
+      }
+    })();
+    freigabeLaeuftRef.current = lauf;
+    await lauf;
+    reservierungsStandRef.current++;
+    if (freigabeLaeuftRef.current === lauf) freigabeLaeuftRef.current = null;
   }, []);
 
   const reserviereEinzelstuecke = useCallback(
     async (piId: string | null): Promise<boolean> => {
       reservierungsMeldungRef.current = "";
+      // Ab hier kann der eigene Artikel beim Server als ausverkauft gelten.
+      reservierungsStandRef.current++;
       let meldung = "";
       try {
         const res = await fetch("/api/checkout/reservieren", {
@@ -2543,15 +2708,19 @@ function CheckoutInner() {
         const data = (await res.json().catch(() => ({}))) as {
           reserviert?: number;
           message?: string;
-          problems?: Array<{ id: number; variation_id?: number }>;
+          problems?: KassenProblem[];
         };
         if (res.ok) {
           if ((data.reserviert ?? 0) > 0) merkeReservierung(piId);
           return true;
         }
         if (res.status === 409 && Array.isArray(data.problems)) {
-          for (const p of data.problems) removeFromCart(p.id, p.variation_id);
-          meldung = `${t("CHECKOUT_LINE_REMOVED")} ${data.message ?? ""}`.trim();
+          // Ein anderer Kunde war schneller. Hier ist sicher, dass es nicht
+          // die eigene Reservierung ist: Der Server hat sie eben abgelehnt.
+          const bereinigt = raeumeNichtVerfuegbareAus(data.problems, "sicher");
+          meldung =
+            nichtVerfuegbarMeldung(bereinigt.nichtVerfuegbar, language) ||
+            `${t("CHECKOUT_LINE_REMOVED")} ${data.message ?? ""}`.trim();
         } else {
           meldung = data.message || t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED");
         }
@@ -2562,7 +2731,7 @@ function CheckoutInner() {
       setError(meldung);
       return false;
     },
-    [cartMeta, language, removeFromCart, t]
+    [cartMeta, language, raeumeNichtVerfuegbareAus, t]
   );
 
   // Zurück in der Kasse nach abgebrochener Zahlung (z. B. Klarna): die eigene
@@ -2657,6 +2826,7 @@ function CheckoutInner() {
 
   const handleExpressSuccess = useCallback(
     async (paymentIntentId: string) => {
+      setNichtVerfuegbar([]);
       try {
         const syncBody = {
           paymentIntentId,
@@ -2717,6 +2887,8 @@ function CheckoutInner() {
       e.preventDefault();
       setProcessing(true);
       setError("");
+      // Der Hinweis "nicht mehr verfügbar" ist gelesen; ein neuer Fund setzt ihn wieder.
+      setNichtVerfuegbar([]);
 
       if (isWholesale) {
         if (!company.trim()) {
@@ -2870,6 +3042,7 @@ function CheckoutInner() {
                 }
               : {}),
           };
+          const bankReservierungsStand = reservierungsStandRef.current;
           const res = await fetch("/api/create-bank-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2895,17 +3068,24 @@ function CheckoutInner() {
                 )
               );
             }
-            // Einzelstück inzwischen von jemand anderem gekauft: raus aus dem Warenkorb.
-            const weg = (
+            // Inzwischen ausverkauft (z. B. Einzelstück von jemand anderem
+            // gekauft): raus aus dem Warenkorb, Meldung mit Namen.
+            const bereinigt = raeumeNichtVerfuegbareAus(
               Array.isArray(data.problems)
-                ? (data.problems as Array<{ id: number; variation_id?: number; code?: string }>)
-                : []
-            ).filter((p) => p.code === "ausverkauft");
-            for (const p of weg) removeFromCart(p.id, p.variation_id);
+                ? (data.problems as KassenProblem[])
+                : undefined,
+              bankReservierungsStand
+            );
             setError(
-              typeof data.message === "string" && data.message
-                ? data.message
-                : t("CHECKOUT_CART_INVALID")
+              [
+                nichtVerfuegbarMeldung(bereinigt.nichtVerfuegbar, language),
+                problemMeldungen(bereinigt.bleibt, language),
+              ]
+                .filter(Boolean)
+                .join(" ") ||
+                (typeof data.message === "string" && data.message
+                  ? data.message
+                  : t("CHECKOUT_CART_INVALID"))
             );
             setProcessing(false);
           } else {
@@ -3041,6 +3221,7 @@ function CheckoutInner() {
       piCouponSynced,
       checkoutShippingForWoo,
       couponCode,
+      raeumeNichtVerfuegbareAus,
       t,
       language,
     ]
@@ -3051,6 +3232,7 @@ function CheckoutInner() {
     async (_data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => {
       setProcessing(true);
       setError("");
+      setNichtVerfuegbar([]);
 
       let captured: Record<string, unknown> | undefined;
       try {
@@ -3236,6 +3418,21 @@ function CheckoutInner() {
   );
 
   if (items.length === 0) {
+    // Leer, weil der letzte Artikel inzwischen ausverkauft ist: Meldung mit
+    // Namen und ein Knopf zurück in den Shop.
+    if (nichtVerfuegbar.length > 0) {
+      return (
+        <div className="mx-auto max-w-xl px-4 py-20 text-center sm:px-6">
+          <NichtVerfuegbarHinweis namen={nichtVerfuegbar} korbLeer />
+          <a
+            href="/shop"
+            className="mt-6 inline-block bg-[#c0392b] px-8 py-4 text-sm font-bold tracking-[0.2em] text-white transition-all duration-300 hover:bg-[#e74c3c]"
+          >
+            {t("ZURUECK_ZUM_SHOP").toUpperCase()}
+          </a>
+        </div>
+      );
+    }
     return (
       <div className="mx-auto max-w-7xl px-4 py-20 text-center sm:px-6">
         <p className="text-white/50">{t("WARENKORB_LEER")}</p>
@@ -3300,6 +3497,11 @@ function CheckoutInner() {
       <div className="grid gap-8 lg:grid-cols-[3fr_2fr] lg:gap-12">
         {/* Left — Form */}
         <form onSubmit={handleSubmit}>
+          <NichtVerfuegbarHinweis
+            namen={nichtVerfuegbar}
+            korbLeer={false}
+            className="mb-6"
+          />
           {showPreOrderMixedBanner && !preOrderBannerDismissed && (
             <PreOrderMixedShippingBanner
               className="mb-6"
