@@ -65,6 +65,7 @@ import {
   reportPayPalOrphanAlert,
   reportPayPalOrphanAlertBestEffort,
 } from "@/lib/paypal-orphan-alert-client";
+import { holeOderErzeugeCheckoutKey } from "@/lib/checkout-key";
 import {
   clearPayPalRecoveryRecord,
   markPayPalRecoveryAlertSent,
@@ -2531,6 +2532,7 @@ function CheckoutInner() {
       try {
         const syncBody = {
           paymentIntentId,
+          checkoutKey: holeOderErzeugeCheckoutKey(),
           customer: customerData,
           items: cartMeta,
           ...buildCheckoutOrderExtras(company, vat),
@@ -2660,6 +2662,7 @@ function CheckoutInner() {
 
         const syncBody = {
           paymentIntentId: paidPiId,
+          checkoutKey: holeOderErzeugeCheckoutKey(),
           customer: customerData,
           ...buildCheckoutOrderExtras(company, vat),
           ...buildCheckoutShippingBody(checkoutShippingForWoo),
@@ -2965,6 +2968,7 @@ function CheckoutInner() {
 
       const paypalSyncBody = {
         paymentIntentId: paypalIntentId,
+        checkoutKey: holeOderErzeugeCheckoutKey(),
         customer,
         items: cartMeta,
         ...buildCheckoutOrderExtras(companyRef.current, vatRef.current),

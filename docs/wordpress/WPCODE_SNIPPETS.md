@@ -8,6 +8,7 @@ Snippets run on **wp.uncuttv.at** via [WPCode](https://wpcode.com/). The Next.js
 | **Preserve explicit shipping tax (REST)** | `uncuttv-preserve-shipping-tax-rest.php` | **Deploy via WPCode** |
 | **Videoplattform Anmelde-Endpunkt** | `uncuttv-videoplattform-anmeldung.php` | **Deploy via WPCode** |
 | **Videoplattform Geheimnis setzen** | `uncuttv-videoplattform-geheimnis.php` | **Deploy via WPCode** |
+| **Kasse: Suche und Sperre je Zahlung** | `uncuttv-kasse.php` | **Deploy via WPCode, vor dem Shop** |
 
 ---
 
@@ -197,3 +198,59 @@ laufen weiter.
 
 - `src/lib/shopAnmeldung.ts` — Server-seitiger Aufruf dieses Endpunkts
 - `src/app/anmelden/` — Anmeldeseite der Plattform
+
+---
+
+## UncutTV Kasse: Suche und Sperre je Zahlung
+
+Datei: [`uncuttv-kasse.php`](./uncuttv-kasse.php)
+
+### Wozu
+
+Zu einer PayPal-Zahlung entstanden bis zu fünf Bestellungen, weil der Shop
+vor dem Anlegen nicht dicht suchen konnte (die REST-Schnittstelle ignoriert
+`meta_key` und liefert die neuesten 20 Bestellungen). Das Snippet sucht
+direkt in der Datenbank und vergibt je Zahlung eine Sperre mit eindeutigem
+Schlüssel: Von zwei gleichzeitigen Aufrufen legt genau einer an.
+
+### Einspielen
+
+**Reihenfolge einhalten: erst das Snippet, dann den Shop deployen.** Der
+Shop legt ohne erreichbare Suche keine Bestellung an (Fehler 503).
+
+1. WPCode → alle Snippets exportieren (Sicherung).
+2. Code Snippets → Add New → **PHP Snippet**.
+3. Name: `UncutTV Kasse: Suche und Sperre`.
+4. Inhalt von `uncuttv-kasse.php` einfügen (das führende `<?php` weglassen,
+   wenn WPCode es selbst setzt).
+5. Location: **Run Everywhere**. Aktivieren.
+6. Prüfen (nur lesend, legt beim ersten Aufruf die Tabelle
+   `wp_uncuttv_zahlung_sperre` an):
+   `GET https://wp.uncuttv.at/wp-json/wc-uncuttv/v1/status` mit Consumer Key
+   und Secret des Shops (Basic Auth). Erwartet:
+   `{"stand":"1","tabelle":true,"hpos":true,…}`. Mit `?ref=paypal_<Order-ID>`
+   einer bekannten Bestellung muss `"suche":{"zustand":"vorhanden",…}` mit
+   deren Nummer kommen.
+7. Erst danach den Shop deployen.
+
+Die Anmeldung läuft über die WooCommerce-Schlüssel des Shops; der Namensraum
+`wc-uncuttv` beginnt dafür absichtlich mit `wc-`. Ein eigenes Geheimnis ist
+nicht nötig.
+
+### Ausschalten
+
+- Snippet deaktivieren **und** im Shop `ZAHLUNG_SPERRE=aus` setzen (Vercel,
+  danach neu deployen). Ohne die Variable legt der Shop keine Bestellungen
+  mehr an, solange das Snippet fehlt.
+- Die Tabelle kann stehen bleiben; sie enthält nur Schlüssel, Bestellnummer
+  und Zeitpunkt.
+
+### Verhalten in Kürze
+
+| Fall | Antwort |
+|------|---------|
+| Bestellung zur Zahlung existiert (auch alte, auch stornierte) | `vorhanden` mit Nummer, es wird nichts angelegt |
+| Niemand hat die Sperre | `frei` mit Token, der Aufrufer legt an und bestätigt |
+| Ein anderer Aufruf legt gerade an | `in_arbeit`, der Shop wartet bis zu 12 s und fragt erneut |
+| Sperre liegt länger als 5 Minuten ohne Bestellung | wird übernommen |
+| Schlüssel des Kassenvorgangs (`kasse_…`) | zählt nur 24 Stunden |

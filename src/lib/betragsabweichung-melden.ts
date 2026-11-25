@@ -97,6 +97,68 @@ async function schickeMail(m: BetragsabweichungMeldung, text: string): Promise<v
   }
 }
 
+export type ZweiteZahlungMeldung = {
+  orderId: number;
+  orderNumber: string;
+  /** Zahlung, mit der die Bestellung angelegt wurde ("" bei Vorkasse). */
+  ersteZahlung: string;
+  /** Die weitere Zahlung zum selben Kassenvorgang, zu der nichts angelegt wurde. */
+  zweiteZahlung: string;
+  kundenEmail?: string;
+};
+
+export function zweiteZahlungText(m: ZweiteZahlungMeldung): string {
+  return (
+    `Zum selben Kassenvorgang ist eine weitere Zahlung eingegangen: ` +
+    `${m.zweiteZahlung}. Die Bestellung wurde mit ` +
+    `${m.ersteZahlung || "einer anderen Zahlart"} angelegt; es wurde keine ` +
+    `zweite Bestellung angelegt. Bitte prüfen, ob doppelt bezahlt wurde, und ` +
+    `gegebenenfalls erstatten.`
+  );
+}
+
+/**
+ * Der Kunde hat im selben Kassenvorgang ein zweites Mal bezahlt (anderer
+ * Zahlungsweg oder neuer PayPal-Kauf), es gibt aber schon eine Bestellung.
+ * Es entsteht keine zweite; das Büro muss die Zahlung prüfen. Wirft nie.
+ */
+export async function meldeZweiteZahlung(m: ZweiteZahlungMeldung): Promise<void> {
+  const text = zweiteZahlungText(m);
+  console.error(`[zweite-zahlung] #${m.orderNumber}: ${text}`);
+  const mail = async () => {
+    const key = process.env.RESEND_API_KEY?.trim();
+    if (!key || key === "your_resend_api_key") {
+      throw new Error("RESEND_API_KEY nicht gesetzt");
+    }
+    const ergebnis = await new Resend(key).emails.send({
+      from: ABSENDER,
+      to: [OFFICE_TO],
+      subject: `Zweite Zahlung zu Bestellung #${m.orderNumber}: ${m.zweiteZahlung}`,
+      html: `
+        <h2>Zweite Zahlung zum selben Kassenvorgang</h2>
+        <p>${escapeHtml(text)}</p>
+        <p><strong>Bestellung:</strong> #${escapeHtml(m.orderNumber)}<br>
+           <strong>Erste Zahlung:</strong> ${escapeHtml(m.ersteZahlung || "keine Referenz")}<br>
+           <strong>Zweite Zahlung:</strong> ${escapeHtml(m.zweiteZahlung)}<br>
+           <strong>Kunde:</strong> ${escapeHtml(m.kundenEmail || "unbekannt")}</p>
+      `,
+    });
+    if (ergebnis.error) throw new Error(`Resend: ${ergebnis.error.message}`);
+  };
+  const ergebnisse = await Promise.allSettled([
+    schreibeBestellnotiz(m.orderId, text),
+    mail(),
+  ]);
+  for (const e of ergebnisse) {
+    if (e.status === "rejected") {
+      console.error(
+        `[zweite-zahlung] #${m.orderNumber}: Meldung fehlgeschlagen:`,
+        e.reason instanceof Error ? e.reason.message : e.reason
+      );
+    }
+  }
+}
+
 export async function meldeBetragsabweichung(
   m: BetragsabweichungMeldung
 ): Promise<void> {

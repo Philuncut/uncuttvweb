@@ -49,7 +49,19 @@ import {
   pruefeWaehrung,
   type Betragsabweichung,
 } from "@/lib/zahlungsbetrag";
-import { meldeBetragsabweichung } from "@/lib/betragsabweichung-melden";
+import {
+  meldeBetragsabweichung,
+  meldeZweiteZahlung,
+} from "@/lib/betragsabweichung-melden";
+import {
+  AnlageAbgelehntFehler,
+  mitZahlungSperre,
+  sperrSchluessel,
+  type VorhandeneBestellung,
+} from "@/lib/zahlung-sperre";
+
+/** Zeitlimit für das Anlegen in WooCommerce; vorher wartete der Aufruf unbegrenzt. */
+const WOO_ANLEGEN_ZEITLIMIT_MS = 25_000;
 
 /**
  * Eine Warenkorbzeile auf dem Weg in die WooCommerce-Bestellung. Bei
@@ -99,6 +111,8 @@ export type WooOrderSyncContext = {
   isWholesale?: boolean;
   videoUtm?: VideoUtmInput;
   marketingUtm?: MarketingUtmInput;
+  /** Schlüssel des Kassenvorgangs (kasse_…), siehe zahlung-sperre.ts. */
+  kassenSchluessel?: string | null;
 };
 
 export interface CreateWooOrderInput {
@@ -499,7 +513,50 @@ export type CreateWooOrderFromCheckoutSyncInput = {
    * auf "on-hold" statt "processing", dazu Bestellnotiz und Mail ans Büro.
    */
   betragsabweichung?: Betragsabweichung;
+  /** Schlüssel des Kassenvorgangs (kasse_…), siehe zahlung-sperre.ts. */
+  kassenSchluessel?: string | null;
 };
+
+/**
+ * Zur Zahlung oder zum Kassenvorgang gibt es schon eine Bestellung: Sie ist
+ * das Ergebnis, es wird nichts angelegt. Wurde sie nur über den
+ * Kassenvorgang gefunden und trägt eine andere Zahlung, hat der Kunde ein
+ * zweites Mal bezahlt; das Büro bekommt eine Mail und die Bestellung eine
+ * Notiz.
+ */
+export async function ergebnisAusVorhandener(
+  vorhanden: VorhandeneBestellung,
+  zahlungsreferenz: string,
+  kundenEmail?: string
+): Promise<CreateWooOrderResult> {
+  const ref = zahlungsreferenz.trim();
+  if (
+    ref &&
+    vorhanden.treffer.startsWith("kasse_") &&
+    vorhanden.transactionId !== ref
+  ) {
+    await meldeZweiteZahlung({
+      orderId: vorhanden.orderId,
+      orderNumber: vorhanden.orderNumber,
+      ersteZahlung: vorhanden.transactionId,
+      zweiteZahlung: ref,
+      kundenEmail,
+    });
+  }
+  console.log(
+    `[wc-order] Bestellung #${vorhanden.orderNumber} zu ${ref || "?"} vorhanden (${vorhanden.status}, Treffer ${vorhanden.treffer.slice(0, 20)}), nichts angelegt`
+  );
+  return {
+    orderId: vorhanden.orderId,
+    orderNumber: vorhanden.orderNumber,
+    status: "already_existed",
+    wooOrder: {
+      id: vorhanden.orderId,
+      number: vorhanden.orderNumber,
+      status: vorhanden.status,
+    },
+  };
+}
 
 export async function createWooOrderFromCheckoutSync(
   input: CreateWooOrderFromCheckoutSyncInput
@@ -522,6 +579,7 @@ export async function createWooOrderFromCheckoutSync(
     stripeAmountCents,
     stripeDiscountCents,
     betragsabweichung,
+    kassenSchluessel,
   } = input;
 
   if (cartItems.length === 0) {
@@ -744,6 +802,26 @@ export async function createWooOrderFromCheckoutSync(
       discountCents,
     });
   }
+  // Zahlungsreferenz und Kassenvorgang als Meta-Felder: Darüber findet die
+  // dichte Suche in WordPress (uncuttv-kasse.php) die Bestellung wieder.
+  const schluessel = sperrSchluessel(transactionId, kassenSchluessel);
+  const sperrMeta: OrderMetaEntry[] = [];
+  if (/^(pi|paypal)_/.test(transactionId)) {
+    sperrMeta.push({ key: "_uncuttv_payment_ref", value: transactionId });
+  }
+  if (transactionId.startsWith("paypal_")) {
+    sperrMeta.push({
+      key: "_paypal_order_id",
+      value: transactionId.slice("paypal_".length),
+    });
+  }
+  const kasse = schluessel.find((k) => k.startsWith("kasse_"));
+  if (kasse) {
+    sperrMeta.push({ key: "_uncuttv_checkout_key", value: kasse });
+  }
+  if (sperrMeta.length > 0) {
+    mergedMeta = [...(mergedMeta ?? []), ...sperrMeta];
+  }
   if (mergedMeta && mergedMeta.length > 0) {
     orderData.meta_data = mergedMeta;
   }
@@ -764,21 +842,42 @@ export async function createWooOrderFromCheckoutSync(
     "Basic " +
     Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString("base64");
 
-  const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
-    method: "POST",
-    headers: {
-      Authorization: AUTH_HEADER,
-      "Content-Type": "application/json",
+  // Genau eine Bestellung je Zahlung: erst dicht suchen, dann die Sperre
+  // nehmen, erst dann anlegen. Schlägt die Suche fehl, wird nicht angelegt.
+  const mitSperre = await mitZahlungSperre({
+    schluessel,
+    orderIdAus: (o: WooOrderRow) => Number(o.id),
+    anlegen: async () => {
+      const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
+        method: "POST",
+        headers: {
+          Authorization: AUTH_HEADER,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(orderData),
+        signal: AbortSignal.timeout(WOO_ANLEGEN_ZEITLIMIT_MS),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        const meldung = `WooCommerce order creation failed: ${errText}`;
+        // 4xx: WooCommerce hat abgelehnt, es ist nichts entstanden. Bei 5xx
+        // ist das nicht sicher, dann bleibt die Sperre liegen.
+        if (res.status >= 400 && res.status < 500) {
+          throw new AnlageAbgelehntFehler(meldung);
+        }
+        throw new Error(meldung);
+      }
+      return (await res.json()) as WooOrderRow & { total?: string };
     },
-    body: JSON.stringify(orderData),
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`WooCommerce order creation failed: ${errText}`);
+  if (mitSperre.art === "vorhanden") {
+    return ergebnisAusVorhandener(
+      mitSperre.bestellung,
+      transactionId,
+      asString(mergedBilling.email)
+    );
   }
-
-  const created = (await res.json()) as WooOrderRow & { total?: string };
+  const created = mitSperre.ergebnis;
 
   console.log("[wc-order] Woo POST response", {
     orderId: created.id,
@@ -924,15 +1023,9 @@ export async function createWooOrderFromPayment(
     throw new Error("Ungültige Payment Intent ID.");
   }
 
-  const existing = await findWooOrderByStripePaymentIntentId(paymentIntentId);
-  if (existing?.id) {
-    return {
-      orderId: Number(existing.id),
-      orderNumber: String(existing.number ?? existing.id),
-      status: "already_existed",
-      wooOrder: existing,
-    };
-  }
+  // Die Suche nach einer vorhandenen Bestellung läuft nicht mehr hier über
+  // die REST-Liste (nur die neuesten 20), sondern dicht in WordPress: in
+  // /api/sync-order vorab und in createWooOrderFromCheckoutSync mit Sperre.
 
   const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
     expand: ["latest_charge"],
@@ -1030,5 +1123,6 @@ export async function createWooOrderFromPayment(
       typeof pi.amount === "number" ? pi.amount : undefined,
     stripeDiscountCents: discountCentsFromPi,
     betragsabweichung: abweichung ?? undefined,
+    kassenSchluessel: syncContext?.kassenSchluessel,
   });
 }

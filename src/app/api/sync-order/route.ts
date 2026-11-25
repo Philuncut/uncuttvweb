@@ -20,6 +20,7 @@ import type { VideoUtmInput } from "@/lib/video-utm-server";
 import {
   createWooOrderFromCheckoutSync,
   createWooOrderFromPayment,
+  ergebnisAusVorhandener,
   PaymentIntentNotSucceededError,
   type CartMeta,
   type CustomerInfo,
@@ -36,6 +37,17 @@ import {
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
 import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
+import {
+  BestellungInArbeitFehler,
+  kassenSchluessel,
+  SperreNichtVerfuegbarFehler,
+  sperrSchluessel,
+  sucheBestellungZurZahlung,
+} from "@/lib/zahlung-sperre";
+
+// PayPal prüfen, auf einen gleichzeitigen Aufruf warten, WooCommerce anlegen
+// (25 s Zeitlimit), Bestätigungsmail: Das braucht mehr als die Vorgabe.
+export const maxDuration = 60;
 import {
   ermittleBetragsabweichung,
   erwarteterBetragCent,
@@ -58,6 +70,8 @@ interface SyncBody {
   marketingUtm?: MarketingUtmInput;
   couponCode?: string;
   customerEmail?: string;
+  /** Zufallskennung des Kassenvorgangs aus dem Browser (checkout-key.ts). */
+  checkoutKey?: string;
 }
 
 function cartMetaToCartItems(items: CartMeta[]): CartItem[] {
@@ -215,6 +229,34 @@ export async function POST(request: Request) {
 
     const isWholesaleCheckout = body.isWholesale === true;
 
+    // Vor allem anderen: Gibt es zu dieser Zahlung oder diesem Kassenvorgang
+    // schon eine Bestellung? Dann ist sie die Antwort, ohne erneute Prüfung
+    // von Warenkorb, Gutschein oder Zahlung. So legt auch der PayPal-
+    // Wiederanlauf denselben Auftrag nicht mehrfach an. Kann nicht gesucht
+    // werden, wird nicht angelegt (Fehler 503 weiter unten).
+    const zahlungsreferenz = body.paymentIntentId?.trim() ?? "";
+    const kasse = kassenSchluessel(
+      body.checkoutKey,
+      resolveSyncBodyEmail(body),
+      normalizeCartMetaItems(body.items)
+    );
+    const schluessel = sperrSchluessel(zahlungsreferenz, kasse);
+    const vorhanden = await sucheBestellungZurZahlung(schluessel);
+    if (vorhanden) {
+      const result = await ergebnisAusVorhandener(
+        vorhanden,
+        zahlungsreferenz,
+        resolveSyncBodyEmail(body)
+      );
+      await trySendOrderConfirmation(result, zahlungsreferenz);
+      return NextResponse.json({
+        success: true,
+        orderId: result.orderId,
+        orderNumber: result.orderNumber,
+        status: result.status,
+      });
+    }
+
     if (body.paymentIntentId?.startsWith("pi_")) {
       const piId = body.paymentIntentId.trim();
       const pi = await stripe.paymentIntents.retrieve(piId);
@@ -268,6 +310,7 @@ export async function POST(request: Request) {
           isWholesale: body.isWholesale,
           videoUtm: body.videoUtm,
           marketingUtm: body.marketingUtm,
+          kassenSchluessel: kasse,
         },
       });
       await trySendOrderConfirmation(
@@ -580,6 +623,7 @@ export async function POST(request: Request) {
       couponCode: couponCodeResolved,
       stripeDiscountCents,
       betragsabweichung: paypalAbweichung ?? undefined,
+      kassenSchluessel: kasse,
     });
 
     if (transactionId.startsWith("paypal_")) {
@@ -609,6 +653,27 @@ export async function POST(request: Request) {
           message: err.message,
         },
         { status: 400 }
+      );
+    }
+
+    if (
+      err instanceof SperreNichtVerfuegbarFehler ||
+      err instanceof BestellungInArbeitFehler
+    ) {
+      // Nicht angelegt. Der Browser (PayPal-Wiederanlauf, Erfolgsseite) kann
+      // denselben Auftrag später noch einmal schicken.
+      console.error(
+        `[sync-order] Nicht angelegt pi=${body?.paymentIntentId ?? "?"}: ${err.message}`
+      );
+      if (
+        err instanceof SperreNichtVerfuegbarFehler &&
+        body?.paymentIntentId?.startsWith("paypal_")
+      ) {
+        await reportPayPalSyncFailure(body, "lock_unavailable", err.message, 503);
+      }
+      return NextResponse.json(
+        { error: err.code, message: err.message, retry: true },
+        { status: 503 }
       );
     }
 

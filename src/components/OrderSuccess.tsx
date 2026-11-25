@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useCart } from "@/lib/CartContext";
+import { loescheCheckoutKey } from "@/lib/checkout-key";
 import Link from "next/link";
 import {
   clearCheckoutPiSynced,
@@ -226,6 +227,8 @@ export default function OrderSuccess() {
     }
 
     async function load() {
+      // Bestellung abgeschlossen: Der nächste Einkauf ist ein neuer Kassenvorgang.
+      loescheCheckoutKey();
       try {
         // Bank transfer — Woo order is source of truth
         if (method === "bank") {
