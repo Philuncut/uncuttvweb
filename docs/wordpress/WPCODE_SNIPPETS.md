@@ -323,3 +323,86 @@ Testprodukt mit Schlagwort `einzelstueck`, Lagerverwaltung an, Bestand 1.
 - Die Kasse von WordPress selbst und Änderungen im Admin reservieren nicht.
 - Die Ausweitung auf alle Produkte mit Lagerverwaltung kommt mit dem Umbau
   der Kasse (Phase 2b).
+
+---
+
+## UncutTV Kasse: Notfall und Rückbau
+
+### Wenn WordPress nicht antwortet
+
+Der Shop versucht Suche und Sperre bis zu dreimal (je 6 s Zeitlimit, Pausen
+0,5 s und 1,5 s). Scheitert auch der dritte Versuch, legt er **keine**
+Bestellung an und schickt sofort eine Mail an office@uncuttv.at mit
+Zahlungsreferenz, Betrag, Kunden-E-Mail und Warenkorb (Stripe und PayPal,
+jede Zahlung einmal). Falsche Zugangsdaten oder ein fehlendes Snippet
+(401, 404) werden nicht wiederholt, die Mail kommt dann sofort.
+
+### Schalter umlegen
+
+Beide Variablen wirken erst nach einem neuen Deployment.
+
+1. Vercel → Projekt → Settings → Environment Variables → Add:
+   `ZAHLUNG_SPERRE` = `aus` und/oder `EINZELSTUECK_RESERVIERUNG` = `aus`,
+   nur Production, Save.
+2. Deployments → oberstes Production-Deployment → ⋯ → Redeploy, Haken
+   „Use existing Build Cache“ gesetzt lassen.
+3. Warten, bis das Deployment „Ready“ zeigt.
+
+Zurück: Variable löschen, wieder Redeploy.
+
+**Reservierung ohne Deployment abschalten (sofort):** In WooCommerce unter
+Produkte → Schlagwörter beim Schlagwort `einzelstueck` die Titelform (Slug)
+ändern, z. B. auf `einzelstueck-aus`. Dann gilt kein Produkt mehr als
+Einzelstück, die Kasse reserviert nichts. Offene Reservierungen laufen
+normal ab. Zurück: Slug wieder auf `einzelstueck`.
+
+### Was das Snippet in WordPress anlegt
+
+| Was | Name |
+|-----|------|
+| Tabelle | `{prefix}uncuttv_zahlung_sperre` (Schlüssel, Token, Bestellnummer, Zeit) |
+| Tabelle | `{prefix}uncuttv_reservierung` (Schlüssel, Produkt, Menge, Status, Ablauf) |
+| Option | `uncuttv_kasse_db`, `uncuttv_res_db` (je ein Versionsvermerk, kein Autoload) |
+| REST-Routen | `/wp-json/wc-uncuttv/v1/…` (nur solange das Snippet aktiv ist) |
+
+Keine WP-Cron-Läufe, keine Transients, keine Dateien. Die beiden Läufe
+(`zahlung-ohne-bestellung`, `reservierung-aufraeumen`) sind Vercel-Crons des
+Shops.
+
+Im laufenden Betrieb ändert das Snippet außerdem: den Bestand (`_stock`) und
+Lagerstatus von Einzelstücken, das WooCommerce-Kennzeichen `_reduced_stock`
+an reservierten Bestellpositionen, Bestellnotizen, und es storniert
+unbezahlte Vorkasse-Bestellungen nach Ablauf der Frist. Der Shop schreibt an
+neue Bestellungen die Meta-Felder `_uncuttv_payment_ref`, `_paypal_order_id`,
+`_uncuttv_checkout_key` und `_uncuttv_reservierung`.
+
+### Rückstandsfrei entfernen
+
+1. Shop: beide Schalter auf `aus`, Redeploy (siehe oben). Vorher nicht
+   deaktivieren, sonst legt der Shop keine Bestellungen an.
+2. 20 Minuten warten, dann `GET /wp-json/wc-uncuttv/v1/reservierung/status`
+   prüfen: unter `zeilen` darf es kein `offen` mehr geben. `bestellt` sind
+   unbezahlte Vorkasse-Bestellungen mit gebundenem Bestand: Entweder das
+   Snippet aktiv lassen, bis sie bezahlt oder storniert sind, oder den
+   Bestand dieser Produkte nach dem Entfernen von Hand um die Menge erhöhen
+   (WooCommerce bucht sonst bei Zahlungseingang ein zweites Mal ab).
+3. Snippet in WPCode deaktivieren und löschen.
+4. In phpMyAdmin (Präfix `wp_` an die eigene Datenbank anpassen):
+
+   ```sql
+   DROP TABLE IF EXISTS wp_uncuttv_zahlung_sperre;
+   DROP TABLE IF EXISTS wp_uncuttv_reservierung;
+   DELETE FROM wp_options WHERE option_name IN ('uncuttv_kasse_db', 'uncuttv_res_db');
+   ```
+
+Die Meta-Felder an den Bestellungen können bleiben; sie stören nichts.
+`_reduced_stock` **nicht** löschen, das ist WooCommerce-eigen und steuert das
+Zurückbuchen bei Storno.
+
+Muss es schnell gehen (Snippet wirft Fehler): Schritt 1 und 3 sofort, danach
+gebundenen Bestand nachtragen. Diese Abfrage zeigt, was noch gebunden war:
+
+```sql
+SELECT lager_id, SUM(menge) FROM wp_uncuttv_reservierung
+WHERE status IN ('offen', 'bestellt') GROUP BY lager_id;
+```

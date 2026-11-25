@@ -11,10 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
-import {
-  raeumeReservierungenAuf,
-  reservierungAbgeschaltet,
-} from "@/lib/reservierung";
+import { raeumeReservierungenAuf } from "@/lib/reservierung";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,9 +21,8 @@ export async function GET(request: Request): Promise<Response> {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  if (reservierungAbgeschaltet()) {
-    return NextResponse.json({ ok: true, abgeschaltet: true });
-  }
+  // Läuft auch bei EINZELSTUECK_RESERVIERUNG=aus weiter: Reservierungen von
+  // vor dem Abschalten müssen noch ablaufen, sonst bliebe ihr Bestand weg.
   try {
     const ergebnis = await raeumeReservierungenAuf();
     console.log("[reservierung-aufraeumen]", JSON.stringify(ergebnis));
