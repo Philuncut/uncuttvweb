@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/zahlung-ohne-bestellung",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/reservierung-aufraeumen",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

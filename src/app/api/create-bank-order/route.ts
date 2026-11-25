@@ -24,6 +24,13 @@ import {
   pruefeBestellpositionen,
   pruefungAlsFehler,
 } from "@/lib/bestellpruefung";
+import {
+  ausverkauftMeldung,
+  bankSchluessel,
+  gibReservierungFrei,
+  reserviere,
+  ReservierungNichtMoeglichFehler,
+} from "@/lib/reservierung";
 import { parsePrice } from "@/lib/parse-price";
 import {
   billingVatFromOrderMeta,
@@ -451,21 +458,80 @@ export async function POST(request: Request) {
       );
     }
 
-    const res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
-      method: "POST",
-      headers: {
-        Authorization:
-          "Basic " +
-          Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString(
-            "base64"
-          ),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(orderData),
-    });
+    // Vorkasse bindet Einzelstücke sofort: reservieren, dann anlegen. Die
+    // Frist bis zur Zahlung setzt WordPress (UNCUTTV_RES_VORKASSE_STD in
+    // docs/wordpress/uncuttv-kasse.php), sobald die Bestellung existiert.
+    const reservierung = bankSchluessel();
+    try {
+      const reserviert = await reserviere({ schluessel: reservierung, items });
+      if (!reserviert.ok) {
+        const problems = reserviert.ausverkauft.map((a) => ({
+          ...a,
+          code: "ausverkauft" as const,
+          message: ausverkauftMeldung(a),
+        }));
+        return NextResponse.json(
+          {
+            error: "cart_invalid",
+            message: problems
+              .map((p) => (locale === "en" ? p.message.en : p.message.de))
+              .join(" "),
+            problems,
+            items,
+            repriced: [],
+          },
+          { status: 409 }
+        );
+      }
+      if (reserviert.reserviert > 0) {
+        const md = Array.isArray(orderData.meta_data)
+          ? [...(orderData.meta_data as Array<{ key: string; value: unknown }>)]
+          : [];
+        md.push({ key: "_uncuttv_reservierung", value: reservierung });
+        orderData.meta_data = md;
+      }
+    } catch (resErr) {
+      if (resErr instanceof ReservierungNichtMoeglichFehler) {
+        return NextResponse.json(
+          {
+            error: "reservierung_nicht_moeglich",
+            message:
+              locale === "en"
+                ? "This item cannot be reserved right now. Please try again in a moment."
+                : "Dieser Artikel kann gerade nicht reserviert werden. Bitte gleich noch einmal versuchen.",
+          },
+          { status: 503 }
+        );
+      }
+      throw resErr;
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${WOOCOMMERCE_URL}/wp-json/wc/v3/orders`, {
+        method: "POST",
+        headers: {
+          Authorization:
+            "Basic " +
+            Buffer.from(`${WOOCOMMERCE_KEY}:${WOOCOMMERCE_SECRET}`).toString(
+              "base64"
+            ),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(orderData),
+      });
+    } catch (netzFehler) {
+      // Unklar, ob WooCommerce angelegt hat: Reservierung NICHT freigeben,
+      // sie läuft sonst nach 15 Minuten von selbst ab.
+      throw netzFehler;
+    }
 
     if (!res.ok) {
       const errText = await res.text();
+      // WooCommerce hat abgelehnt, es gibt keine Bestellung: Bestand zurück.
+      if (res.status >= 400 && res.status < 500) {
+        await gibReservierungFrei(reservierung);
+      }
       throw new Error(`WooCommerce order creation failed: ${errText}`);
     }
 

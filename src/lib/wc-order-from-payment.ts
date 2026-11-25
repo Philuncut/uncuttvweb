@@ -113,6 +113,8 @@ export type WooOrderSyncContext = {
   marketingUtm?: MarketingUtmInput;
   /** Schlüssel des Kassenvorgangs (kasse_…), siehe zahlung-sperre.ts. */
   kassenSchluessel?: string | null;
+  /** Schlüssel der Einzelstück-Reservierung (rk_…), siehe reservierung.ts. */
+  reservierung?: string | null;
 };
 
 export interface CreateWooOrderInput {
@@ -515,6 +517,11 @@ export type CreateWooOrderFromCheckoutSyncInput = {
   betragsabweichung?: Betragsabweichung;
   /** Schlüssel des Kassenvorgangs (kasse_…), siehe zahlung-sperre.ts. */
   kassenSchluessel?: string | null;
+  /**
+   * Schlüssel der Einzelstück-Reservierung für PayPal (rk_…). Bei Stripe ist
+   * es die PaymentIntent-ID und wird hier selbst gesetzt.
+   */
+  reservierung?: string | null;
 };
 
 /**
@@ -580,6 +587,7 @@ export async function createWooOrderFromCheckoutSync(
     stripeDiscountCents,
     betragsabweichung,
     kassenSchluessel,
+    reservierung,
   } = input;
 
   if (cartItems.length === 0) {
@@ -818,6 +826,14 @@ export async function createWooOrderFromCheckoutSync(
   const kasse = schluessel.find((k) => k.startsWith("kasse_"));
   if (kasse) {
     sperrMeta.push({ key: "_uncuttv_checkout_key", value: kasse });
+  }
+  // Einzelstück-Reservierung: Über dieses Feld erkennt WordPress, dass der
+  // Bestand schon abgebucht ist, und bucht nicht ein zweites Mal ab.
+  const reservierungMeta = transactionId.startsWith("pi_")
+    ? transactionId
+    : (reservierung ?? "").trim();
+  if (/^(pi|rk|bank)_[A-Za-z0-9_]{6,180}$/.test(reservierungMeta)) {
+    sperrMeta.push({ key: "_uncuttv_reservierung", value: reservierungMeta });
   }
   if (sperrMeta.length > 0) {
     mergedMeta = [...(mergedMeta ?? []), ...sperrMeta];
@@ -1124,5 +1140,6 @@ export async function createWooOrderFromPayment(
     stripeDiscountCents: discountCentsFromPi,
     betragsabweichung: abweichung ?? undefined,
     kassenSchluessel: syncContext?.kassenSchluessel,
+    reservierung: syncContext?.reservierung,
   });
 }

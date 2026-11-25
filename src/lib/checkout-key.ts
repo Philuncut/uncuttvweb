@@ -10,6 +10,7 @@
  */
 
 const SPEICHER = "uncuttv_checkout_key";
+const RESERVIERUNG_SPEICHER = "uncuttv_reservierung";
 
 function zufallsKennung(): string {
   try {
@@ -44,6 +45,43 @@ export function loescheCheckoutKey(): void {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(SPEICHER);
+    sessionStorage.removeItem(RESERVIERUNG_SPEICHER);
+  } catch {
+    /* ignorieren */
+  }
+}
+
+/**
+ * Merkt, dass dieser Tab Einzelstücke reserviert hat (PaymentIntent-ID bei
+ * Stripe, "paypal" bei PayPal). Kommt der Kunde nach einer abgebrochenen
+ * Zahlung wieder in die Kasse, gibt sie die Reservierung zurück; sonst
+ * stünde ihm sein eigener Artikel 15 Minuten lang als ausverkauft im Weg.
+ */
+export function merkeReservierung(paymentIntentId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(RESERVIERUNG_SPEICHER, paymentIntentId || "paypal");
+  } catch {
+    /* ignorieren */
+  }
+}
+
+/** undefined = nichts gemerkt; null = PayPal; sonst die PaymentIntent-ID. */
+export function leseGemerkteReservierung(): string | null | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const wert = sessionStorage.getItem(RESERVIERUNG_SPEICHER);
+    if (!wert) return undefined;
+    return wert === "paypal" ? null : wert;
+  } catch {
+    return undefined;
+  }
+}
+
+export function vergissReservierung(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(RESERVIERUNG_SPEICHER);
   } catch {
     /* ignorieren */
   }

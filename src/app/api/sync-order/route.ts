@@ -37,6 +37,7 @@ import {
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
 import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
+import { reservierungsSchluessel } from "@/lib/reservierung";
 import {
   BestellungInArbeitFehler,
   kassenSchluessel,
@@ -624,6 +625,7 @@ export async function POST(request: Request) {
       stripeDiscountCents,
       betragsabweichung: paypalAbweichung ?? undefined,
       kassenSchluessel: kasse,
+      reservierung: reservierungsSchluessel(null, body.checkoutKey),
     });
 
     if (transactionId.startsWith("paypal_")) {

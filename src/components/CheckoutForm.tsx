@@ -65,9 +65,15 @@ import {
   reportPayPalOrphanAlert,
   reportPayPalOrphanAlertBestEffort,
 } from "@/lib/paypal-orphan-alert-client";
-import { holeOderErzeugeCheckoutKey } from "@/lib/checkout-key";
+import {
+  holeOderErzeugeCheckoutKey,
+  leseGemerkteReservierung,
+  merkeReservierung,
+  vergissReservierung,
+} from "@/lib/checkout-key";
 import {
   clearPayPalRecoveryRecord,
+  listPayPalRecoveryRecords,
   markPayPalRecoveryAlertSent,
   savePayPalRecoveryRecord,
 } from "@/lib/paypal-recovery-storage";
@@ -931,6 +937,7 @@ function PayPalButtonWrapper({
   resolvedOrderTotalEuro,
   onApprove,
   onError,
+  onCancel,
   disabled,
   onBeforePayPalCreateOrder,
 }: {
@@ -942,6 +949,8 @@ function PayPalButtonWrapper({
   resolvedOrderTotalEuro?: number | null;
   onApprove: (data: Record<string, unknown>, actions: { order?: { capture: () => Promise<Record<string, unknown>> } }) => Promise<void>;
   onError: () => void;
+  /** Kunde schließt das PayPal-Fenster, ohne zu zahlen. */
+  onCancel?: () => void;
   disabled?: boolean;
   /** Wholesale: block PayPal order creation until company + UID format are valid. */
   onBeforePayPalCreateOrder?: () => Promise<void>;
@@ -1031,6 +1040,7 @@ function PayPalButtonWrapper({
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
+        onCancel={onCancel}
         forceReRender={paypalButtonForceReRender}
       />
       <PayPalButtons
@@ -1040,6 +1050,7 @@ function PayPalButtonWrapper({
         createOrder={createOrder}
         onApprove={onApprove}
         onError={onError}
+        onCancel={onCancel}
         forceReRender={paypalButtonForceReRender}
       />
     </PayPalScriptProvider>
@@ -2483,6 +2494,122 @@ function CheckoutInner() {
     [isWholesale, wholesaleReverseCharge]
   );
 
+  /**
+   * Einzelstücke: Beim Klick auf "Jetzt kaufen" (und beim PayPal-Knopf)
+   * bucht der Server den Bestand ab, BEVOR die Zahlung bestätigt wird.
+   * Hat ein anderer Kunde inzwischen gekauft, fliegt der Artikel aus dem
+   * Warenkorb und die Zahlung beginnt nicht. Betrifft nur Produkte mit dem
+   * Schlagwort "einzelstueck"; für alle anderen antwortet der Server sofort
+   * mit "nichts zu reservieren". Schlüssel: PaymentIntent-ID (Stripe) oder
+   * die Kennung des Kassenvorgangs (PayPal, piId = null).
+   */
+  const reservierungsMeldungRef = useRef("");
+
+  const gibReservierungFrei = useCallback(async (piId: string | null) => {
+    vergissReservierung();
+    try {
+      await fetch("/api/checkout/reservierung-freigeben", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify(
+          piId
+            ? { paymentIntentId: piId }
+            : { checkoutKey: holeOderErzeugeCheckoutKey() }
+        ),
+      });
+    } catch {
+      // Die Reservierung läuft sonst nach 15 Minuten von selbst ab.
+    }
+  }, []);
+
+  const reserviereEinzelstuecke = useCallback(
+    async (piId: string | null): Promise<boolean> => {
+      reservierungsMeldungRef.current = "";
+      let meldung = "";
+      try {
+        const res = await fetch("/api/checkout/reservieren", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(piId
+              ? { paymentIntentId: piId }
+              : { checkoutKey: holeOderErzeugeCheckoutKey() }),
+            items: cartMeta,
+            locale: language,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          reserviert?: number;
+          message?: string;
+          problems?: Array<{ id: number; variation_id?: number }>;
+        };
+        if (res.ok) {
+          if ((data.reserviert ?? 0) > 0) merkeReservierung(piId);
+          return true;
+        }
+        if (res.status === 409 && Array.isArray(data.problems)) {
+          for (const p of data.problems) removeFromCart(p.id, p.variation_id);
+          meldung = `${t("CHECKOUT_LINE_REMOVED")} ${data.message ?? ""}`.trim();
+        } else {
+          meldung = data.message || t("CHECKOUT_ERROR_PAYMENT_PREP_FAILED");
+        }
+      } catch {
+        meldung = t("CHECKOUT_ERROR_CONNECTION");
+      }
+      reservierungsMeldungRef.current = meldung;
+      setError(meldung);
+      return false;
+    },
+    [cartMeta, language, removeFromCart, t]
+  );
+
+  // Zurück in der Kasse nach abgebrochener Zahlung (z. B. Klarna): die eigene
+  // Reservierung freigeben, sonst stünde der Artikel 15 Minuten lang als
+  // ausverkauft im Weg. Nicht, solange eine bezahlte PayPal-Bestellung noch
+  // auf ihren Wiederanlauf wartet; bezahlte Stripe-Zahlungen schützt der Server.
+  useEffect(() => {
+    const gemerkt = leseGemerkteReservierung();
+    if (gemerkt === undefined) return;
+    if (listPayPalRecoveryRecords().length > 0) return;
+    void gibReservierungFrei(gemerkt);
+  }, [gibReservierungFrei]);
+
+  /** Apple/Google Pay: Händlerprüfung wie bisher, danach reservieren. */
+  const vorWalletZahlung = useCallback(
+    async (piId: string | null): Promise<boolean> =>
+      (await runWholesalePiPreflight(piId)) &&
+      (await reserviereEinzelstuecke(piId)),
+    [runWholesalePiPreflight, reserviereEinzelstuecke]
+  );
+
+  /** PayPal-Knopf: Warenkorb prüfen wie bisher, danach reservieren. */
+  const vorPayPalZahlung = useCallback(async () => {
+    // Zweiter Klick nach abgebrochenem PayPal-Fenster: erst die eigene
+    // Reservierung zurück, sonst meldet die Prüfung den Artikel als ausverkauft.
+    if (
+      leseGemerkteReservierung() === null &&
+      listPayPalRecoveryRecords().length === 0
+    ) {
+      await gibReservierungFrei(null);
+    }
+    await pruefeWarenkorbVorPayPal();
+    if (!(await reserviereEinzelstuecke(null))) {
+      throw new Error(reservierungsMeldungRef.current || "Reservierung fehlgeschlagen");
+    }
+  }, [gibReservierungFrei, pruefeWarenkorbVorPayPal, reserviereEinzelstuecke]);
+
+  const beiPayPalFehler = useCallback(() => {
+    const meldung = reservierungsMeldungRef.current;
+    reservierungsMeldungRef.current = "";
+    setError(meldung || t("CHECKOUT_PAYPAL_FAILED"));
+    if (listPayPalRecoveryRecords().length === 0) void gibReservierungFrei(null);
+  }, [gibReservierungFrei, t]);
+
+  const beiPayPalAbbruch = useCallback(() => {
+    if (listPayPalRecoveryRecords().length === 0) void gibReservierungFrei(null);
+  }, [gibReservierungFrei]);
+
   const validateBeforeWalletPay = useCallback((): string | null => {
     if (isWholesale) {
       if (!company.trim()) return t("CHECKOUT_ERROR_COMPANY_REQUIRED");
@@ -2635,9 +2762,16 @@ function CheckoutInner() {
           return;
         }
 
+        // Einzelstücke festhalten, bevor die Karte belastet wird.
+        if (!(await reserviereEinzelstuecke(piId))) {
+          setProcessing(false);
+          return;
+        }
+
         const cardResult =
           await stripePiPaymentRef.current?.confirmCardPayment();
         if (!cardResult?.ok) {
+          void gibReservierungFrei(piId);
           setError(
             cardResult?.errorMessage || t("CHECKOUT_ERROR_PAYMENT_FAILED")
           );
@@ -2758,6 +2892,13 @@ function CheckoutInner() {
                 )
               );
             }
+            // Einzelstück inzwischen von jemand anderem gekauft: raus aus dem Warenkorb.
+            const weg = (
+              Array.isArray(data.problems)
+                ? (data.problems as Array<{ id: number; variation_id?: number; code?: string }>)
+                : []
+            ).filter((p) => p.code === "ausverkauft");
+            for (const p of weg) removeFromCart(p.id, p.variation_id);
             setError(
               typeof data.message === "string" && data.message
                 ? data.message
@@ -2827,6 +2968,12 @@ function CheckoutInner() {
           }
         }
 
+        // Einzelstücke festhalten, bevor es zu Klarna/EPS weitergeht.
+        if (!(await reserviereEinzelstuecke(piIdForStorage))) {
+          setProcessing(false);
+          return;
+        }
+
         if (piIdForStorage) {
           persistCheckoutSyncPayload(piIdForStorage, {
             ...customerData,
@@ -2855,6 +3002,7 @@ function CheckoutInner() {
         });
 
         if (confirmError) {
+          void gibReservierungFrei(piIdForStorage);
           setError(confirmError.message || t("CHECKOUT_ERROR_PAYMENT_FAILED"));
           setProcessing(false);
         }
@@ -2865,6 +3013,8 @@ function CheckoutInner() {
       clientSecret,
       paymentMethod,
       runWholesalePiPreflight,
+      reserviereEinzelstuecke,
+      gibReservierungFrei,
       firstName,
       lastName,
       email,
@@ -3685,14 +3835,19 @@ function CheckoutInner() {
                   cardBillingDetails={cardBillingDetails}
                   onExpressProcessing={setProcessing}
                   onExpressError={(msg) => {
-                    setError(msg);
+                    // Meldung der Reservierung ("inzwischen ausverkauft") hat Vorrang.
+                    setError(reservierungsMeldungRef.current || msg);
+                    reservierungsMeldungRef.current = "";
+                    void gibReservierungFrei(
+                      parsePiIdFromClientSecret(clientSecret)
+                    );
                     if (isWholesale && msg === t("CHECKOUT_ERROR_UID_REQUIRED")) {
                       setVatFieldError(t("CHECKOUT_VALIDATION_UID_FORMAT"));
                     }
                   }}
                   onExpressSuccess={handleExpressSuccess}
                   validateBeforeWalletPay={validateBeforeWalletPay}
-                  runWholesalePiPreflight={runWholesalePiPreflight}
+                  runWholesalePiPreflight={vorWalletZahlung}
                   buildWalletSyncPayload={buildWalletSyncPayload}
                   t={t}
                 />
@@ -3783,14 +3938,13 @@ function CheckoutInner() {
                       disabled={
                         wholesaleCheckoutBlocked || shippingBlocksCheckout
                       }
-                      onError={() =>
-                        setError(t("CHECKOUT_PAYPAL_FAILED"))
-                      }
+                      onError={beiPayPalFehler}
+                      onCancel={beiPayPalAbbruch}
                       onBeforePayPalCreateOrder={async () => {
                         if (wholesaleCheckoutBlocked) {
                           throw new Error(t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED"));
                         }
-                        await pruefeWarenkorbVorPayPal();
+                        await vorPayPalZahlung();
                       }}
                     />
                   ) : (
@@ -3905,16 +4059,15 @@ function CheckoutInner() {
                           disabled={
                             wholesaleCheckoutBlocked || shippingBlocksCheckout
                           }
-                          onError={() =>
-                            setError(t("CHECKOUT_PAYPAL_FAILED"))
-                          }
+                          onError={beiPayPalFehler}
+                      onCancel={beiPayPalAbbruch}
                           onBeforePayPalCreateOrder={async () => {
                             if (wholesaleCheckoutBlocked) {
                               throw new Error(
                                 t("CHECKOUT_PAYPAL_WHOLESALE_BLOCKED")
                               );
                             }
-                            await pruefeWarenkorbVorPayPal();
+                            await vorPayPalZahlung();
                           }}
                         />
                       ) : (

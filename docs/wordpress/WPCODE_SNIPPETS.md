@@ -254,3 +254,72 @@ nicht nötig.
 | Ein anderer Aufruf legt gerade an | `in_arbeit`, der Shop wartet bis zu 12 s und fragt erneut |
 | Sperre liegt länger als 5 Minuten ohne Bestellung | wird übernommen |
 | Schlüssel des Kassenvorgangs (`kasse_…`) | zählt nur 24 Stunden |
+
+---
+
+## UncutTV Kasse, Stand 2: Reservierung für Einzelstücke
+
+Dieselbe Datei [`uncuttv-kasse.php`](./uncuttv-kasse.php), unterer Teil. Wer
+Stand 1 schon eingespielt hat, ersetzt den Inhalt des Snippets durch die
+ganze Datei.
+
+### Wozu
+
+Einzelstücke (Bestand 1) wurden doppelt verkauft: Kunde A hatte das Bild im
+Warenkorb, Kunde B kaufte es, A konnte danach trotzdem noch bezahlen. Jetzt
+bucht die Kasse beim Klick auf „Jetzt kaufen“ den Bestand ab, bevor die
+Zahlung bestätigt wird. Eine einzige bedingte SQL-Anweisung („nur wenn
+Bestand ≥ Menge“) entscheidet, wer gewinnt.
+
+### Was gilt
+
+- **Nur** Produkte mit dem Schlagwort `einzelstueck` (Slug) **und**
+  eingeschalteter Lagerverwaltung. Alles andere läuft unverändert.
+- Reservierung ohne Bestellung läuft nach **15 Minuten** ab, der Bestand
+  kommt zurück (Lauf `/api/cron/reservierung-aufraeumen`, alle 5 Minuten).
+- Entsteht die Bestellung, übernimmt sie die Reservierung. Die Position
+  bekommt das WooCommerce-Kennzeichen `_reduced_stock`: WooCommerce bucht
+  nicht ein zweites Mal ab und bucht bei Storno oder Erstattung wie gewohnt
+  zurück. In der Bestellung steht dazu eine Notiz.
+- **Vorkasse** bindet den Bestand sofort. Frist: Konstante
+  `UNCUTTV_RES_VORKASSE_STD` oben im unteren Teil der Datei (Vorgabe 168
+  Stunden). Ist die Bestellung dann noch „Zahlung ausstehend“, wird sie
+  storniert und der Bestand kommt zurück.
+- Ausschalter im Shop: `EINZELSTUECK_RESERVIERUNG=aus` (Vercel, neu
+  deployen). Das Snippet kann dabei aktiv bleiben.
+
+### Einspielen
+
+1. In WooCommerce das Schlagwort `einzelstueck` anlegen und den
+   Einzelstücken geben; Lagerverwaltung an, Bestand 1.
+2. `UNCUTTV_RES_VORKASSE_STD` in der Datei auf die gewünschte Frist setzen.
+3. Snippet-Inhalt in WPCode durch die ganze Datei ersetzen, speichern.
+4. Prüfen: `GET /wp-json/wc-uncuttv/v1/reservierung/status` (Consumer Key
+   und Secret des Shops). Erwartet: `"stand":"2","tabelle":true,
+   "schlagwort_da":true,"produkte":<Anzahl>`.
+5. Erst danach den Shop deployen.
+
+### Probe mit einem Testprodukt (vor dem Vorverkauf)
+
+Testprodukt mit Schlagwort `einzelstueck`, Lagerverwaltung an, Bestand 1.
+
+| Schritt | Erwartet |
+|---------|----------|
+| Browser A: Kasse, Karte, „Jetzt kaufen“ mit einer Karte, die abgelehnt wird | Produkt kurz „ausverkauft“, nach der Ablehnung wieder Bestand 1 |
+| Browser A und B: beide in der Kasse, B kauft zu Ende | B: Bestellung, Bestand 0, Notiz „war reserviert“; Bestand **nicht** −1 |
+| Browser A klickt danach „Jetzt kaufen“ | Meldung „inzwischen ausverkauft“, Artikel fliegt aus dem Warenkorb, keine Zahlung |
+| PayPal-Fenster öffnen und schließen | Bestand wieder 1 |
+| Reservieren, Tab schließen, 15 bis 20 Minuten warten | Bestand wieder 1 |
+| Vorkasse bestellen | Bestand 0, Bestellung „Zahlung ausstehend“ |
+| Diese Bestellung stornieren | Bestand wieder 1 |
+| Bezahlte Bestellung stornieren | Bestand wieder 1 (WooCommerce bucht zurück) |
+| Gemischter Warenkorb (Einzelstück + normaler Artikel) kaufen | Einzelstück 0, normaler Artikel um die Menge reduziert, nichts doppelt |
+
+### Grenzen dieser kleinsten Variante
+
+- Dauert eine Zahlung länger als 15 Minuten (Klarna), ist die Reservierung
+  abgelaufen; kauft in der Zwischenzeit jemand anderes, entsteht doch ein
+  Doppelverkauf. Der Bestand steht dann auf −1 und zeigt es an.
+- Die Kasse von WordPress selbst und Änderungen im Admin reservieren nicht.
+- Die Ausweitung auf alle Produkte mit Lagerverwaltung kommt mit dem Umbau
+  der Kasse (Phase 2b).
