@@ -12,7 +12,9 @@
  * Sandbox https://api-m.sandbox.paypal.com setzen.
  */
 
-const STANDARD_BASIS = "https://api-m.paypal.com";
+import type { ZahlungsName } from "@/lib/bestellname";
+
+const STANDARD_BASIS ="https://api-m.paypal.com";
 const ZEITLIMIT_MS = 10_000;
 
 /** PayPal-Order-IDs sind 17 Zeichen, Großbuchstaben und Ziffern; etwas Luft lassen. */
@@ -21,7 +23,11 @@ const ORDER_ID_MUSTER = /^[A-Z0-9]{8,32}$/;
 export type PayPalOrderAntwort = {
   id?: string;
   status?: string;
+  payer?: {
+    name?: { given_name?: string; surname?: string };
+  };
   purchase_units?: Array<{
+    shipping?: { name?: { full_name?: string } };
     payments?: {
       captures?: Array<{
         id?: string;
@@ -39,6 +45,11 @@ export type PayPalPruefung =
       captureId: string;
       bezahltCent: number;
       waehrung: string;
+      /**
+       * Name aus der PayPal-Order. Nur Ersatz, wenn Formular und Kundenkonto
+       * keinen Namen haben (bestellname.ts).
+       */
+      name?: ZahlungsName;
     }
   | {
       ok: false;
@@ -50,6 +61,19 @@ export type PayPalPruefung =
       grund: "ungueltige_id" | "nicht_bezahlt" | "nicht_pruefbar";
       detail: string;
     };
+
+/**
+ * Name aus der PayPal-Order: payer.name (schon geteilt), dazu der volle
+ * Name der Lieferung als Ersatz. Ohne Netz, testbar.
+ */
+export function nameAusPayPalOrder(order: PayPalOrderAntwort): ZahlungsName {
+  const sauber = (wert: unknown) => (typeof wert === "string" ? wert.trim() : "");
+  return {
+    vorname: sauber(order.payer?.name?.given_name),
+    nachname: sauber(order.payer?.name?.surname),
+    vollerName: sauber(order.purchase_units?.[0]?.shipping?.name?.full_name),
+  };
+}
 
 /** Wertet die Antwort von GET /v2/checkout/orders/{id} aus. Ohne Netz, testbar. */
 export function wertePayPalOrderAus(
@@ -196,10 +220,11 @@ export async function pruefePayPalZahlung(
         detail: `PayPal antwortet mit ${res.status}`,
       };
     }
-    return wertePayPalOrderAus(
-      paypalOrderId,
-      (await res.json()) as PayPalOrderAntwort
-    );
+    const order = (await res.json()) as PayPalOrderAntwort;
+    const ergebnis = wertePayPalOrderAus(paypalOrderId, order);
+    return ergebnis.ok
+      ? { ...ergebnis, name: nameAusPayPalOrder(order) }
+      : ergebnis;
   } catch (err) {
     return {
       ok: false,

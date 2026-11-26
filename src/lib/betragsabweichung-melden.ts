@@ -8,6 +8,7 @@
  */
 
 import { Resend } from "resend";
+import { nameFehltText } from "@/lib/bestellname";
 
 const ABSENDER = "UncutTV <office@uncuttv.at>";
 const OFFICE_TO = "office@uncuttv.at";
@@ -153,6 +154,59 @@ export async function meldeZweiteZahlung(m: ZweiteZahlungMeldung): Promise<void>
     if (e.status === "rejected") {
       console.error(
         `[zweite-zahlung] #${m.orderNumber}: Meldung fehlgeschlagen:`,
+        e.reason instanceof Error ? e.reason.message : e.reason
+      );
+    }
+  }
+}
+
+export type NameFehltMeldung = {
+  orderId: number;
+  orderNumber: string;
+  /** `pi_…` oder `paypal_…`. */
+  zahlungsreferenz: string;
+  kundenEmail?: string;
+};
+
+/**
+ * Bezahlt, aber weder Formular noch Kundenkonto noch Zahlung kennen einen
+ * Namen (bestellname.ts). Die Bestellung steht auf "on-hold"; hier bekommt
+ * sie eine Notiz und das Büro eine Mail. Wirft nie.
+ */
+export async function meldeNameFehlt(m: NameFehltMeldung): Promise<void> {
+  const text = nameFehltText(m.zahlungsreferenz);
+  console.error(`[name-fehlt] #${m.orderNumber}: ${text}`);
+  const mail = async () => {
+    const key = process.env.RESEND_API_KEY?.trim();
+    if (!key || key === "your_resend_api_key") {
+      throw new Error("RESEND_API_KEY nicht gesetzt");
+    }
+    const basis = (process.env.WOOCOMMERCE_URL ?? "").replace(/\/$/, "");
+    const link = `${basis}/wp-admin/admin.php?page=wc-orders&action=edit&id=${m.orderId}`;
+    const ergebnis = await new Resend(key).emails.send({
+      from: ABSENDER,
+      to: [OFFICE_TO],
+      subject: `Bestellung #${m.orderNumber} wartet: kein Name`,
+      html: `
+        <h2>Bestellung ohne Vor- und Nachnamen</h2>
+        <p>${escapeHtml(text)}</p>
+        <p><strong>Bestellung:</strong> <a href="${escapeHtml(link)}">#${escapeHtml(m.orderNumber)}</a><br>
+           <strong>Zahlung:</strong> ${escapeHtml(m.zahlungsreferenz || "ohne Referenz")}<br>
+           <strong>Kunde:</strong> ${escapeHtml(m.kundenEmail || "unbekannt")}</p>
+        <p>Die Bestellung wurde angelegt, damit der Kunde nicht ohne Bestellung
+           bleibt. Der Kunde hat die übliche Bestellbestätigung erhalten.</p>
+      `,
+    });
+    if (ergebnis.error) throw new Error(`Resend: ${ergebnis.error.message}`);
+  };
+  const ergebnisse = await Promise.allSettled([
+    schreibeBestellnotiz(m.orderId, text),
+    mail(),
+  ]);
+  for (const e of ergebnisse) {
+    if (e.status === "rejected") {
+      console.error(
+        `[name-fehlt] #${m.orderNumber}: Meldung fehlgeschlagen:`,
         e.reason instanceof Error ? e.reason.message : e.reason
       );
     }

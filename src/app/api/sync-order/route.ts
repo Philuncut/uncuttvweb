@@ -38,6 +38,7 @@ import {
   validatePayPalSyncEmail,
 } from "@/lib/paypal-orphan-order";
 import { pruefePayPalZahlung } from "@/lib/paypal-pruefung";
+import type { ZahlungsName } from "@/lib/bestellname";
 import { reservierungsSchluessel } from "@/lib/reservierung";
 import {
   meldeSperreAusfall,
@@ -601,6 +602,7 @@ export async function POST(request: Request) {
     let couponCodeResolved: string | undefined;
     let stripeDiscountCents: number | undefined;
     let paypalAbweichung: Betragsabweichung | null = null;
+    let zahlungsName: ZahlungsName | undefined;
     const codeTrimmed = body.couponCode?.trim();
 
     if (codeTrimmed && !isWholesaleCheckout) {
@@ -690,6 +692,9 @@ export async function POST(request: Request) {
           { status: vorlaeufig ? 503 : 402 }
         );
       }
+      // Name aus der PayPal-Order: nur Ersatz, wenn Formular und Kundenkonto
+      // keinen haben (bestellname.ts).
+      zahlungsName = zahlung.name;
       const shipRate = body.checkoutShipping?.rate;
       const erwartetCent = erwarteterBetragCent({
         items: cartItems,
@@ -744,6 +749,7 @@ export async function POST(request: Request) {
       betragsabweichung: paypalAbweichung ?? undefined,
       kassenSchluessel: kasse,
       reservierung: reservierungsSchluessel(null, body.checkoutKey),
+      zahlungsName,
     });
 
     if (transactionId.startsWith("paypal_")) {

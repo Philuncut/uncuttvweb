@@ -51,8 +51,10 @@ import {
 } from "@/lib/zahlungsbetrag";
 import {
   meldeBetragsabweichung,
+  meldeNameFehlt,
   meldeZweiteZahlung,
 } from "@/lib/betragsabweichung-melden";
+import { ergaenzeBestellname, type ZahlungsName } from "@/lib/bestellname";
 import {
   AnlageAbgelehntFehler,
   mitZahlungSperre,
@@ -165,6 +167,8 @@ function asString(value: unknown): string {
 }
 
 type WooCustomer = {
+  first_name?: string;
+  last_name?: string;
   billing?: { company?: string; [key: string]: unknown };
   meta_data?: Array<{ key?: string; value?: unknown }>;
 };
@@ -522,6 +526,12 @@ export type CreateWooOrderFromCheckoutSyncInput = {
    * es die PaymentIntent-ID und wird hier selbst gesetzt.
    */
   reservierung?: string | null;
+  /**
+   * Name, wie ihn die Zahlung kennt (PayPal payer.name / shipping.name,
+   * Stripe billing_details.name). Wird nur verwendet, wenn Formular und
+   * Kundenkonto keinen Namen haben, siehe bestellname.ts.
+   */
+  zahlungsName?: ZahlungsName;
 };
 
 /**
@@ -571,7 +581,7 @@ export async function createWooOrderFromCheckoutSync(
   const {
     cartItems,
     billing,
-    shipping,
+    shipping: shippingAusEingabe,
     transactionId,
     isReverseCharge,
     isWholesaleCheckout,
@@ -588,7 +598,9 @@ export async function createWooOrderFromCheckoutSync(
     betragsabweichung,
     kassenSchluessel,
     reservierung,
+    zahlungsName,
   } = input;
+  let shipping = shippingAusEingabe;
 
   if (cartItems.length === 0) {
     throw new Error("Keine Artikel gefunden.");
@@ -623,21 +635,42 @@ export async function createWooOrderFromCheckoutSync(
 
   let profileCompany = "";
   let profileVat = "";
+  let wcCustomer: WooCustomer | null = null;
   if (customerIdStr) {
-    const wcCustomer = await fetchWooCustomer(customerIdStr);
+    wcCustomer = await fetchWooCustomer(customerIdStr);
     if (wcCustomer) {
       profileCompany = asString(wcCustomer.billing?.company);
       profileVat = billingVatFromCustomerMeta(wcCustomer);
     }
   }
 
-  const mergedBilling = { ...billing };
+  let mergedBilling = { ...billing };
   if (billingOverrides) {
     for (const [key, val] of Object.entries(billingOverrides)) {
       if (typeof val === "string" && val.trim()) {
         mergedBilling[key] = val;
       }
     }
+  }
+
+  // Fehlt der Name aus dem Formular (PayPal-Knopf, Apple Pay / Google Pay
+  // prüfen die Pflichtfelder nicht): aus dem Kundenkonto, sonst aus der
+  // Zahlung ergänzen. Ein vollständiger Name aus dem Formular bleibt, wie er
+  // ist. Bleibt der Name leer, wird die Bestellung trotzdem angelegt, aber
+  // auf on-hold mit Notiz und Mail ans Büro.
+  const bestellname = ergaenzeBestellname({
+    billing: mergedBilling,
+    shipping,
+    konto: wcCustomer,
+    zahlung: zahlungsName,
+  });
+  const nameFehlt = bestellname.nameFehlt;
+  if (bestellname.ergaenzt) {
+    mergedBilling = bestellname.billing;
+    shipping = bestellname.shipping;
+    console.warn(
+      `[wc-order] Name fehlte im Formular, ergänzt aus: ${bestellname.quelle} (${transactionId || "ohne Referenz"})`
+    );
   }
 
   const companyFromFrontend = asString(billingOverrides?.company);
@@ -663,13 +696,16 @@ export async function createWooOrderFromCheckoutSync(
       ? allocateDiscountCentsToLines(cartItems, discountCents)
       : new Map<string, number>();
 
+  const wartend = Boolean(betragsabweichung) || nameFehlt;
+
   const orderData: Record<string, unknown> = {
     // set_paid würde WooCommerce sofort auf "processing" stellen; bei einer
-    // Betragsabweichung bleibt die Bestellung deshalb ohne set_paid auf on-hold.
-    status: betragsabweichung ? "on-hold" : "processing",
+    // Betragsabweichung oder fehlendem Namen bleibt die Bestellung deshalb
+    // ohne set_paid auf on-hold.
+    status: wartend ? "on-hold" : "processing",
     payment_method: "stripe",
     payment_method_title: "Stripe",
-    set_paid: !betragsabweichung,
+    set_paid: !wartend,
     send_email: false,
     prices_include_tax: true,
     billing: mergedBilling,
@@ -929,6 +965,15 @@ export async function createWooOrderFromCheckoutSync(
     });
   }
 
+  if (nameFehlt) {
+    await meldeNameFehlt({
+      orderId: Number(created.id),
+      orderNumber: String(created.number ?? created.id),
+      zahlungsreferenz: transactionId,
+      kundenEmail: asString(mergedBilling.email),
+    });
+  }
+
   const mergedVatForNotify =
     asString(vatFromFrontendMeta) || asString(profileVat);
   const pmTitleRaw = asString(created.payment_method_title);
@@ -1141,5 +1186,11 @@ export async function createWooOrderFromPayment(
     betragsabweichung: abweichung ?? undefined,
     kassenSchluessel: syncContext?.kassenSchluessel,
     reservierung: syncContext?.reservierung,
+    // Nur Ersatz: der Name der Zahlung (bei Apple Pay / Google Pay der des
+    // Wallets), sonst der Liefername am PaymentIntent.
+    zahlungsName: {
+      vollerName:
+        asString(charge?.billing_details?.name) || asString(pi.shipping?.name),
+    },
   });
 }
