@@ -43,7 +43,7 @@ import {
  * WooCommerce (bestellpruefung.ts).
  */
 
-const SHOP_CATALOG_TAG = "shop-catalog";
+export const SHOP_CATALOG_TAG = "shop-catalog";
 const SHOP_CATALOG_REVALIDATE_SECONDS = 60;
 
 /**
