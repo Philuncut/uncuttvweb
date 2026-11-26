@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from "react";
 import type { ShopListProduct, WooCategory } from "@/lib/types";
+import type { HeroOverlay } from "@/lib/hero-overlay";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Newsletter from "@/components/Newsletter";
@@ -11,11 +12,17 @@ import ShopHero from "@/components/ShopHero";
 interface ShopPageProps {
   products: ShopListProduct[];
   categories: WooCategory[];
+  /** Sale-Overlay im Hero; null, wenn gerade keines aktiv ist. */
+  heroOverlay?: HeroOverlay | null;
 }
 
 const AGE_KEY = "agegate_confirmed";
 
-export default function ShopPage({ products, categories }: ShopPageProps) {
+export default function ShopPage({
+  products,
+  categories,
+  heroOverlay = null,
+}: ShopPageProps) {
   const [ageConfirmed, setAgeConfirmed] = useState(true); // default true to avoid flash
 
   useEffect(() => {
@@ -129,7 +136,7 @@ export default function ShopPage({ products, categories }: ShopPageProps) {
       )}
 
       <Navbar />
-      <ShopHero />
+      <ShopHero overlay={heroOverlay} />
       <Suspense fallback={null}>
         <ShopContent products={products} categories={categories} />
       </Suspense>

@@ -10,6 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { AKTION_PARAMETER, istImAngebot } from "@/lib/hero-overlay";
 import { useSearchParams } from "next/navigation";
 import type { ShopListProduct, WooCategory } from "@/lib/types";
 import SearchInput from "@/components/SearchInput";
@@ -131,6 +132,9 @@ function getBadge(
 /* ── ProductCard ── */
 
 /** Raster: 2 Spalten mobil, 4 ab lg. Eine Reihe = höchstens 4 Karten. */
+/** Kein WooCommerce-Kategorie-Filter, sondern "alles mit Angebotspreis" (?aktion=1). */
+const AKTION_FILTER = -1;
+
 const GRID_COLS_MAX = 4;
 /** Kartenbreite für next/image: ein Viertel ab lg, sonst die Hälfte. */
 const CARD_IMAGE_SIZES = "(min-width: 1024px) 25vw, 50vw";
@@ -432,6 +436,14 @@ export default function ShopContent({
 
   // Sync filter from ?kategorie= (banner links, navbar, direct URL)
   useEffect(() => {
+    // ?aktion=1: alles mit Angebotspreis. Ziel des Sale-Overlays im Hero;
+    // dafür gibt es keinen eigenen Filterknopf.
+    if (searchParams.get(AKTION_PARAMETER) === "1") {
+      shouldScrollAfterFilterRef.current = true;
+      setActiveCategory(AKTION_FILTER);
+      setFlatVisible(8);
+      return;
+    }
     const slug = searchParams.get("kategorie");
     if (!slug) return;
     const match = categories.find(
@@ -468,6 +480,9 @@ export default function ShopContent({
 
   const filteredFlat = useMemo(() => {
     if (activeCategory === null) return null;
+    if (activeCategory === AKTION_FILTER) {
+      return sortProducts(products.filter((p) => istImAngebot(p)));
+    }
     return sortProducts(
       products.filter((p) =>
         p.categories.some((c) => c.id === activeCategory)

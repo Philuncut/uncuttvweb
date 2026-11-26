@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from "react";
 import Link from "next/link";
+import type { HeroOverlay } from "@/lib/hero-overlay";
 
 interface PromoItem {
   image: string;
@@ -78,7 +79,116 @@ function nachSeitenladen(cb: () => void): () => void {
   };
 }
 
-export default function ShopHero() {
+/**
+ * Das Sale-Overlay über dem Hero-Video (Steuerpult, Shop › Aktionen ›
+ * Hero-Overlay). Die Seite reicht es nur herein, wenn die Aktion beim
+ * Rendern läuft; hier blendet es sich zum Ende der Aktion selbst aus.
+ *
+ * Desktop: links vom Logo im Video, dunkler Verlauf von links. Steht unten
+ * links der Promo-Banner, rückt das Overlay rechts daneben. Handy: unten
+ * über die ganze Breite, dunkler Verlauf von unten.
+ */
+function SaleOverlay({
+  overlay,
+  nebenBanner,
+}: {
+  overlay: HeroOverlay;
+  nebenBanner: boolean;
+}) {
+  const [vorbei, setVorbei] = useState(false);
+
+  useEffect(() => {
+    const rest = overlay.bisMs - Date.now();
+    // setTimeout trägt höchstens knapp 25 Tage; länger offene Seiten
+    // bekommen das Ende beim nächsten Laden mit.
+    if (rest > 2_000_000_000) return;
+    // Ist das Ende schon vorbei (Seite aus dem Zwischenspeicher des
+    // Browsers), läuft der Wecker sofort ab.
+    const t = window.setTimeout(() => setVorbei(true), Math.max(0, rest));
+    return () => window.clearTimeout(t);
+  }, [overlay.bisMs]);
+
+  if (vorbei) return null;
+
+  const knopfKlasse =
+    "inline-block bg-[#c0392b] px-5 py-2.5 text-center text-[12px] font-bold tracking-[0.15em] text-white shadow-[0_2px_12px_rgba(0,0,0,0.6)] transition-all duration-300 hover:bg-[#e74c3c] hover:shadow-[0_0_18px_rgba(192,57,43,0.6)] md:px-7 md:py-3 md:text-[13px]";
+  const knopf = overlay.ziel.startsWith("/") ? (
+    <Link href={overlay.ziel} className={knopfKlasse}>
+      {overlay.knopf} →
+    </Link>
+  ) : (
+    <a href={overlay.ziel} className={knopfKlasse}>
+      {overlay.knopf} →
+    </a>
+  );
+
+  return (
+    <>
+      {/* Desktop */}
+      <div
+        className="absolute inset-0 z-30 hidden items-center md:flex"
+        style={{
+          background:
+            "linear-gradient(to right, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.72) 34%, rgba(0,0,0,0.35) 52%, rgba(0,0,0,0) 68%)",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          className={`max-w-[46%] ${nebenBanner ? "pl-[430px]" : "pl-10 lg:pl-16"}`}
+          style={{ pointerEvents: "auto" }}
+        >
+          <p
+            className="text-[34px] font-black uppercase leading-none tracking-[0.04em] text-white lg:text-[44px]"
+            style={{ textShadow: "0 2px 14px rgba(0,0,0,0.85)" }}
+          >
+            {overlay.titel}
+          </p>
+          {overlay.zeile && (
+            <p
+              className="mt-2 text-[15px] font-bold tracking-[0.06em] text-[#e74c3c] lg:text-[17px]"
+              style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}
+            >
+              {overlay.zeile}
+            </p>
+          )}
+          <div className="mt-4">{knopf}</div>
+        </div>
+      </div>
+
+      {/* Handy */}
+      <div
+        className="absolute inset-0 z-30 flex flex-col items-center justify-end px-4 pb-3 text-center md:hidden"
+        style={{
+          background:
+            "linear-gradient(to top, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.82) 38%, rgba(0,0,0,0.45) 68%, rgba(0,0,0,0.1) 100%)",
+        }}
+      >
+        <p
+          className="text-[24px] font-black uppercase leading-none tracking-[0.04em] text-white"
+          style={{ textShadow: "0 2px 10px rgba(0,0,0,0.9)" }}
+        >
+          {overlay.titel}
+        </p>
+        {overlay.zeile && (
+          <p
+            className="mt-1.5 text-[13px] font-bold tracking-[0.05em] text-[#e74c3c]"
+            style={{ textShadow: "0 1px 6px rgba(0,0,0,0.95)" }}
+          >
+            {overlay.zeile}
+          </p>
+        )}
+        <div className="mt-2.5">{knopf}</div>
+      </div>
+    </>
+  );
+}
+
+export default function ShopHero({
+  overlay = null,
+}: {
+  /** Sale-Overlay; null, wenn gerade keines aktiv ist (dann ändert sich nichts). */
+  overlay?: HeroOverlay | null;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mobileVideoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
@@ -247,6 +357,10 @@ export default function ShopHero() {
         }}
       />
 
+
+      {overlay && (
+        <SaleOverlay overlay={overlay} nebenBanner={!dismissed && promo !== null} />
+      )}
 
       {/* Promo banner — bottom-left overlay, hidden on mobile */}
       {/* Promo banner — mobile: fixed bottom, desktop: absolute bottom-left of hero */}

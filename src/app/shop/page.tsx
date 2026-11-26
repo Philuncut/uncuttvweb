@@ -1,5 +1,6 @@
 import { redirectWholesaleToPortal } from "@/lib/wholesale-gate";
 import { getShopCatalog } from "@/lib/shop-catalog";
+import { getHeroOverlay } from "@/lib/hero-overlay-laden";
 import ShopPage from "./ShopPage";
 
 // Kein force-dynamic: Die Sitzungsprüfung liest Cookies und hält die
@@ -20,11 +21,21 @@ export default async function Page() {
   // Umleitung in der middleware.ts und las die Rolle aus einem Cookie.
   await redirectWholesaleToPortal();
 
-  const { products, categories } = await getShopCatalog();
+  // Das Sale-Overlay im Hero (Steuerpult, Shop › Aktionen): höchstens eine
+  // Minute alt, und nur, wenn die Aktion in diesem Augenblick läuft. Ohne
+  // Overlay bekommt die Seite null und sieht aus wie immer.
+  const [{ products, categories }, heroOverlay] = await Promise.all([
+    getShopCatalog(),
+    getHeroOverlay(),
+  ]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
-      <ShopPage products={products} categories={categories} />
+      <ShopPage
+        products={products}
+        categories={categories}
+        heroOverlay={heroOverlay}
+      />
     </div>
   );
 }
